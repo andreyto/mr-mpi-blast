@@ -11,8 +11,9 @@ CXX = mpic++
 
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
-#MRMPI_USRLIB = -L./mrmpi -lmrmpi
-MRMPI_USRLIB = -lmrmpi
+MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
+#MRMPI_USRLIB = -lmrmpi
+#MRMPI_USRLIB = -L ./mrmpi -lmrmpi
  
 CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)   
 ORIG_LIBS = $(MRMPI_USRLIB)

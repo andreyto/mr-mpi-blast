@@ -1,0 +1,2 @@
+Parallezed blast search using NCBI C++ Toolkit on MR-MPI framework.
+This should reside in the NCBI C++ Toolkit source tree.

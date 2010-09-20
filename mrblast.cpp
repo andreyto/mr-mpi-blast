@@ -1,6 +1,46 @@
-/*  $Id: blast_demo.cpp 144153 2008-10-27 19:49:01Z vakatov $
- * ===========================================================================
- *
+////////////////////////////////////////////////////////////////////////////////
+//
+//  Parallelizing BLAST on MR-MPI
+//
+//  Author: Seung-Jin Sul
+//          (ssul@jcvi.org)
+//
+//  Revisions
+//
+//      09.01.2010  Start!
+//
+//      09.05.2010  blast call done
+//
+//      09.07.2010  Adding KV in a mapper and aggregating the vecResults
+//
+//      09.09.2010  Start v2. Decide to run several MR-MPI jobs and each
+//                  job searches on a specific DB chunk.
+//
+//      09.10.2010  v2 done!
+//                  Add print2file member function to KeyValue class.
+//
+//      09.15.2010  v3 with NCBI C++ Toolkit started.
+//
+//      09.20.2010  Running version is done. ASN.1 parsing should be done.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+//      This program is free software; you can redistribute it and/or modify
+//      it under the terms of the GNU General Public License as published by
+//      the Free Software Foundation; either version 2 of the License, or
+//      (at your option) any later version.
+//
+//      This program is distributed in the hope that it will be useful,
+//      but WITHOUT ANY WARRANTY; without even the implied warranty of
+//      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//      GNU General Public License for more details.
+//
+//      You should have received a copy of the GNU General Public License
+//      along with this program; if not, write to the Free Software
+//      Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+//      MA 02110-1301, USA.
+
+/*
  *                            PUBLIC DOMAIN NOTICE
  *               National Center for Biotechnology Information
  *
@@ -20,16 +60,8 @@
  *  purpose.
  *
  *  Please cite the author in any work or product based on this material.
- *
- * ===========================================================================
- *
- * Authors:  Tom Madden
- *
- * File Description:
- *   Sample application for the running a blast search.
- *
  */
-
+ 
 /// MPI AND MR-MPI
 #include "mpi.h"
 #include "./mrmpi/mapreduce.h"
@@ -37,11 +69,11 @@
 
 using namespace MAPREDUCE_NS;
 using namespace std;
- 
+
 const size_t MAX_STR = 256;
 
 
-/// NCBI 
+/// NCBI
 #include <ncbi_pch.hpp>
 #include <corelib/ncbiapp.hpp>
 #include <corelib/ncbienv.hpp>
@@ -67,6 +99,8 @@ const size_t MAX_STR = 256;
 USING_NCBI_SCOPE;
 USING_SCOPE(blast);
 
+
+
 /// TO COLLECT PROC NAMES ON WHICH EACH TASK IS ASIGNED
 struct procName {
     int     myId;
@@ -91,210 +125,16 @@ struct giftBox {
 void    get_node_name(int, KeyValue *, void *);
 void    collect_node_names(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
 void    save_node_names(uint64_t itask, char *key, int keybytes, char *value, int valuebytes, KeyValue *kv, void *ptr);
-//void    run_blast(int itask, KeyValue *kv, void *ptr);
-void    run_blast2(int itask, char *file, KeyValue *kv, void *ptr);
+
+void    set_default_opts(CRef<CBlastOptionsHandle> optsHandle);
+void    run_blast(int itask, char *file, KeyValue *kv, void *ptr);
 int     key_compare(char *p1, int len1, char *p2, int len2);
-int     key_compare2(char *p1, int len1, char *p2, int len2); 
+int     key_compare2(char *p1, int len1, char *p2, int len2);
+
+   
  
-
-/////////////////////////////////////////////////////////////////////////////
-//  CBlastDemoApplication::
-
-
-class CBlastDemoApplication : public CNcbiApplication
-{
-private:
-    virtual void Init(void);
-    virtual int  Run(void);
-    virtual void Exit(void);
-
-    void ProcessCommandLineArgs(CRef<CBlastOptionsHandle> opts_handle);
-
-};
-
-
-/////////////////////////////////////////////////////////////////////////////
-//  Init test for all different types of arguments
-
-
-void CBlastDemoApplication::Init(void)
-{
-    // Create command-line argument descriptions class
-    auto_ptr<CArgDescriptions> arg_desc(new CArgDescriptions);
-
-    // Specify USAGE context
-    arg_desc->SetUsageContext(GetArguments().GetProgramBasename(), "BLAST demo program");
-
-    arg_desc->AddKey
-        ("program", "ProgramName",
-         "One of blastn, megablast, disc_megablast, blastp, blastx, tblastn, tblastx, rpsblast",
-         CArgDescriptions::eString);
-    arg_desc->SetConstraint
-        ("program", &(*new CArgAllow_Strings,
-                "blastn", "megablast", "disc_megablast", "blastp", "blastx", "tblastn", "tblastx", "rpsblast"));
-
-    arg_desc->AddDefaultKey
-        ("db", "DataBase",
-         "This is the name of the database",
-         CArgDescriptions::eString, "nr");
-
-    arg_desc->AddDefaultKey("in", "Queryfile",
-                        "A file with the query", CArgDescriptions::eInputFile, "stdin");
-
-    arg_desc->AddDefaultKey("out", "Outputfile",
-                        "The output file", CArgDescriptions::eOutputFile, "stdout");
-
-    arg_desc->AddDefaultKey("evalue", "evalue",
-                        "E-value threshold for saving hits", CArgDescriptions::eDouble, "0");
-
-    arg_desc->AddDefaultKey("penalty", "penalty", "Penalty score for a mismatch",
-                            CArgDescriptions::eInteger, "0");
-
-    arg_desc->AddDefaultKey("reward", "reward", "Reward score for a match",
-                            CArgDescriptions::eInteger, "0");
-
-    arg_desc->AddDefaultKey("matrix", "matrix", "Scoring matrix name",
-                            CArgDescriptions::eString, "BLOSUM62");
-
-    // Setup arg.descriptions for this application
-    SetupArgDescriptions(arg_desc.release());
-}
-
-/// Modify BLAST options from defaults based upon command-line args.
-///
-/// @param opts_handle already created CBlastOptionsHandle to modify [in]
-void CBlastDemoApplication::ProcessCommandLineArgs(CRef<CBlastOptionsHandle> opts_handle)
-
-{
-    CArgs args = GetArgs();
-
-        // Expect value is a supported option for all flavors of BLAST.
-        if(args["evalue"].AsDouble())
-          opts_handle->SetEvalueThreshold(args["evalue"].AsDouble());
-        
-        // The first branch is used if the program is blastn or a flavor of megablast
-        // as reward and penalty is a valid option.
-        //
-        // The second branch is used for all other programs except rpsblast as matrix
-        // is a valid option for blastp and other programs that perform protein-protein
-        // comparisons.
-        //
-        if (CBlastNucleotideOptionsHandle* nucl_handle =
-              dynamic_cast<CBlastNucleotideOptionsHandle*>(&*opts_handle)) {
-
-              if (args["reward"].AsInteger())
-                nucl_handle->SetMatchReward(args["reward"].AsInteger());
-            
-              if (args["penalty"].AsInteger())
-                nucl_handle->SetMismatchPenalty(args["penalty"].AsInteger());
-        }
-        else if (CBlastProteinOptionsHandle* prot_handle =
-               dynamic_cast<CBlastProteinOptionsHandle*>(&*opts_handle)) {
-              if (args["matrix"]) 
-                prot_handle->SetMatrixName(args["matrix"].AsString().c_str());
-        }
-
-        return;
-}
-
-
-/////////////////////////////////////////////////////////////////////////////
-//  Run test (printout arguments obtained from command-line)
-
-
-int CBlastDemoApplication::Run(void)
-{    
-    // Get arguments
-    const CArgs& args = GetArgs();
-
-    EProgram program = ProgramNameToEnum(args["program"].AsString());
-
-    bool db_is_aa = (program == eBlastp || program == eBlastx ||
-                     program == eRPSBlast || program == eRPSTblastn);
-
-    CRef<CBlastOptionsHandle> opts(CBlastOptionsFactory::Create(program));
-
-    ProcessCommandLineArgs(opts);
-
-    opts->Validate();  // Can throw CBlastException::eInvalidOptions for invalid option.
-
-
-    // This will dump the options to stderr.
-    // opts->GetOptions().DebugDumpText(cerr, "opts", 1);
-
-    CRef<CObjectManager> objmgr = CObjectManager::GetInstance();
-    if (!objmgr) {
-         throw std::runtime_error("Could not initialize object manager");
-    }
-
-    const bool is_protein =
-        !!Blast_QueryIsProtein(opts->GetOptions().GetProgramType());
-    SDataLoaderConfig dlconfig(is_protein);
-    CBlastInputSourceConfig iconfig(dlconfig);
-    CBlastFastaInputSource fasta_input(args["in"].AsInputFile(), iconfig);
-    CScope scope(*objmgr);
-
-    CBlastInput blast_input(&fasta_input);
-
-    TSeqLocVector query_loc = blast_input.GetAllSeqLocs(scope);
-
-    CRef<IQueryFactory> query_factory(new CObjMgr_QueryFactory(query_loc));
-
-    const CSearchDatabase target_db(args["db"].AsString(),
-        db_is_aa ? CSearchDatabase::eBlastDbIsProtein : CSearchDatabase::eBlastDbIsNucleotide);
-
-    CLocalBlast blaster(query_factory, opts, target_db);
-
-    CSearchResultSet results = *blaster.Run();
-
-    // Get warning messages.
-    for (unsigned int i = 0; i < results.GetNumResults(); i++) 
-    {
-        TQueryMessages messages = results[i].GetErrors(eBlastSevWarning);
-        if (messages.size() > 0)
-        {
-            CConstRef<CSeq_id> seq_id = results[i].GetSeqId();
-            if (seq_id.NotEmpty())
-                cerr << "ID: " << seq_id->AsFastaString() << endl;
-            else
-                cerr << "ID: " << "Unknown" << endl;
-
-            ITERATE(vector<CRef<CSearchMessage> >, it, messages)
-                cerr << (*it)->GetMessage() << endl;
-        }
-    }
-    
-    CNcbiOstream& out = args["out"].AsOutputFile();
-
-    for (unsigned int i = 0; i < results.GetNumResults(); i++) {
-         CConstRef<CSeq_align_set> sas = results[i].GetSeqAlign();
-         //out << MSerial_AsnText << *sas;
-         out << MSerial_Xml << *sas;
-    }
-    
-    cout << "Done!!\n";
-
-    return 0;
-}
-
-
-/////////////////////////////////////////////////////////////////////////////
-//  Cleanup
-
-
-void CBlastDemoApplication::Exit(void)
-{
-    SetDiagStream(0);
-}
-
-
-/////////////////////////////////////////////////////////////////////////////
-//  MAIN
-
-
-#ifndef SKIP_DOXYGEN_PROCESSING
 int main(int argc, char* argv[])
-{  
+{
     /// MPI
     MPI_Init(&argc, &argv);
 
@@ -305,15 +145,20 @@ int main(int argc, char* argv[])
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
     MPI_Get_processor_name(MPI_procName, &MPI_length);
     fprintf(stdout, "### [Node %d]: %s \n", MPI_myId, MPI_procName);
-    
+
+    //if (argc != 4) {
+    //if (MPI_myId == 0) printf("Syntax: mpirun -np n mrblast masterFileName chunkName outFileName\n");
+    //MPI_Abort(MPI_COMM_WORLD, 1);
+    //}
+
     ///MR-MPI
     MapReduce *mr = new MapReduce(MPI_COMM_WORLD);
     mr->verbosity = 0;
-    mr->timer = 1;    
-    
+    mr->timer = 1;
+
     MPI_Barrier(MPI_COMM_WORLD);
     //double tstart = MPI_Wtime();
-    
+
     ///
     /// GET MPI PROC NAMES
     /// TO ASSIGN A DB CHUNK WITH A NODE SO THAT THE TASKS ON THE NODE
@@ -345,36 +190,208 @@ int main(int argc, char* argv[])
     //cout << vecProcName.size() << endl;
 
     MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
-    
+
     /// DEBUG
     //if (MPI_myId == 0) {
-        ////pair<multimap<string, unsigned int>::iterator, multimap<string, unsigned int>::iterator> ppp;
-        ////ppp = mmapProcNames.equal_range("ssul-lx");
-        ////for (multimap<string, unsigned int>::iterator it2 = ppp.first; it2 != ppp.second; ++it2) {
-            ////cout << "  [" << (*it2).first << ", " << (*it2).second << "]" << endl;
-        ////}
-        //for (int i = 0; i < vecProcName.size(); ++i)
-            //cout << "### Node " << MPI_myId << " name = " << vecProcName[i] << endl;
+    ////pair<multimap<string, unsigned int>::iterator, multimap<string, unsigned int>::iterator> ppp;
+    ////ppp = mmapProcNames.equal_range("ssul-lx");
+    ////for (multimap<string, unsigned int>::iterator it2 = ppp.first; it2 != ppp.second; ++it2) {
+    ////cout << "  [" << (*it2).first << ", " << (*it2).second << "]" << endl;
+    ////}
+    //for (int i = 0; i < vecProcName.size(); ++i)
+    //cout << "### Node " << MPI_myId << " name = " << vecProcName[i] << endl;
     //}
-    
+
     delete mr;
-    
-    
-    
-    
-    
-    
-    
-    MPI::Finalize();
-    
-    
-    
-    
-    
+
+    ///
+    /// Blast search
+    ///
+    MapReduce *mr2 = new MapReduce(MPI_COMM_WORLD);
+    mr2->verbosity = 0;
+    mr2->timer = 1;
+    mr2->mapstyle = 2; /// master/slave mode
+
+    int nvecRes;
+    char *masterFileName = argv[1];
+
+    giftBox gf;
+    gf.myId = MPI_myId;
+    gf.numProc = MPI_nProcs;
+    gf.pName = MPI_procName;
+    gf.dbChunkName = argv[2];
+
     // Execute main application function
-    return CBlastDemoApplication().AppMain(argc, argv);    
+    //int newArgc = 7;
+    //char *newArgv[] = {"./mrblast", "-program", "blastn", "-db", "nt.00", "-in", "test2.query"};
+    //CBlastDemoApplication demo;
+    //demo.AppMain(newArgc, newArgv);
+    //CBlastDemoApplication().AppMain(newArgc, newArgv);
+
+    //gf.cbDemo = &demo;
+    nvecRes = mr2->map(masterFileName, &run_blast, &gf);
+    cout << "### [Node " << MPI_myId << "] nvecRes = " << nvecRes << endl;
+    ////mr2->print(-1, 1, 5, 5);
+
+    MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
+
+
+
+    delete mr2;
+    MPI::Finalize();
+
 }
-#endif /* SKIP_DOXYGEN_PROCESSING */
+ 
+
+/* ---------------------------------------------------------------------- */
+void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
+/* ---------------------------------------------------------------------- */
+{
+    giftBox *gf = (giftBox *) ptr;
+    //CBlastDemoApplication* demo = gf->cbDemo;
+
+    ///
+    /// Make args, argv for AppMain
+    /// ex) blast -program blastn -db nt.00 -in test.query
+    ///
+    //int newArgc = 7;
+    //char *newArgv[] = {"./mrblast", "-program", "blastn", "-db", "nt.00", "-in", "test2.query"};
+    //CBlastDemoApplication().AppMain(newArgc, newArgv);
+    //demo->AppMain(newArgc, newArgv);
+
+    ///
+    /// Make a option handle and CBlastInputSource
+    ///
+    
+    EProgram program = ProgramNameToEnum("blastn");
+    CRef<CBlastOptionsHandle> opts(CBlastOptionsFactory::Create(program));
+    //CRef<CBlastOptionsHandle> optsHandle(CBlastOptionsFactory::Create(eBlastn));
+    opts->Validate();
+    
+    /// DEBUG
+    //opts->GetOptions().DebugDumpText(cerr, "opts", 1);
+    
+    CRef<CObjectManager> objmgr = CObjectManager::GetInstance();
+    if (!objmgr) {
+        throw std::runtime_error("Could not initialize object manager");
+    }
+    
+    bool isProtein = false;
+    SDataLoaderConfig dlconfig(isProtein);
+    CBlastInputSourceConfig iconfig(dlconfig);
+    //string qFileName = "test2.query";   
+    //ifstream queryFile(qFileName.c_str()); 
+    ifstream queryFile(file); 
+    //CBlastFastaInputSource fasta_input(qFileName, iconfig);
+    
+    /// Use query string instead of file input
+    string header, seq;
+    vector<string> vecSeq;
+    unsigned int maxQueryStack = 1;
+    
+    ///
+    /// Target DB setting
+    ///
+    cout << "dbChunkName = " << gf->dbChunkName << endl;
+    string dbChunkName(gf->dbChunkName);
+    const CSearchDatabase target_db(dbChunkName, CSearchDatabase::eBlastDbIsNucleotide);
+    
+    while (!getline(queryFile, header).eof()) {
+        getline(queryFile, seq);
+        if (header.length() == 0 || seq.length() == 0) {
+            fprintf(stderr, "### ERROR: [Node %d]: %s, itask = %d, file = %s, Seq read error.\n",
+                    gf->myId, gf->pName, itask, file);
+            exit(0);
+        }
+        fprintf(stdout, "### INFO: [Node %d]: %s, itask = %d, %s\n",
+                gf->myId, gf->pName, itask, header.c_str());
+    
+        string query = header + '\n' + seq;
+        
+        int j = 1;
+        while (j < maxQueryStack && !getline(queryFile, header).eof()) {
+            getline(queryFile, seq);
+            fprintf(stdout, "### INFO: [Node %d]: %s, itask = %d, %s, stacked = %d\n",
+                    gf->myId, gf->pName, itask, header.c_str(), j+1);
+            query = query + '\n' + header + '\n' + seq;
+            j++;
+        }        
+        
+        ///
+        /// Set queries as fasta input
+        ///
+        CBlastFastaInputSource fasta_input(query, iconfig);
+        CBlastInput blastInput(&fasta_input);    
+        CScope scope(*objmgr);
+        TSeqLocVector queryLoc = blastInput.GetAllSeqLocs(scope);
+        CRef<IQueryFactory> queryFactory(new CObjMgr_QueryFactory(queryLoc));
+        
+        ///
+        /// Target DB setting
+        ///
+        //cout << "dbChunkName = " << gf->dbChunkName << endl;
+        //string dbChunkName(gf->dbChunkName);
+        //const CSearchDatabase target_db(dbChunkName, CSearchDatabase::eBlastDbIsNucleotide);
+
+        ///
+        /// Run blast
+        ///    
+        CLocalBlast blaster(queryFactory, opts, target_db);
+        CSearchResultSet results = *blaster.Run();
+
+        ///
+        /// Get the results
+        ///
+
+        /// Get warning messages.
+        for (unsigned int i = 0; i < results.GetNumResults(); i++) {
+            TQueryMessages messages = results[i].GetErrors(eBlastSevWarning);
+            if (messages.size() > 0) {
+                CConstRef<CSeq_id> seq_id = results[i].GetSeqId();
+                if (seq_id.NotEmpty())
+                    cerr << "ID: " << seq_id->AsFastaString() << endl;
+                else
+                    cerr << "ID: " << "Unknown" << endl;
+
+                ITERATE(vector<CRef<CSearchMessage> >, it, messages)
+                cerr << (*it)->GetMessage() << endl;
+            }
+        }
+
+        cout << "results.GetNumResults() = " << results.GetNumResults() << endl;
+        for (unsigned int i = 0; i < results.GetNumResults(); i++) {
+
+            CConstRef<CSeq_id> seq_id = results[i].GetSeqId();
+            cout << "qID = " << seq_id->AsFastaString() << endl;
+
+            CConstRef<CSeq_align_set> sas = results[i].GetSeqAlign();
+            cout << MSerial_AsnText << *sas;
+        }
+    } // END WHILE
+
+    cout << "Done!\n";
+}
+
+/* ---------------------------------------------------------------------- */
+void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
+/* ---------------------------------------------------------------------- */
+{
+    //optsHandle->SetEvalueThreshold(0);
+    //optsHandle->SetMatchReward(0);
+    //optsHandle->SetMismatchPenalty(0);
+    //optsHandle->SetMatrixName("BLOSUM62");
+    //optsHandle->SetCutoffScore();
+    if (CBlastNucleotideOptionsHandle* nuclHandle =
+        dynamic_cast<CBlastNucleotideOptionsHandle*>(&*optsHandle)) {
+
+        //nuclHandle->SetMatchReward(0);
+        //nuclHandle->SetMismatchPenalty(0);
+        nuclHandle->SetMatrixName("BLOSUM62");
+        //nuclHandle->SetCutoffScore();
+    }
+
+    return;
+}
 
 /* ---------------------------------------------------------------------- */
 void get_node_name(int itask, KeyValue *kv, void *ptr)
@@ -392,7 +409,7 @@ void get_node_name(int itask, KeyValue *kv, void *ptr)
 //                        void *ptr)
 /* ---------------------------------------------------------------------- */
 //{
-//kv->add(key, keybytes, multivalue, sizeof(multivalue));
+    //kv->add(key, keybytes, multivalue, sizeof(multivalue));
 //}
 
 /* ---------------------------------------------------------------------- */
