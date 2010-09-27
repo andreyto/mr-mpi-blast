@@ -23,6 +23,12 @@
 //
 //      09.20.2010  Running version is done. ASN.1 parsing should be done.
 //
+//      09.21.2010  XML parsing tried but returned back to use raw blast 
+//                  output for creating KV
+//
+//      09.22.2010  Using raw blast output, KV is constructed. Running 
+//                  version is done. Start testing on Ranger.
+//
 ////////////////////////////////////////////////////////////////////////////////
 
 //      This program is free software; you can redistribute it and/or modify
@@ -70,8 +76,8 @@
 using namespace MAPREDUCE_NS;
 using namespace std;
 
-const size_t MAX_STR = 256;
-
+const size_t MAXSTR         = 256;
+const size_t MAXQUERYNUM    = 1000;
 
 /// NCBI
 #include <ncbi_pch.hpp>
@@ -130,8 +136,8 @@ USING_SCOPE(blast);
 //USING_SCOPE(align_format);
 //USING_SCOPE(xml);
 
-#define QUERY       0
-#define SUBJECT     1
+const size_t QUERY          = 0;
+const size_t SUBJECT        = 1;
 
 
 /// TO COLLECT PROC NAMES ON WHICH EACH TASK IS ASIGNED
@@ -145,12 +151,12 @@ USING_SCOPE(blast);
 struct giftBox {
     int             myId;
     int             numProc;
-    int             numDbChunks;
-    int             totalDbChunks;
+    //int             numDbChunks;
+    //int             totalDbChunks;
     char*           pName;
-    char*           queryFileName;
+    //char*           queryFileName;
     char*           dbChunkName;
-    unsigned long   numQuery;
+    //unsigned long   numQuery;
     //CBlastDemoApplication* cbDemo;
     //multimap<string, unsigned int> *mmapPName;
     //vector<string>* vPName;
@@ -163,10 +169,10 @@ struct giftBox {
 
 void    set_default_opts(CRef<CBlastOptionsHandle> optsHandle);
 void    run_blast(int itask, char *file, KeyValue *kv, void *ptr);
-int     key_compare(char *p1, int len1, char *p2, int len2);
-int     key_compare2(char *p1, int len1, char *p2, int len2);
+//int     key_compare_str(char *p1, int len1, char *p2, int len2);
+int     key_compare_int(char *p1, int len1, char *p2, int len2);
 
-bool    check_exclusion(string qGi, string sGi, int qCutLocStart, unsigned int qCutLocEnd, unsigned int sStart, unsigned int sEnd, unsigned int threshold);
+bool    check_exclusion(string qGi, string sGi, int qCutLocStart, size_t qCutLocEnd, size_t sStart, size_t sEnd, size_t threshold);
     
 /// TOKENIZER ROUTINES
 vector<string> &split(const string &s, char delim, vector<string> &vecElems)
@@ -194,11 +200,11 @@ string int2str(int number)
     return ss.str();
 }
 
-unsigned int str2uint(string str)
+size_t str2uint(string str)
 {
     std::stringstream ss;
     ss << str;
-    unsigned int f;
+    size_t f;
     ss >> f;
     return f;
 }
@@ -218,7 +224,8 @@ int main(int argc, char* argv[])
 {
     // Execute main application function
     //int newArgc = 7;
-    //char *newArgv[] = {"./mrblast", "-program", "blastn", "-db", "nt.00", "-in", "test2.query"};
+    //char *newArgv[] = {"./mrblast", "-program", "blastn", "-db", 
+        //"nt.00", "-in", "test2.query"};
     //CBlastDemoApplication demo;
     //demo.AppMain(newArgc, newArgv);
 
@@ -234,7 +241,8 @@ int main(int argc, char* argv[])
     fprintf(stdout, "### [Node %d]: %s \n", MPI_myId, MPI_procName);
 
     //if (argc != 4) {
-    //if (MPI_myId == 0) printf("Syntax: mpirun -np n mrblast masterFileName chunkName outFileName\n");
+    //if (MPI_myId == 0) printf("Syntax: mpirun -np n mrblast masterFileName 
+        //chunkName outFileName\n");
     //MPI_Abort(MPI_COMM_WORLD, 1);
     //}
 
@@ -286,7 +294,7 @@ int main(int argc, char* argv[])
     ////for (multimap<string, unsigned int>::iterator it2 = ppp.first; it2 != ppp.second; ++it2) {
     ////cout << "  [" << (*it2).first << ", " << (*it2).second << "]" << endl;
     ////}
-    //for (int i = 0; i < vecProcName.size(); ++i)
+    //for (size_t i = 0; i < vecProcName.size(); ++i)
     //cout << "### Node " << MPI_myId << " name = " << vecProcName[i] << endl;
     //}
 
@@ -306,38 +314,42 @@ int main(int argc, char* argv[])
 
     giftBox gf;
     gf.myId = MPI_myId;
-    gf.numProc = MPI_nProcs;
+    //gf.numProc = MPI_nProcs;
     gf.pName = MPI_procName;
     gf.dbChunkName = argv[2];
     //gf.mmapPName = &mmapProcNames;
     //gf.vPName = &vecProcName;
     //gf.cbDemo = &demo;
     
-    nvecRes = mr2->map(masterFileName, &run_blast, &gf);
-    cout << "### [Node " << MPI_myId << "] nvecRes = " << nvecRes << endl;
+    //nvecRes = mr2->map(masterFileName, &run_blast, &gf);
+    //cout << "### [Node " << MPI_myId << "] nvecRes = " << nvecRes << endl;
+    //mr2->print(-1, 1, 5, 5);
+    
+    //mr2->collate(NULL); //////////////////////////////////////////////
     //mr2->print(-1, 1, 5, 5);
 
-    MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
+    //MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
 
-    mr2->gather(1);
+    //mr2->gather(1);
     //mr2->print(0, 1, 5, 5);
 
-    mr2->sort_keys(&key_compare2);
+    //mr2->sort_keys(&key_compare_int);
     //mr2->print(0, 1, 5, 5);
     
-    if (MPI_myId == 0) {
-        //nvecRes = mr2->map(mr2, &output, &gf);
-        string outFileName = string(argv[3]) + ".txt";
-        FILE *outFile = fopen(outFileName.c_str(), "w");
-        if (outFile) {
-            mr2->kv->print2file(1, 5, 5, outFile);
-        }
-        cout << "DONE!\n";
-    }
+    //if (MPI_myId == 0) {
+        //cout << "Saving...\n";
+        ////nvecRes = mr2->map(mr2, &output, &gf);
+        //string outFileName = string(argv[3]) + ".txt";
+        //FILE *outFile = fopen(outFileName.c_str(), "w");
+        //if (outFile) {
+            //mr2->kv->print2file(1, 5, 5, outFile);
+        //}
+        //cout << "DONE!\n";
+    //}
 
     delete mr2;
     MPI::Finalize();
-
+    cout << "Finalized\n";
 }
 
 
@@ -352,7 +364,8 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     /// ex) blast -program blastn -db nt.00 -in test.query
     ///
     //int newArgc = 7;
-    //char *newArgv[] = {"./mrblast", "-program", "blastn", "-db", "nt.00", "-in", "test2.query"};
+    //char *newArgv[] = {"./mrblast", "-program", "blastn", "-db", 
+        //"nt.00", "-in", "test2.query"};
     //CBlastDemoApplication().AppMain(newArgc, newArgv);
     //demo->AppMain(newArgc, newArgv);
 
@@ -365,8 +378,8 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     opts->Validate();
 
     /// DEBUG
-    if (gf->myId == 0) 
-        opts->GetOptions().DebugDumpText(cerr, "opts", 1);
+    //if (gf->myId == 0) 
+        //opts->GetOptions().DebugDumpText(cerr, "opts", 1);
 
     CRef<CObjectManager> objmgr = CObjectManager::GetInstance();
     if (!objmgr) {
@@ -386,7 +399,6 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     /// Use query string instead of file input
     string header, seq;
     vector<string> vecSeq;
-    unsigned int maxQueryStack = 1000;
 
     ///
     /// Target DB setting
@@ -416,12 +428,12 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
         vHeaders.push_back(header);
         
         ///
-        /// Accummulate seqs when maxQueryStack > 1
+        /// Accummulate seqs when MAXQUERYNUM > 1
         ///
-        int j = 1;
-        while (j < maxQueryStack && !getline(queryFile, header).eof()) {
+        size_t j = 1;
+        while (j < MAXQUERYNUM && !getline(queryFile, header).eof()) {
             getline(queryFile, seq);
-            fprintf(stdout, "### INFO: [Node %d]: %s, itask = %d, %s, stacked = %d\n",
+            fprintf(stdout, "### INFO: [Node %d]: %s, itask = %d, %s, num queries = %d\n",
                 gf->myId, gf->pName, itask, header.c_str(), j + 1);
             query = query + '\n' + header + '\n' + seq;
             vHeaders.push_back(header);
@@ -432,9 +444,9 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
         //vector<string> vQeuryId  = split(header, '|');
         //string gi                = vQeuryId[1];             /// GI
         //string qid               = vQeuryId[2];             /// QUERY ID
-        //unsigned int oLen        = str2uint(vQeuryId[3]);   /// LENGTH OF THE ORIG SEQ
+        //size_t oLen              = str2uint(vQeuryId[3]);   /// LENGTH OF THE ORIG SEQ
         //int qStart               = str2int(vQeuryId[4]);    /// CUT COORDINATES - START
-        //unsigned int qEnd        = str2uint(vQeuryId[5]);   /// CUT COORDINATES - END
+        //size_t qEnd              = str2uint(vQeuryId[5]);   /// CUT COORDINATES - END
         //fprintf(stderr, "### INFO: [Node %d]: %s, itask = %d, %s %s %d %d %d\n",
                 //gf->myId, gf->pName, itask, gi.c_str(), qid.c_str(), oLen, qStart, qEnd);
                         
@@ -448,13 +460,6 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
         CRef<IQueryFactory> queryFactory(new CObjMgr_QueryFactory(queryLoc));
 
         ///
-        /// Target DB setting
-        ///
-        //cout << "dbChunkName = " << gf->dbChunkName << endl;
-        //string dbChunkName(gf->dbChunkName);
-        //const CSearchDatabase target_db(dbChunkName, CSearchDatabase::eBlastDbIsNucleotide);
-
-        ///
         /// Run blast
         ///
         CLocalBlast blaster(queryFactory, opts, target_db);
@@ -465,7 +470,7 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
         ///
 
         /// Get warning messages.
-        for (unsigned int i = 0; i < results.GetNumResults(); i++) {
+        for (size_t i = 0; i < results.GetNumResults(); i++) {
             TQueryMessages messages = results[i].GetErrors(eBlastSevWarning);
             if (messages.size() > 0) {
                 CConstRef<CSeq_id> seq_id = results[i].GetSeqId();
@@ -481,7 +486,7 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
 
         cout << "results.GetNumResults() = " << results.GetNumResults() << endl;
         cout << "results.GetNumQueries() = " << results.GetNumQueries() << endl;
-        for (unsigned int i = 0; i < results.GetNumResults(); i++) {
+        for (size_t i = 0; i < results.GetNumResults(); i++) {
 
             //CConstRef<CSeq_id> seq_id = results[i].GetSeqId();
             //cout << "qID = " << seq_id->AsFastaString() << endl;
@@ -562,15 +567,15 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
                     //s.GetNamedScore(CSeq_align::eScore_PercentIdentity_GapOpeningOnly, pIdentityGapOpeningOnly);
                     //s.GetNamedScore(CSeq_align::eScore_PercentCoverage, pCoverage);
                     
-                    unsigned int alignLen, qStart, qEnd, sStart, sEnd;
+                    size_t alignLen, qStart, qEnd, sStart, sEnd;
                     //CRange<TSeqPos> qRange, sRange;
                     //qRange = s.GetSeqRange(QUERY);
                     //sRange = s.GetSeqRange(SUBJECT);
-                    qStart = s.GetSeqStart(QUERY);
-                    qEnd = s.GetSeqStop(QUERY);
-                    sStart = s.GetSeqStart(SUBJECT);
-                    sEnd = s.GetSeqStop(SUBJECT);
-                    alignLen = s.GetAlignLength();
+                    qStart      = s.GetSeqStart(QUERY);
+                    qEnd        = s.GetSeqStop(QUERY);
+                    sStart      = s.GetSeqStart(SUBJECT);
+                    sEnd        = s.GetSeqStop(SUBJECT);
+                    alignLen    = s.GetAlignLength();
                     
                     double eValue;
                     int genericScore, bitScore;
@@ -586,9 +591,9 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
                     vector<string> vQeuryId  = split(qHeader, '|');
                     string qGi               = vQeuryId[1];             /// GI
                     string qid               = vQeuryId[2];             /// QUERY ID
-                    unsigned int origLen     = str2uint(vQeuryId[3]);   /// LENGTH OF THE ORIG SEQ
+                    size_t origLen           = str2uint(vQeuryId[3]);   /// LENGTH OF THE ORIG SEQ
                     int qCutLocStart         = str2int(vQeuryId[4]);    /// CUT COORDINATES - START
-                    unsigned int qCutLocEnd  = str2uint(vQeuryId[5]);   /// CUT COORDINATES - END
+                    size_t qCutLocEnd        = str2uint(vQeuryId[5]);   /// CUT COORDINATES - END
                     fprintf(stderr, "### INFO: [Node %d]: %s, itask = %d, %s %s %d %d %d\n",
                         gf->myId, gf->pName, itask, qGi.c_str(), qid.c_str(), 
                         origLen, qCutLocStart, qCutLocEnd);
@@ -609,13 +614,16 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
                     //}
                     if (!check_exclusion(qGi, seqId, qCutLocStart, qCutLocEnd, sStart, sEnd, 100)) {
                         
-                        char blastRes[1024];
+                        char blastRes[MAXSTR];
+                        
+                        /// DEBUG
                         fprintf(stdout, "%s,%s,%s,%d,%d,%d,%1.e,%d,%d\n", 
-                            qid.c_str(), qHeader.substr(1,1000).c_str(), seqId.c_str(), 
+                            qid.c_str(), qHeader.substr(1,MAXSTR).c_str(), seqId.c_str(), 
                             alignLen, qStart, qEnd, 
                             eValue, genericScore, bitScore);
+                        
                         sprintf(blastRes, "%s,%s,%d,%d,%d,%1.e,%d,%d", 
-                            qHeader.substr(1,1000).c_str(), seqId.c_str(), 
+                            qHeader.substr(1,MAXSTR).c_str(), seqId.c_str(), 
                             alignLen, qStart, qEnd, 
                             eValue, genericScore, bitScore);
                         
@@ -638,7 +646,8 @@ void run_blast(int itask, char *file, KeyValue *kv, void *ptr)
 
 /* ---------------------------------------------------------------------- */
 bool check_exclusion(string qGi, string sGi, int qCutLocStart, 
-    unsigned int qCutLocEnd, unsigned int sStart, unsigned int sEnd, unsigned int threshold)
+    size_t qCutLocEnd, size_t sStart, size_t sEnd, 
+    size_t threshold)
 /* ---------------------------------------------------------------------- */
 {   
     ///
@@ -698,26 +707,26 @@ void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
     return;
 }
 
-/* ---------------------------------------------------------------------- */
-int key_compare(char *p1, int len1, char *p2, int len2)
-/* ---------------------------------------------------------------------- */
-{
-    //int i1 = *(int *) p1;
-    //int i2 = *(int *) p2;
-    return strcmp(p1, p2);
-    //if (i1 > i2) return -1;
-    //else if (i1 < i2) return 1;
-    //else return 0;
-}
+///* ---------------------------------------------------------------------- */
+//int key_compare_str(char *p1, int len1, char *p2, int len2)
+///* ---------------------------------------------------------------------- */
+//{
+    ////int i1 = *(int *) p1;
+    ////int i2 = *(int *) p2;
+    //return strcmp(p1, p2);
+    ////if (i1 > i2) return -1;
+    ////else if (i1 < i2) return 1;
+    ////else return 0;
+//}
 
 /* ---------------------------------------------------------------------- */
-int key_compare2(char *p1, int len1, char *p2, int len2)
+int key_compare_int(char *p1, int len1, char *p2, int len2)
 /* ---------------------------------------------------------------------- */
 {
     //int i1 = *(int *) p1;
     //int i2 = *(int *) p2;
-    unsigned int i1 = str2uint(string(p1));
-    unsigned int i2 = str2uint(string(p2));
+    size_t i1 = str2uint(string(p1));
+    size_t i2 = str2uint(string(p2));
     /// Ascending order
     if (i1 > i2) return 1;
     else if (i1 < i2) return -1;
@@ -732,7 +741,7 @@ int key_compare2(char *p1, int len1, char *p2, int len2)
 ///* ---------------------------------------------------------------------- */
 //{
     //procName *nn = (procName *) ptr;
-    //char id[MAX_STR];
+    //char id[MAXSTR];
     //sprintf(id, "%d", nn->myId);
     //kv->add(nn->pName, strlen(nn->pName) + 1, id, strlen(id) + 1);
 //}
@@ -754,7 +763,7 @@ int key_compare2(char *p1, int len1, char *p2, int len2)
     ////multimap<string, unsigned int> *nNames = (multimap<string, unsigned int> *) ptr;
     //vector<string>* vecNames = (vector<string> *) ptr;
     //string pName(key);
-    ////unsigned int myid = atoi(value);
+    ////size_t myid = atoi(value);
     ////nNames->insert(pair<string, unsigned int>(pName, myid));
     //vector<string>::const_iterator loc = find(vecNames->begin(), vecNames->end(), pName);
     //if (loc == vecNames->end())
