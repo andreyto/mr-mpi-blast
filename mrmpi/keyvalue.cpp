@@ -21,7 +21,14 @@
 #include "memory.h"
 #include "error.h"
 
+/// For split
+#include <vector>
+#include <sstream>
+
 using namespace MAPREDUCE_NS;
+
+/// For split
+using namespace std;
 
 #define MIN(A,B) ((A) < (B)) ? (A) : (B)
 #define MAX(A,B) ((A) > (B)) ? (A) : (B)
@@ -796,5 +803,99 @@ void KeyValue::print2file(int nstride, int kflag, int vflag, FILE *fp)
     }
   }
 }
+
+
+/// TOKENIZER ROUTINES
+vector<string> &split2(const string &s, char delim, vector<string> &vecElems)
+{
+    stringstream ss(s);
+    string item;
+    while (getline(ss, item, delim)) {
+        vecElems.push_back(item);
+    }
+    return vecElems;
+}
+
+vector<string> split2(const string &s, char delim)
+{
+    vector<string> vecElems;
+    return split2(s, delim, vecElems);
+}
+
+
+void KeyValue::print2file2(int nstride, int kflag, int vflag, FILE *fp)
+{
+  int keybytes,valuebytes;
+  uint64_t dummy1,dummy2,dummy3;
+  char *ptr,*key,*value,*ptr_start;
+
+  int istride = 0;
+
+  for (int ipage = 0; ipage < npage; ipage++) {
+    nkey = request_page(ipage,dummy1,dummy2,dummy3);
+    ptr = page;
+    for (int i = 0; i < nkey; i++) {
+      ptr_start = ptr;
+      keybytes = *((int *) ptr);
+      valuebytes = *((int *) (ptr+sizeof(int)));;
+
+      ptr += twolenbytes;
+      ptr = ROUNDUP(ptr,kalignm1);
+      key = ptr;
+      ptr += keybytes;
+      ptr = ROUNDUP(ptr,valignm1);
+      value = ptr;
+      ptr += valuebytes;
+      ptr = ROUNDUP(ptr,talignm1);
+
+      istride++;
+      if (istride != nstride) continue;
+      istride = 0;
+
+      //fprintf(fp, "KV pair: proc %d, sizes %d %d",me,keybytes,valuebytes);
+
+      //fprintf(fp, ", key ");
+      if (kflag == 0) fprintf(fp, "NULL");
+      else if (kflag == 1) fprintf(fp, "%d",*(int *) key);
+      else if (kflag == 2) fprintf(fp, "%lu",*(uint64_t *) key);
+      else if (kflag == 3) fprintf(fp, "%g",*(float *) key);
+      else if (kflag == 4) fprintf(fp, "%g",*(double *) key);
+      else if (kflag == 5) fprintf(fp, "%s",key);
+      else if (kflag == 6) fprintf(fp, "%d %d",
+                  *(int *) key,
+                  *(int *) (key+sizeof(int)));
+      else if (kflag == 7) fprintf(fp, "%lu %lu",
+                  *(uint64_t *) key,
+                  *(uint64_t *) (key+sizeof(uint64_t)));
+
+      //fprintf(fp, ", value ");
+      fprintf(fp, ",");
+      if (vflag == 0) fprintf(fp, "NULL");
+      else if (vflag == 1) fprintf(fp, "%d",*(int *) value);
+      else if (vflag == 2) fprintf(fp, "%lu",*(uint64_t *) value);
+      else if (vflag == 3) fprintf(fp, "%g",*(float *) value);
+      else if (vflag == 4) fprintf(fp, "%g",*(double *) value);
+      
+      else if (vflag == 5) {          
+        vector<string> vResults = split2(string(value), '>'); 
+        for (uint64_t i = 1; i < vResults.size(); ++i) {
+            fprintf(fp, "%s", (char*)vResults[i].c_str());
+            if (i < vResults.size() - 1) fprintf(fp, "\n%s,",key);
+        }          
+          //fprintf(fp, "%s",value);
+      }
+      
+      else if (vflag == 6) fprintf(fp, "%d %d",
+                  *(int *) value,
+                  *(int *) (value+sizeof(int)));
+      else if (vflag == 7) fprintf(fp, "%lu %lu",
+                  *(uint64_t *) value,
+                  *(uint64_t *) (value+sizeof(uint64_t)));
+
+      fprintf(fp, "\n");
+    }
+  }
+}
+
 
 /// EOF
