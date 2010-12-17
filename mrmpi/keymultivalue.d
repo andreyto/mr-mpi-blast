@@ -145,4 +145,9 @@ keymultivalue.o: keymultivalue.cpp \
   /home/ssul/work/packages2/include/openmpi/ompi/mpi/cxx/info_inln.h \
   /home/ssul/work/packages2/include/openmpi/ompi/mpi/cxx/win_inln.h \
   /home/ssul/work/packages2/include/openmpi/ompi/mpi/cxx/file_inln.h \
-  keymultivalue.h mapreduce.h keyvalue.h spool.h hash.h memory.h error.h
+  keymultivalue.h mapreduce.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/vector \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stl_vector.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stl_bvector.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/vector.tcc \
+  keyvalue.h spool.h hash.h memory.h error.h

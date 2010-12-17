@@ -96,6 +96,8 @@ public:
     /// ssj
     uint64_t map(std::vector<std::string> workItems, void (*)(int, char *, class KeyValue *, void *),
                  void *, int addflag = 0);
+    //uint64_t map(std::queue<std::string> workItems, void (*)(int, char *, class KeyValue *, void *),
+                 //void *, int addflag = 0);                 
     ///
     
     void open(int addflag = 0);

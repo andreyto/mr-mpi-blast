@@ -47,10 +47,6 @@
 //
 //      10.27.2010  Custom scheduler done!
 //
-//      11.18.2010  Check if the KMV pair does not fit in one page of memory,
-//                  = check if the char *multivalue argument != NULL
-//                  and the nvalues argument != 0. 
-//                  If there is KMV overflow, use multivalue_blocks().
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -95,8 +91,8 @@
 
 /// MPI AND MR-MPI
 #include "mpi.h"
-#include "mrmpi/mapreduce.h"
-#include "mrmpi/keyvalue.h"
+#include "./mrmpi/mapreduce.h"
+#include "./mrmpi/keyvalue.h"
 
 using namespace MAPREDUCE_NS;
 using namespace std;
@@ -126,7 +122,6 @@ using namespace std;
 
 /// ASN & split
 #include <sstream>
-#include <string.h>
 
 /// blastn importing
 //#include <algo/blast/blastinput/blastn_args.hpp>
@@ -173,26 +168,58 @@ const uint64_t MAXQUERYNUM = 10000;  /// num query to accumulate from qeury file
 const uint64_t QUERY = 0;
 const uint64_t SUBJECT = 1;
 const uint64_t EXCLUSION = 100; /// Exclusion threshold = 100bp
+
 const uint64_t CUTOFFSCORE = 100;
 const float EVALUE = 1.0;
+
 const int NUMTOTALDBCHUNKS = 109;
 
 /// TO COLLECT PROC NAMES ON WHICH EACH TASK IS ASIGNED
 struct procName {
-    int   myId;
+    int myId;
     char* pName;
 };
 
-/// Misc.
-unsigned int MYID;
-char* PNAME;
+/// FOR COMMUNICATING WITH MR-MPI
+struct giftBox {
+    int myId;
+    char* pName;
+    //int numProc;    
+    //char* outFileName;
+    //string workItemProcessed;
+    //vector<string> *dbName;
+    //multimap<string, int>  *mDbCoreNum;
+    //vector<string> *vDbChunkNames;
+    //queue<string> *qWorkItems;
+};
 
 /// MR-MPI CALLS
+//void    get_node_name(int, KeyValue *, void *);
+//void    collect_node_names(char *key, int keybytes, char *multivalue, 
+                             //int nvalues, int *valuebytes, KeyValue *kv, 
+                             //void *ptr);
+//void    save_node_names(uint64_t itask, char *key, int keybytes, char *value, 
+                          //int valuebytes, KeyValue *kv, void *ptr);
+
 void    set_default_opts(CRef<CBlastOptionsHandle> optsHandle);
-void    mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr);
-bool    check_exclusion(string qGi, string sGi, int qCutLocStart, uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd, uint64_t threshold);
-void    mr_remove_DBname_from_key(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
-void    mr_sort_multivalues_by_score(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);                      
+//void    run_blast(int itask, char *file, KeyValue *kv, void *ptr);
+void    run_blast2(int itask, char *file, KeyValue *kv, void *ptr);
+//int     key_compare_str(char *p1, int len1, char *p2, int len2);
+//int     key_compare_str2(char *p1, int len1, char *p2, int len2);
+//int     key_compare_int(char *p1, int len1, char *p2, int len2);
+bool    check_exclusion(string qGi, string sGi, int qCutLocStart, 
+                        uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd, 
+                        uint64_t threshold);
+
+void    remove_DBname_from_key(char *key, int keybytes, char *multivalue, int nvalues, 
+                        int *valuebytes, KeyValue *kv, void *ptr);
+//void    sort_multivalues_by_score(char *key, int keybytes, char *multivalue, int nvalues, 
+                        //int *valuebytes, KeyValue *kv, void *ptr);
+void    sort_multivalues_by_score2(char *key, int keybytes, char *multivalue, int nvalues, 
+                        int *valuebytes, KeyValue *kv, void *ptr);                      
+//void    save_output(uint64_t itask, char *key, int keybytes, char *value,
+                        //int valuebytes, KeyValue *kv, void *ptr);
+
 //void    AtExit(void);
         
 /// TOKENIZER ROUTINES
@@ -200,6 +227,7 @@ vector<string>  &split(const string &s, char delim, vector<string> &vecElems);
 vector<string>  split(const string &s, char delim);
 
 /// NOTE: NCBI PROVIDES THESE UTILS
+//string        int2str(int number);
 string          uint2str(uint64_t number);
 uint64_t        str2uint(string str);
 int             str2int(string str);
@@ -228,8 +256,7 @@ int main(int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
     MPI_Get_processor_name(MPI_procName, &MPI_length);
     fprintf(stdout, "### INFO: [Rank %d] %s \n", MPI_myId, MPI_procName);
-    
-    MPI_Barrier(MPI_COMM_WORLD);  
+    MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
    
 //try{
     ///
@@ -246,32 +273,129 @@ int main(int argc, char **argv)
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
+    /*
+    ///MR-MPI for node name collecting
+    MapReduce *mr = new MapReduce(MPI_COMM_WORLD);
+    mr->verbosity = 0;
+    mr->timer = 1;
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    //double tstart = MPI_Wtime();
+
+    ///
+    /// GET MPI PROC NAMES
+    /// TO ASSIGN A DB CHUNK WITH A NODE SO THAT THE TASKS ON THE NODE
+    /// SEARCHES QUERIES ON THE DB CHUNK
+    ///
+    procName nn;
+    nn.myId = MPI_myId;
+    nn.pName = MPI_procName;
+    int sizeKV = mr->map(MPI_nProcs, &get_node_name, &nn);
+    //mr->print(-1, 1, 5, 5);
+
+    /// DEBUG
+    //mr->collate(NULL);
+    //mr->print(-1, 1, 5, 5);
+    //int numUniqKV = mr->reduce(&collect_node_names, (void *)NULL);
+    //mr->print(-1, 1, 5, 5);
+
+    MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
+
+    mr->gather(1); /// KVs FROM TASKs -> A KV IN THE ROOT NODE
+    mr->print(-1, 1, 5, 5);
+
+    mr->broadcast(0);
+    //mr->print(-1, 1, 5, 5);
+
+    //multimap<string, uint64_t> mmapProcNames;
+    vector<string> vecProcName;
+    mr->map(mr, &save_node_names, &vecProcName);
+    //cout << vecProcName.size() << endl;
+
+    MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
+
+    /// DEBUG
+    //if (MPI_myId == 0) {
+    ////pair<multimap<string, uint64_t>::iterator, multimap<string, uint64_t>::iterator> ppp;
+    ////ppp = mmapProcNames.equal_range("ssul-lx");
+    ////for (multimap<string, uint64_t>::iterator it2 = ppp.first; it2 != ppp.second; ++it2) {
+    ////cout << "  [" << (*it2).first << ", " << (*it2).second << "]" << endl;
+    ////}
+    //for (uint64_t i = 0; i < vecProcName.size(); ++i)
+    //cout << "### Node " << MPI_myId << " name = " << vecProcName[i] << endl;
+    //}
+
+    delete mr;
+    */
+
+    /*
+    ///
+    /// Blast search v1.
+    ///
+    MapReduce *mr2 = new MapReduce(MPI_COMM_WORLD);
+    mr2->verbosity = 0;
+    mr2->timer = 1;
+    mr2->mapstyle = 2;  /// master/slave mode, NOTE: the master does not run map().
+
+    int nvecRes;
+    char *masterFileName = argv[1];
+
+    giftBox gf;
+    gf.myId = MPI_myId;
+    gf.pName = MPI_procName;
+    gf.dbChunkName = argv[2];
+    //gf.numProc = MPI_nProcs;
+    //gf.mmapPName = &mmapProcNames;
+    //gf.vPName = &vecProcName;
+    //gf.cbDemo = &demo;
+    gf.test = 0;
+
+    nvecRes = mr2->map(masterFileName, &run_blast, &gf);
+    cout << "### [Rank " << MPI_myId << "] nvecRes = " << nvecRes << endl;
+    cout << "gf.test = " << gf.test << endl;
+    //mr2->print(-1, 1, 5, 5);
+
+    //mr2->collate(NULL); //////////////////////////////////////////////
+    //mr2->print(-1, 1, 5, 5);
+
+    //nvecRes = mr2->map(mr2, &output, &gf);
+
+    MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
+
+    mr2->gather(1);
+    //mr2->print(0, 1, 5, 5);
+
+    mr2->sort_keys(&key_compare_int);
+    mr2->print(0, 1, 5, 5);
+
+    if (MPI_myId == 0) {
+        cout << "Saving...\n";
+        string outFileName = string(argv[3]) + ".txt";
+        cout << "outFileName = " << outFileName << endl;
+        FILE *outFile = fopen(outFileName.c_str(), "w");
+        if (outFile) {
+            mr2->kv->print2file(1, 5, 5, outFile);
+        }
+        cout << "DONE!\n";
+    }
+
+    delete mr2;
+    */
+
     /// 
     /// Blast search v2
     ///
     MapReduce *mr2 = new MapReduce(MPI_COMM_WORLD);
-    /*
-    * mapstyle = 0 (chunk) or 1 (stride) or 2 (master/slave)
-    * all2all = 0 (irregular communication) or 1 (use MPI_Alltoallv)
-    * verbosity = 0 (none) or 1 (summary) or 2 (histogrammed)
-    * timer = 0 (none) or 1 (summary) or 2 (histogrammed)
-    * memsize = N = number of Mbytes per page of memory
-    * minpage = N = # of pages to pre-allocate per processor
-    * maxpage = N = max # of pages allocatable per processor, 0 = no limit
-    * keyalign = N = byte-alignment of keys
-    * valuealign = N = byte-alignment of values
-    * fpath = string 
-    */
     mr2->verbosity = 0;
     mr2->timer = 0;
     mr2->mapstyle = atoi(argv[4]);  /// master/slave mode.
-    
     MPI_Barrier(MPI_COMM_WORLD);
 
     uint64_t nvecRes;
     const char *masterFileName = argv[1];
-    MYID = MPI_myId;
-    PNAME = MPI_procName;
+    giftBox gf;
+    gf.myId = MPI_myId;
+    gf.pName = MPI_procName;
     string prefix(argv[2]);
 
     ///
@@ -297,28 +421,24 @@ int main(int argc, char **argv)
             cerr << "### ERROR: dbchunks.txt open error.\n";
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        
         string line;
         //vector<string> vDbChunkNames;
         while (!getline(dbChunkNameFile, line).eof()) {
             vDbChunkNames.push_back(line);
         }
-        
         dbChunkNameFile.close();        
-        numDbChunks = v:wNames.size();
+        numDbChunks = vDbChunkNames.size();
         
         ifstream masterFile(masterFileName);
         if (!masterFile.is_open()) {
             cerr << "### ERROR: masterFile open error.\n";
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        
         //vector<string> vQueryFileNames;
         while (!getline(masterFile, line).eof()) {
             vQueryFileNames.push_back(line);
-        }        
+        }
         masterFile.close();
-        
         numQueryFiles = vQueryFileNames.size();
         for (uint64_t i = 0; i < numQueryFiles; ++i) {
             for (uint64_t j = 0; j < numDbChunks; ++j) { 
@@ -330,21 +450,70 @@ int main(int argc, char **argv)
              << vWorkItems.size() << endl;
         vQueryFileNames.clear();
         vDbChunkNames.clear();
+        //gf.vDbChunkNames = &vDbChunkNames;
+        //gf.qWorkItems = &qWorkItems;
+        
+        /*
+        ///
+        /// Prepare a mutimap for mapstyle=3 in mapreduce.cpp
+        ///
+        int numNodes = MPI_nProcs / 4;
+        int numDBPerNode = int(ceil(NUMTOTALDBCHUNKS / numNodes));
+        int numNodeRemain = MPI_nProcs - NUMTOTALDBCHUNKS;
+        multimap<string, int> mDbCoreNum;
+        int nodeIdx = 0;
+        int cnt = 0;
+        for (uint64_t i = 0; i < vDbChunkNames.size(); ++i) {
+            //mDbCoreNum[vDbChunkNames[i]] = nodeIdx;
+            mDbCoreNum.insert(pair <string, int> (vDbChunkNames[i], nodeIdx)); 
+            if (cnt == numDBPerNode - 1) {
+                nodeIdx++;
+                cnt = 0;
+            }
+            else cnt++;
+        }
+        
+        /// 
+        /// if nproc > number of DB chunks, just assign from the start.
+        /// This causes same DB assigned on multiple nodes.
+        /// This causes same DB assigned on multiple nodes.
+        ///
+        nodeIdx = 0;
+        cnt = 0;
+        for (int i = 0; i < numNodeRemain; ++i) {
+            //mDbCoreNum[vDbChunkNames[i]] = nodeIdx;
+            mDbCoreNum.insert(pair <string, int> (vDbChunkNames[i], nodeIdx)); 
+            if (cnt == numDBPerNode - 1) {
+                nodeIdx++;
+                cnt = 0;
+            }
+            else cnt++;
+        }
+        
+        /// DEBUG
+        cout << "mDbCoreNum.size() = " << (int) mDbCoreNum.size() << endl;
+        for (std::map<std::string, int>::iterator im = mDbCoreNum.begin(); im != mDbCoreNum.end(); ++im) {
+            std::cout << "mDbCoreNum = " << im->first << " " << im->second << std::endl;
+        }
+        ///
+        
+        gf.mDbCoreNum = &mDbCoreNum;
+        vDbChunkNames.clear();
+        */
     }
-    
     MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
-    
     ///
     /// Now vWorkItems has all the work items in the form of 
     /// (query_file_name,DB_chunk_name)
     ///
+    
     uint64_t numFilesToCreate = 0;
     uint64_t numWorkItemsForEach = 0;
-    
     if (atoi(argv[3]) > 0) {
         if (MPI_myId == 0) {
             ///
-            /// Divide the whole work items into several work item lists.
+            /// Divide the whole work items into several work item lists (stored
+            /// in .
             /// Each iteration consists of calling blast and saving output
             /// into an output file.
             ///
@@ -369,7 +538,6 @@ int main(int argc, char **argv)
             
             uint64_t k = 0;
             uint64_t i = 0;
-            
             for (; i < numFilesToCreate; ++i) {
                 string newFileName = prefix + "-workitems-" + uint2str(i) + ".txt";
                 ofstream workItemFile(newFileName.c_str());
@@ -386,7 +554,6 @@ int main(int argc, char **argv)
                     MPI_Abort(MPI_COMM_WORLD, 1);
                 }
             }
-            
             if (numRemains) {
                 string newFileName = prefix + "-workitems-" + uint2str(i) + ".txt";
                 ofstream workItemFile(newFileName.c_str());
@@ -406,8 +573,8 @@ int main(int argc, char **argv)
             }
             cout << "### INFO: num work item files = " << numFilesToCreate << endl;
         }
-        
-        MPI_Barrier(MPI_COMM_WORLD); 
+        MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////
+
 
         ///
         /// Iteratively call blast and save results for numFilesToCreate
@@ -438,7 +605,7 @@ int main(int argc, char **argv)
             
             /// DEBUG
             //char *temp = "workitems0.txt";
-            //nvecRes = mr2->map(temp, &mr_run_blast, &gf);
+            //nvecRes = mr2->map(temp, &run_blast2, &gf);
             ///
 
             /// ////////////////////////////////////////////////////////
@@ -446,10 +613,8 @@ int main(int argc, char **argv)
             c2 = clock();
             t2 = time(NULL);
             #endif
-            
-            //nvecRes = mr2->map((char*)newWorkItemFileName.c_str(), &mr_run_blast, &gf);
-            nvecRes = mr2->map((char*)newWorkItemFileName.c_str(), &mr_run_blast, NULL);
-            
+            nvecRes = mr2->map((char*)newWorkItemFileName.c_str(), &run_blast2, &gf);
+            //nvecRes = mr2->map(vSubWorkitems, &run_blast2, &gf);
             #ifdef DEBUG
             c3 = clock();
             t3 = time(NULL);
@@ -461,14 +626,25 @@ int main(int argc, char **argv)
                 cout << "### INFO: [Rank " << MPI_myId << "] Num res from map() = "
                      << nvecRes << endl;
             }
-                        
+            
+            ///
+            /// Old version
+            ///
+            //mr2->collate(NULL);
+            //uint64_t nunique = mr2->reduce(&remove_DBname_from_key, NULL);
+            //MPI_Barrier(MPI_COMM_WORLD);
+            //mr2->gather(1);
+            ////mr2->sort_keys(&key_compare_int); /// Really need this?
+            //mr2->convert();
+            //nunique = mr2->reduce(&sort_multivalues_by_score, NULL);
+            
             /// 
             /// New version with sorting done in workers
             /// 
             mr2->collate(NULL);
-            uint64_t nunique = mr2->reduce(&mr_remove_DBname_from_key, NULL);
+            uint64_t nunique = mr2->reduce(&remove_DBname_from_key, NULL);
             mr2->collate(NULL);
-            nunique = mr2->reduce(&mr_sort_multivalues_by_score, NULL);
+            nunique = mr2->reduce(&sort_multivalues_by_score2, NULL);
             
             ///
             /// 10.20.2010
@@ -492,6 +668,7 @@ int main(int argc, char **argv)
             /// Save history
             ///
             if (MPI_myId == 0) {                
+                //char *histFileName = "history.txt";
                 string histFileName = prefix + "-history.txt";
                 FILE *histFile = fopen(histFileName.c_str(), "a");
                 time_t timer;
@@ -501,6 +678,37 @@ int main(int argc, char **argv)
             }
                 
             MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////            
+            
+            /*
+            mr2->gather(1);
+            /// ////////////////////////////////////////////////////////
+            
+            if (MPI_myId == 0) {
+                //cout << "### INFO: Saving output...\n";
+                string outFileName = prefix  + "-" + uint2str(n) + ".txt";
+                //cout << "### INFO: outFileName = " << outFileName << endl;
+                FILE *outFile = NULL;
+                //if (n == 0) outFile = fopen(outFileName.c_str(), "w");
+                //else outFile = fopen(outFileName.c_str(), "a");
+                outFile = fopen(outFileName.c_str(), "w");
+                if (outFile) mr2->kv->print2file2(1, 5, 5, outFile);
+                else { 
+                    cerr << "### ERROR: outFile open error.\n";
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                }
+                cout << "### INFO: File saved! => " << outFileName << endl;  
+                
+                /// save history
+                //char *histFileName = "history.txt";
+                string histFileName = prefix + "-history.txt";
+                FILE *histFile = fopen(histFileName.c_str(), "a");
+                time_t timer;
+                timer = time(NULL);
+                fprintf(histFile, "%s,%s\n", newWorkItemFileName.c_str(), asctime(localtime(&timer)));
+                fclose(histFile);
+            }
+            MPI_Barrier(MPI_COMM_WORLD);
+            */
         }
     }
     else { /// Process whole work items
@@ -525,7 +733,7 @@ int main(int argc, char **argv)
 
         /// DEBUG
         //char* workItemFileName2 = "test_workitems.txt";
-        //nvecRes = mr2->map(workItemFileName2, &mr_run_blast, &gf);
+        //nvecRes = mr2->map(workItemFileName2, &run_blast2, &gf);
         ///
 
         ///
@@ -558,11 +766,10 @@ int main(int argc, char **argv)
         c2 = clock();
         t2 = time(NULL);
         #endif
-        ///// Process work items in the file, workitems.txt
-        //nvecRes = mr2->map(workItemFileName, &mr_run_blast, &gf);
-        /// Process work items in vWorkItems vector
-        //nvecRes = mr2->map(vWorkItems, &mr_run_blast, &gf);
-        nvecRes = mr2->map(vWorkItems, &mr_run_blast, NULL);
+        /// Process work items in the file, workitems.txt
+        //nvecRes = mr2->map(workItemFileName, &run_blast2, &gf);
+        /// Process work items in vWorkItems
+        nvecRes = mr2->map(vWorkItems, &run_blast2, &gf);
         #ifdef DEBUG
         c3 = clock();
         t3 = time(NULL);
@@ -582,15 +789,15 @@ int main(int argc, char **argv)
         //mr2->print(-1, 1, 5, 5);
 
         /// 3.
-        uint64_t nunique = mr2->reduce(&mr_remove_DBname_from_key, NULL);
+        uint64_t nunique = mr2->reduce(&remove_DBname_from_key, NULL);
         //mr2->print(-1, 1, 5, 5);
 
         /// 3-1.
         mr2->collate(NULL); 
         //mr2->print(-1, 1, 5, 5);
         
-        //nunique = mr2->reduce(&mr_remove_DBname_from_key, NULL);
-        nunique = mr2->reduce(&mr_sort_multivalues_by_score, NULL);
+        //nunique = mr2->reduce(&remove_DBname_from_key, NULL);
+        nunique = mr2->reduce(&sort_multivalues_by_score2, NULL);
         //mr2->print(-1, 1, 5, 5);
         
         ///
@@ -603,8 +810,7 @@ int main(int argc, char **argv)
             string workerOutputFileName = prefix + "-" + uint2str(MPI_myId) + ".txt";
             //cout << "### INFO: outFileName = " << outFileName << endl;
             FILE *outFile = fopen(workerOutputFileName.c_str(), "w");
-            if (outFile) 
-                mr2->kv->print2file2(1, 5, 5, outFile);
+            if (outFile) mr2->kv->print2file2(1, 5, 5, outFile);
             else {
                 cerr << "### ERROR: outFile open error.\n";
                 MPI_Abort(MPI_COMM_WORLD, 1);
@@ -614,6 +820,49 @@ int main(int argc, char **argv)
         //}
         
         MPI_Barrier(MPI_COMM_WORLD); ///////////////////////////////////////////
+        /*
+        /// 4.
+        mr2->gather(1);
+        //mr2->print(0, 1, 5, 5);
+
+        /// 5. 
+        /// Note: if you want to keep the original query order.
+        //mr2->sort_keys(&key_compare_int); /// Really need this?
+        //mr2->print(0, 1, 5, 5);
+
+        /// 6.
+        //mr2->convert();
+        //mr2->print(0, 1, 5, 5);
+
+        /// 7.
+        /// Note: sort_multivalues() cannot be used in this implementation
+        /// because KMV could have a form
+        /// of {"str str", str} for Blast result strings.
+        ///
+        //nunique = mr2->reduce(&sort_multivalues_by_score, NULL);  
+        //mr2->print(0, 1, 5, 5);
+
+        /// 8. save output
+        if (MPI_myId == 0) {
+            //cout << "Saving...\n";
+            string outFileName = string(argv[2]) + ".txt";
+            //cout << "### INFO: outFileName = " << outFileName << endl;
+            FILE *outFile = fopen(outFileName.c_str(), "w");
+            if (outFile) mr2->kv->print2file2(1, 5, 5, outFile);
+            else {
+                cerr << "### ERROR: outFile open error.\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            fclose(outFile);
+            cout << "### INFO: File saved! => " << outFileName << endl;  
+        }
+        //string outFileName = string(argv[2]) + ".txt";
+        //cout << "### INFO: outFileName = " << outFileName << endl;
+        ////FILE *outFile = fopen(outFileName.c_str(), "w");
+        //gf.outFileName = (char*)outFileName.c_str();
+        //mr2->map(mr2, &save_output, &gf);   
+        //cout << "### INFO: File saved!\n";   
+        */
     }
     delete mr2;
     
@@ -651,8 +900,7 @@ int main(int argc, char **argv)
  * @param kv
  * @param ptr
  */
- 
-void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
+void run_blast2(int itask, char *file, KeyValue *kv, void *ptr)
 {
     #ifdef DEBUG
     time_t t0, t1, t2, t3, accBlastCallTime=0;
@@ -660,7 +908,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     t0 = time(NULL);
     #endif 
     
-    //giftBox *gf = (giftBox *) ptr;
+    giftBox *gf = (giftBox *) ptr;
     
     /// 
     /// Make a option handle and cblastinputsource
@@ -671,8 +919,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     opts->Validate();
 
     /// DEBUG
-    //if (gf->myId == 0)
-    if (MYID == 0)
+    if (gf->myId == 0)
         opts->GetOptions().DebugDumpText(cerr, "opts", 1);
     ///
 
@@ -694,12 +941,14 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     /// Split work item => query file + db chunk name
     ///
     string workItem(file);
+    //gf->workItemProcessed = workItem;
     vector<string> vWorkItem = split(workItem, ',');
     ifstream queryFile(vWorkItem[0].c_str());
     if (!queryFile.is_open()) {
         cerr << "### ERROR: queryFile open error.\n";
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
+    //char *key_tokens = strtok(key, ',');
 
     ///
     /// Use query string instead of file input
@@ -732,14 +981,14 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
 
         if (header.length() == 0 || seq.length() == 0) {
             fprintf(stderr, "### ERROR: [Rank %d]: %s, itask = %d, file = %s, \
-                    Seq read error.\n", MYID, PNAME, itask, file);
+                    Seq read error.\n", gf->myId, gf->pName, itask, file);
             MPI_Abort(MPI_COMM_WORLD, 1);       
             exit(0);
         }
         //fprintf(stdout, "### INFO: [Rank %d]: %s, itask = %d, %s\n",
         //gf->myId, gf->pName, itask, header.c_str());
         
-        /// NOTE: This should be improved!
+        /// NOTE: This should be removed!
         string query = header + '\n' + seq;
         vHeaders.push_back(header);
         ///
@@ -803,8 +1052,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
         //cout << "results.GetNumResults() = " << results.GetNumResults() << endl;
         fprintf(stdout, "### INFO: [Rank %d]: %s, itask = %d, work item = %s, \
                 Num query = %d, Num Res = %d\n",
-                //gf->myId, gf->pName, itask, file, results.GetNumQueries(),
-                MYID, PNAME, itask, file, results.GetNumQueries(),
+                gf->myId, gf->pName, itask, file, results.GetNumQueries(),
                 results.GetNumResults());
         //cout << "results.GetNumQueries() = " << results.GetNumQueries() << endl;
 
@@ -856,6 +1104,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
                     s.GetNamedScore(CSeq_align::eScore_EValue, eValue);
                     s.GetNamedScore(CSeq_align::eScore_Score, genericScore);
                     s.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
+
                     
                     ///
                     /// TOKENIZE QUERY HEADER
@@ -946,7 +1195,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     t1 = time(NULL);
     /// FORMAT: rank,total_runblast2,blaster.Run,DBLoadingTime
     printf ("### TIME (in runblast2): rank,total_runblast2,blaster.Run,DBLoadingTime,%d,%ld,%ld,%ld\n", 
-            MYID, (long)(t1 - t0), (long)accBlastCallTime, (long)accDBLoadingTime);
+            gf->myId, (long)(t1 - t0), (long)accBlastCallTime, (long)accDBLoadingTime);
     #endif
 }
 
@@ -989,7 +1238,7 @@ bool mysort(string str1, string str2)
 /** Sort by bit score - Passed to MR-MPI reduce() for sorting KMVs by bit score.
  * @param key
  * @param keybytes
- * @param multivalue - collected blast result strings. There could be more than
+ * @param multivalue: collected blast result strings. There could be more than
  * nvalues results in it. The separator '>' should be used for splitting the 
  * resutls.
  * @param nvalues
@@ -997,13 +1246,9 @@ bool mysort(string str1, string str2)
  * @param kv
  * @param ptr
  */
- 
-void mr_sort_multivalues_by_score(char *key, int keybytes, char *multivalue,
+void sort_multivalues_by_score2(char *key, int keybytes, char *multivalue,
                    int nvalues, int *valuebytes, KeyValue *kv, void *ptr)
 {
-    /// Check if there is KMV overflow
-    assert(multivalue != NULL && nvalues != 0);
-    
     /// 
     /// Note: Even if nvalues == 1, multivalue could have multiple
     /// blast results.
@@ -1111,12 +1356,9 @@ void sort_multivalues_by_score(char *key, int keybytes, char *multivalue,
  * @param kv
  * @param ptr
  */
-void mr_remove_DBname_from_key(char *key, int keybytes, char *multivalue,
+void remove_DBname_from_key(char *key, int keybytes, char *multivalue,
                      int nvalues, int *valuebytes, KeyValue *kv, void *ptr)
 {
-    /// Check if there is KMV overflow
-    assert(multivalue != NULL && nvalues != 0);
-    
     uint64_t sum = 0;
     uint64_t idx = 0;
     string newMultiValue;

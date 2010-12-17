@@ -156,4 +156,13 @@ mapreduce.o: mapreduce.cpp /home/ssul/work/packages2/include/mpi.h \
   /usr/include/bits/mathdef.h /usr/include/bits/mathcalls.h \
   /usr/include/bits/mathinline.h \
   /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/sstream \
-  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/sstream.tcc
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/sstream.tcc \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/queue \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/deque \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stl_deque.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/deque.tcc \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stl_queue.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/iterator \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stream_iterator.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/cassert \
+  /usr/include/assert.h

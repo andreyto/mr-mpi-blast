@@ -42,12 +42,12 @@ using namespace std;
 
 /// For core assign
 #include <algorithm>
-//struct giftBox {
-    //int myId;
-    //char* pName;
-    ////multimap<string, int> *mDbCoreNum;
-    //vector<string> *vDbChunkNames;
-//};
+struct giftBox {
+    int myId;
+    char* pName;
+    //multimap<string, int> *mDbCoreNum;
+    vector<string> *vDbChunkNames;
+};
 #include <queue>
 #include <iterator>
 //#include <sstream>
@@ -74,8 +74,7 @@ double MapReduce::commtime = 0.0;
 
 void map_file_standalone(int, KeyValue *, void *);
 int compare_standalone(const void *, const void *);
-int assign_proc_num(string, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
-                    
+
 #define MIN(A,B) ((A) < (B)) ? (A) : (B)
 #define MAX(A,B) ((A) > (B)) ? (A) : (B)
 
@@ -90,8 +89,8 @@ int assign_proc_num(string, multimap<string,int> &, vector< vector<bool> > &, ve
 #define INTMAX 0x7FFFFFFF
 
 /// Total number of DB chunks. 10/19/2010 currently it's 109.
-#define NUMTOTALDBCHUNKS 2
-#define NUMCOREPERNODE 4
+#define NUMTOTALDBCHUNKS 109
+#define NUMCOREPERNODE 16
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
@@ -1055,6 +1054,7 @@ vector<string> split3(const string &s, char delim)
 
 int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum, 
                     vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum) 
+                    //int &selProcNum)
 {
     vector<string> vTemp = split3(workItem, ',');
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
@@ -1066,16 +1066,18 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
     ii = mDbCoreNum.equal_range(vTemp[1]); 
     int selectedNodeNum = 0;
     
-    ///
     /// If two or more nodes are assigned to a db chunk name.
     /// randomly select one of them. 
-    ///
+    //vector<int> nodeNum;
     for(it = ii.first; it != ii.second; ++it) {
         nodeNum.push_back((int) it->second);
     }
     if (nodeNum.size() > 1)
         random_shuffle(nodeNum.begin(), nodeNum.end());
     selectedNodeNum = nodeNum[0];
+    //nodeNum.clear();
+    //selNodeNum = selectedNodeNum;
+    //cout << "SelectedNodeNum = " << selectedNodeNum << endl;    
                 
     ///
     /// Using the selected node num, decide proc num and
@@ -1093,7 +1095,7 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
         if (!vvTaskTable[selectedNodeNum][i]) {
             vvTaskTable[selectedNodeNum][i] = true;
             selectedProcNum = i;
-            bFound = true;
+	    bFound = true;
             break;
         }
     }          
@@ -1102,9 +1104,10 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
     /// Send job to the proc
     ///
     if (bFound)
-        return (selectedProcNum + selectedNodeNum * NUMCOREPERNODE);
+    	return (selectedProcNum + selectedNodeNum * NUMCOREPERNODE);
     else 
-        return -1;
+	return -1;
+    //selProcNum = selectedProcNum + selectedNodeNum * NUMCOREPERNODE;
 }
       
 /* 
@@ -1270,13 +1273,54 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             int doneflag = -1;
             int ndone = 0;
             int itask = 0;
-             
+            //int numNodes = nprocs / 4;
+            //int numDBPerNode = int(ceil(NUMTOTALDBCHUNKS / numNodes));
+            
+            ///
+            /// V1 passing multimap to gf
+            ///
+            /*
+            giftBox *gf = (giftBox *) appptr;
+            cout << "gf->mDbCoreNum->size() = " << (int) gf->mDbCoreNum->size() << endl;
+            pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
+            multimap<string, int>::iterator it; 
+            cout << "vWorkItems[itask] = " << vWorkItems[itask] << endl;
+            vector<string> vTemp = split3(vWorkItems[itask], ',');
+            cout << "vTemp = " << vTemp[0] << " " << vTemp[1] << endl;
+            ii = gf->mDbCoreNum->equal_range(vTemp[1]); 
+            for(it = ii.first; it != ii.second; ++it) {
+                cout<<"Key = "<<it->first<<" Value = "<<it->second<<endl;
+            }
+            */
+            
+            ///
+            /// V2
+            /// get vector<string> from gf and set multimap 
+            ///
+            //giftBox *gf = (giftBox *) appptr;
+            //cout << "gf->vDbChunkNames->size() = " << gf->vDbChunkNames->size() << endl;
+            //for (int i = 0; i < gf->vDbChunkNames->size(); ++i)
+                //cout << " gf->vDbChunkNames[] = " <<  gf->vDbChunkNames->at(i) << endl;
+                
+                
+            /// DEBUG
+            //for (int i = 0; i < vWorkItems.size(); ++i)
+                //cout << files[i] << endl;
+            ///
+            
             ///
             /// Prepare a mutimap for mapstyle=3 in mapreduce.cpp
             ///
             int numNodes = nprocs / NUMCOREPERNODE;
             int numDBPerNode = int(ceil(NUMTOTALDBCHUNKS / numNodes));
-           
+            //int numNodeRemain = nprocs - NUMTOTALDBCHUNKS;
+            cout << "nmap, numItem, #workitems, numNodes, numDBPerNode = " 
+                 << nmap << ","
+                 << numItem << ","
+                 << vWorkItems.size() << ","
+                 << numNodes << "," 
+                 << numDBPerNode << endl;
+            
             /// 
             /// Assgin each node with one or more DB chunks
             ///
@@ -1288,6 +1332,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
                     nodeIdx++;
                     if (nodeIdx == numNodes) nodeIdx = 0;
+                    //cout << "i, nodeIdx = " << i << " " << nodeIdx << endl;
                 }
             }
             else { /// ex) 109 < 128 nodes (=2048cores)
@@ -1303,7 +1348,14 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     nodeIdx++;
                 }          
             }            
-
+             
+            /// DEBUG
+            cout << "mDbCoreNum.size() = " << (int) mDbCoreNum.size() << endl;
+            for (std::map<std::string, int>::iterator im = mDbCoreNum.begin(); im != mDbCoreNum.end(); ++im) {
+                std::cout << "mDbCoreNum = " << im->first << " " << im->second << std::endl;
+            }
+            ///     
+            
             ///
             /// V3: Make a queue with task number
             /// Assing jobs to workders using the queue and files[itask]
@@ -1311,6 +1363,43 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             queue<int> qWorkItems;
             for (int i = 0; i < vWorkItems.size(); ++i)  
                 qWorkItems.push(i);
+ 
+            /*
+            vector<string> vTemp = split3(vWorkItems[itask], ',');
+            pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
+            multimap<string, int>::iterator it; 
+            ii = mDbCoreNum.equal_range(vTemp[1]); 
+            
+            /// DEBUG
+            for(it = ii.first; it != ii.second; ++it) {
+                cout << "Key = " << it->first << " Value = " << it->second << endl;
+            }
+            ///
+            
+            int selectedNodeNum = 0;
+            ///
+            /// If two or more nodes are assigned to a db chunk name.
+            /// randomly select one of them.
+            ///
+            if (ii.first != ii.second) {
+                vector<int> nodeNum;
+                for(it = ii.first; it != ii.second; ++it) {
+                    nodeNum.push_back((int) it->second);
+                }
+                random_shuffle(nodeNum.begin(), nodeNum.end());
+                selectedNodeNum = nodeNum[0];
+                nodeNum.clear();
+            }
+            else {
+                selectedNodeNum = (int) (ii.first)->second;
+            }
+            cout << "selectedNodeNum = " << selectedNodeNum << endl;
+            
+            int iprocStart = selectedNodeNum * NUMCOREPERNODE;
+            int iprocEnd = iprocStart + NUMCOREPERNODE - 1;
+            cout << "iprocStart,iprocEnd = " << iprocStart << "," << iprocEnd << endl;
+            */
+            
             
             ///
             /// Prepare a proc/node task assign table
@@ -1320,23 +1409,31 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                 vector<bool> vBoolTemp(NUMCOREPERNODE, false);
                 vvTaskTable.push_back(vBoolTemp);
             }
+            cout << "vvTaskTable.size() = " << vvTaskTable.size() << endl;
             
             ///
             /// Check work item queue and db chunk assign table
             /// 1. Get a work item, get db name, check node num to assign
             ///
             int numProcUsed = 1;
-            
             while(!qWorkItems.empty() && numProcUsed < nprocs) {
                 if (itask < nmap) {
-                    /// Get the front item from the queue
-                    int& taskNum = qWorkItems.front();
                     
-                    vector<int> vSelectedNodeNum;
-                    int selectedProcNum = 
-                        assign_proc_num(vWorkItems[taskNum], mDbCoreNum, vvTaskTable, vSelectedNodeNum);
-                
                     ///
+                    /// Get the front item from the queue
+                    ///
+                    int& taskNum = qWorkItems.front();
+                    cout << "The front item in the queue = " << taskNum << endl;
+                    
+                    //int selectedProcNum = 0;
+                    vector<int> vSelectedNodeNum;
+                    
+
+		    int selectedProcNum = assign_proc_num(vWorkItems[taskNum], mDbCoreNum, vvTaskTable, vSelectedNodeNum);
+                    //assert(selectedProcNum != -1);
+
+
+		    ///
                     /// This is the case when all procs in a node assigned with ]
                     /// a set of DB chunk name are used. Thus, put the work item 
                     /// back to the queue and get another one.
@@ -1347,13 +1444,22 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                         qWorkItems.push(taskNum);
                         continue;
                     }
+                     
+   
+                    cout << "itask, vSelectedNodeNum[0], selectedProc, numProcUsed, nprocs = " 
+                         << itask << "," 
+                         << vSelectedNodeNum[0] << "," 
+                         << selectedProcNum << "," 
+                         << numProcUsed << ","
+                         << nprocs << endl; 
                          
                     MPI_Send(&itask, 1, MPI_INT, selectedProcNum, 0, comm);
                     
                     /////////////////
                     qWorkItems.pop();
                     /////////////////
-
+                    
+                    cout << "qWorkItems.size() after pop = " << qWorkItems.size() << endl;
                     numProcUsed++;
                     itask++;
                 }
@@ -1362,6 +1468,15 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     //ndone++;
                 }
             }
+
+            ///DEBUG
+            ostream_iterator<bool> out(cout, "");
+            cout << "AFTER INITIAL ASSIGNMENT...\n";
+            for (int i = 0; i < numNodes; ++i) {
+                std::copy(vvTaskTable[i].begin(), vvTaskTable[i].end(), out);
+                cout << endl;
+            }
+            ///
             
             /* ORIG ********************************************************
             itask = 0;
@@ -1382,25 +1497,43 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                 int iproc, tmp;
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
-                //cout << "iproc done = " << iproc << endl;
+                cout << "iproc done = " << iproc << endl;
                            
+                ///*
                 ///
                 /// Check the iproc returned from worker and decide work items 
                 /// to assign
                 ///
                 int iprocNode = (int)iproc / NUMCOREPERNODE;
+                cout << "Node num = (int)iproc / NUMCOREPERNODE = " 
+		     << iproc << ","
+		     << NUMCOREPERNODE << ","
+                     << (int)iproc / NUMCOREPERNODE << endl;
                 
                 /// 
                 /// Update vvTaskTable
                 ///
                 int procNumInTable = iproc % NUMCOREPERNODE;
+		cout << "iproc, procNumInTable = " << iproc << " " << procNumInTable << endl;
+
                 assert(vvTaskTable[iprocNode][procNumInTable] == true);
                
-                if (!(iprocNode == 0 && procNumInTable == 0))    
-                    ///////////////////////////////////////////////
-                    vvTaskTable[iprocNode][procNumInTable] = false;
-                    ///////////////////////////////////////////////
-                            
+               	if (!(iprocNode == 0 && procNumInTable == 0))	 
+		///////////////////////////////////////////////
+                vvTaskTable[iprocNode][procNumInTable] = false;
+                ///////////////////////////////////////////////
+                
+                cout << "procNumInTable = " << procNumInTable << endl;
+               
+               ///DEBUG
+                ostream_iterator<bool> out(cout, "");
+                cout << "AFTER DELETION...\n";
+                for (int i = 0; i < numNodes; ++i) {
+                    std::copy(vvTaskTable[i].begin(), vvTaskTable[i].end(), out);
+                    cout << endl;
+                }
+                ///
+            
                 /// 
                 /// Get the front of the queue and check the db chunk name
                 /// If iproc's node has one of the db chunk names, just pop the 
@@ -1412,16 +1545,16 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                 int selectedNodeNum = 0;
                 int tempf = 0;
                 int &f = tempf;
-                int nTrial = 0;
-                int MAXTRIAL = 20;  /// max num of trial to find node number which 
-                                    /// has the DB chunk of the work item.
+		int nTrial = 0;
+		int MAXTRIAL = 20;
 
                 while (1) {
 
-                    if (qWorkItems.empty()) break;      
+		    if (qWorkItems.empty()) break;		
 
                     f = qWorkItems.front();                    
                     vector<string> vTemp = split3(vWorkItems[f], ',');
+                    cout << "f, vWorkItems[f] = " << f << "," << vWorkItems[f] << endl;
                     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
                     multimap<string, int>::iterator it; 
                     
@@ -1448,39 +1581,71 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     ///
                     /// 
                     ///
-                    if (bFound || nTrial > MAXTRIAL) {                        
-                        //if (nTrial > MAXTRIAL) {
-                            //cout << "### INFO: force assignment\n";
-                        //}
+                    if (bFound || nTrial > MAXTRIAL) {
+                        
+			cout << "iproc, iprocNode, procNumInTable = " << iproc << " " << iprocNode << " " << procNumInTable<< endl;
+                        cout << "vvTaskTable[iprocNode][procNumInTable] = " << vvTaskTable[iprocNode][procNumInTable] << endl;
+			
+			if (nTrial > MAXTRIAL) {
+                            cout << "### INFO: force assignment\n";
+                            //mDbCoreNum[vTemp[1]] = iprocNode;
+                        }
 
-                        assert(vvTaskTable[iprocNode][procNumInTable] == false);
+			//assert(vvTaskTable[iprocNode][iproc] == false);
+                        //vvTaskTable[iprocNode][iproc] = true;
+			assert(vvTaskTable[iprocNode][procNumInTable] == false);
                         vvTaskTable[iprocNode][procNumInTable] = true;
-                 
+                        
+                        ///DEBUG
+                        ostream_iterator<bool> out(cout, "");
+                        cout << "AFTER REASSIGNMENT...\n";
+                        for (int i = 0; i < numNodes; ++i) {
+                            std::copy(vvTaskTable[i].begin(), vvTaskTable[i].end(), out);
+                            cout << endl;
+                        }
+                        ///
+                
                         selectedNodeNum = iprocNode;
                         selectedProcNum = iproc;
-                        
                         /////////////////
                         qWorkItems.pop();
+			cout << "qWorkItems.size() after pop (2) = " << qWorkItems.size() << endl;
                         /////////////////
-                                               
+                        cout << "itask, f, selectedNodeNum, selectedProc, nmap = " 
+                         << itask << "," 
+                         << f << "," 
+                         << selectedNodeNum << "," 
+                         << selectedProcNum <<"," 
+			 << nmap << endl; 
                         break;  /// to escape from while(1)            
                     }
                     else {
-                        nTrial++;
+			nTrial++;
+                        cout << "Get the next item in the queue for examining: " << nTrial << " tried!!\n";
                         ///////////////////
+                        //int temp1 = qWorkItems.size();
                         qWorkItems.pop();
                         qWorkItems.push(f);
+                        //int temp2 = qWorkItems.size();
+                        //assert(temp1 == temp2);
                         ////////////////////                        
                     }                   
                 }
+                //*/
                 
+                //assert(selectedProcNum != 0);
                 if (itask < nmap) {
-                    assert(selectedProcNum != 0);
+		    cout <<"send job\n";	
+               	    assert(selectedProcNum != 0);
+                    //std::cout << "vWorkItems[itask] = " << vWorkItems[itask] << ", iproc = " << iproc << std::endl;
                     MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
                     numProcUsed++;
                     itask++;
+                    cout << "itask, numProcUsed = " << itask << " " << numProcUsed << endl; 
                 }
                 else {
+		    cout << "send done\n";
+                    //std::cout << "Send done (2) vWorkItems[itask] = " << vWorkItems[itask] << ", iproc = " << iproc << std::endl;
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
@@ -1599,7 +1764,7 @@ uint64_t MapReduce::map(char *file,
         if (nmap == maxfiles) {
             maxfiles += FILECHUNK;
             files = (char **)
-            memory->srealloc(files, maxfiles * sizeof(char *), "MR:files");
+                    memory->srealloc(files, maxfiles * sizeof(char *), "MR:files");
         }
         n = strlen(ptr) + 1;
         files[nmap] = new char[n];
