@@ -152,10 +152,7 @@ GF GF1;
  
 /// MR-MPI CALLS
 void    set_default_opts(CRef<CBlastOptionsHandle> optsHandle);
-void    mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr);
-//bool    check_exclusion(string qGi, string sGi, int qCutLocStart, 
-                        //uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd, 
-                        //uint64_t threshold);                    
+void    mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr);                   
 void    mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, 
                         int nvalues, int *valuebytes, KeyValue *kv, void *ptr);                         
         
@@ -473,10 +470,6 @@ int main(int argc, char **argv)
     #ifdef DEBUG
     t1 = time(NULL);
     c1 = clock();
-    //printf ("### TIME: [Rank %d] elapsed total wall clock time,%ld\n", MPI_myId, (long) (t1 - t0));
-    //printf ("### TIME: [Rank %d] elapsed map wall clock time,%ld\n", MPI_myId, (long) (accMapWTime));
-    //printf ("### TIME: [Rank %d] elapsed total CPU time,%f\n", MPI_myId, (double) (c1 - c0)/CLOCKS_PER_SEC);
-    //printf ("### TIME: [Rank %d] elapsed map CPU time,%f\n", MPI_myId, (double) (accMapCTime)/CLOCKS_PER_SEC);    
     
     /// FORMAT: rank,totalRuntime,mapRuntime,totalClock,mapClock
     printf ("### TIME: rank,totalRuntime,mapRuntime,totalClock,mapClock,%d,%ld,%ld,%.2f,%.2f\n", MPI_myId, 
@@ -526,10 +519,6 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     SDataLoaderConfig dlconfig(isProtein);
     CBlastInputSourceConfig iconfig(dlconfig);
     
-    //string qFileName = "test2.query";
-    //ifstream queryFile(qFileName.c_str());
-    //CBlastFastaInputSource fasta_input(qFileName, iconfig);
-
     ///
     /// Split work item => query file + db chunk name
     ///
@@ -638,21 +627,11 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
 
         ///
         /// GET THE RESULTS
-        ///
-        //cout << "results.GetNumResults() = " << results.GetNumResults() << endl;
-        //cout << "results.GetNumQueries() = " << results.GetNumQueries() << endl;
-
-        //string exlusionFileName = "excluded-rank"+int2str(gf->myId)+".txt";
-        //ofstream exclusionSaveFile(exlusionFileName.c_str());
-        
+        ///   
         for (uint64_t i = 0; i < results.GetNumResults(); i++) {
 
             //CConstRef<CSeq_id> seq_id = results[i].GetSeqId();
-            //cout << "qID = " << seq_id->AsFastaString() << endl;
-
             CConstRef<CSeq_align_set> aln_set = results[i].GetSeqAlign();
-            //cout << MSerial_AsnText << *aln_set;
-            //cout << MSerial_Xml << *aln_set;
 
             ///
             /// PRINT TABULAR FORMAT
@@ -660,14 +639,9 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
             if (results[i].HasAlignments()) {
                 ITERATE(CSeq_align_set::Tdata, itr, aln_set->Get()) {
                     const CSeq_align& s = **itr;
-                    //tabinfo.SetFields(s, scope, &m_ScoringMatrix);
-                    //tabinfo.Print();
 
                     /// qNum is not unique. It's internal qid in fasta_input
                     string qNum = s.GetSeq_id(QUERY).GetSeqIdString(); 
-                    //cout << "qNum = " << qNum << endl;
-                    //cout << queryFactory.GetQueryInfo() << endl;
-                    //cout << s.GetSeq_id(QUERY).AsFastaString() << endl;
                     string seqId = s.GetSeq_id(SUBJECT).GetSeqIdString();
 
                     //double pIdentityGapped, pIdentityUngapped, pIdentityGapOpeningOnly, pCoverage;
@@ -711,14 +685,6 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
                     //if (!check_exclusion(qGi, seqId, qCutLocStart, qCutLocEnd, sStart, sEnd, EXCLUSION)) {
                         //char blastRes[MAXSTR];
 
-                        /// DEBUG
-                        //fprintf(stdout, "%s,%s,%s,%d,%d,%d,%1.e,%d\n",
-                        //qid.c_str(), qHeader.substr(1, MAXSTR).c_str(), seqId.c_str(),
-                        //alignLen, qStart, qEnd,
-                        ////eValue, genericScore, bitScore);
-                        //eValue, bitScore);
-                        ///
-
                         //sprintf(blastRes, "%s,%s,%d,%d,%d,%1.e,%d",
                                 //qHeader.substr(0, MAXSTR).c_str(), seqId.c_str(),
                                 //alignLen, qStart, qEnd,
@@ -750,11 +716,10 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
                         uint64_t newKey = str2uint(qid);
                         
                         /// 
-                        /// ADD <KEY = "QUERYID,CHUNKNAME", VALUE="BLASTvecResULT">
+                        /// ADD <KEY = "QUERYID", VALUE="BLASTvecResULT">
                         /// TO KV
                         /// 
                         //kv->add(newKey, strlen(newKey) + 1, blastRes, strlen(blastRes) + 1);
-                        //kv->add((char*)&newKey, sizeof(uint64_t), blastRes, strlen(blastRes) + 1);
                         kv->add((char*)&newKey, sizeof(uint64_t), (char*)&r, BLASTRESSZ);
                         
                     //}
@@ -833,7 +798,6 @@ void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue,
     FILE* fp = fopen((char*)WORKEROUTPUTFILENAME.c_str(), "a");
     for (size_t n = 0; n < nvalues; n++) {
         BLASTRES* res = (BLASTRES*)(vforsort[n].p);
-        //cout << *((uint64_t *)key) << "," << res->seqid << "," << res->evalue << endl;
         fprintf(fp, "%ld,%ld,%ld,%ld,%ld,%1.e,%d\n", *((uint64_t *)key),
                 res->seqid, res->alignlen, res->qstart, res->qend,
                 res->evalue, res->bitscore);
@@ -842,79 +806,24 @@ void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue,
     fclose(fp);
     vforsort.clear();
 }   
-
-/** Check exclusion - Based on the coordinates of query and subject, decide 
- * whether the result should be included in the final result or not.
- * @param qGi: query ID
- * @param sGi: subject ID
- * @param qCutLocStart: Cutting start location of the query from original 
- * refseq_genomic fasta input.
- * @param qCutLocEnd: Cutting end location of the query from original 
- * refseq_genomic fasta input.
- * @param sStart: subject alignment start location.
- * @param sEnd: subject alignemnt end location.
- * @param threshold: overlap threshold (default = 100bp).
- */
-//bool check_exclusion(string qGi, string sGi, int qCutLocStart,
-                     //uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd,
-                     //uint64_t threshold)
-//{
-    ///// 
-    ///// To exclude Blast result from the original sequence from which
-    ///// the input query is originated (sampled). Basically if qGi == sGi
-    ///// and qCutLocStart is similar with sStart and qCutLocEnd is similar
-    ///// with sEnd in terms of coordinates, the result should be excluded.
-    ///// 
-    ///// Orig seq: ----------------XXXXXXXXXXXXXXXX----------------------
-    /////                           |              |
-    /////                     qCutLocStart      qCutLocEnd
-    ///// 
-    ///// Query:                    XXXXXXXXXXXXXXXX
-    /////                              |          |
-    /////                           qStart       qEnd
-    ///// 
-    ///// Subject:   ------------------XXXXXXXXXXXX-----------------------
-    /////                              |          |
-    /////                           sStart      sEnd
-    ///// 
-    //bool ret = false;
-
-    //if (qGi == sGi) {
-        //if (qCutLocStart < 0) {
-            ///// 
-            ///// In >gi|222299657|18|3605|-400|3604
-            ///// -400|3604 means query[-400:3604] in Python.
-            ///// 
-            //qCutLocStart = qCutLocEnd + 1 - qCutLocStart;
-            //qCutLocEnd += 1;
-        //}
-        //if ((qCutLocStart - threshold <= sStart 
-            //&& sStart <= qCutLocStart + threshold) 
-            //&& (qCutLocEnd - threshold <= sEnd 
-            //&& sEnd <= qCutLocEnd + threshold))
-            //ret = true;
-    //}
-
-    //return ret;
-//}
-
+ 
 /** Set Blast options
  * @param optsHandle
  */
  
 void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
 {
-    optsHandle->SetEvalueThreshold(EVALUE);
+    //optsHandle->SetEvalueThreshold(EVALUE);
     //optsHandle->SetMatchReward(0);
     //optsHandle->SetMismatchPenalty(0);
     //optsHandle->SetMatrixName("BLOSUM62");
-    optsHandle->SetCutoffScore(CUTOFFSCORE);
+    //optsHandle->SetCutoffScore(CUTOFFSCORE);
     if (CBlastNucleotideOptionsHandle* nuclHandle =
                 dynamic_cast<CBlastNucleotideOptionsHandle*>(&*optsHandle)) {
 
         //nuclHandle->SetMatchReward(0);
         //nuclHandle->SetMismatchPenalty(0);
-        nuclHandle->SetMatrixName("BLOSUM62");
+        //nuclHandle->SetMatrixName("BLOSUM62");
         nuclHandle->SetCutoffScore(CUTOFFSCORE);
         nuclHandle->SetEvalueThreshold(EVALUE);
     }
