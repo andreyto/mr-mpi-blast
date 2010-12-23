@@ -21,3 +21,5 @@ mrmpi-old/*
 .#SRC-cache/
 .#SRC-cache/*
 .#lock-map
+backup/
+backup/*

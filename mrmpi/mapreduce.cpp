@@ -42,18 +42,9 @@ using namespace std;
 
 /// For core assign
 #include <algorithm>
-//struct giftBox {
-    //int myId;
-    //char* pName;
-    ////multimap<string, int> *mDbCoreNum;
-    //vector<string> *vDbChunkNames;
-//};
 #include <queue>
 #include <iterator>
-//#include <sstream>
 #include <cassert>
-
-
 
 
 using namespace MAPREDUCE_NS;
@@ -89,9 +80,8 @@ int assign_proc_num(string, multimap<string,int> &, vector< vector<bool> > &, ve
 #define ALIGNKV 4
 #define INTMAX 0x7FFFFFFF
 
-/// Total number of DB chunks. 10/19/2010 currently it's 109.
-#define NUMTOTALDBCHUNKS 2
-#define NUMCOREPERNODE 4
+//#define NUMTOTALDBCHUNKS 2  /// Total number of DB chunks 
+//#define NUMCOREPERNODE 4
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
@@ -1054,7 +1044,8 @@ vector<string> split3(const string &s, char delim)
 }
 
 int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum, 
-                    vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum) 
+                    vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum,
+                    int NUMCOREPERNODE) 
 {
     vector<string> vTemp = split3(workItem, ',');
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
@@ -1274,6 +1265,13 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             ///
             /// Prepare a mutimap for mapstyle=3 in mapreduce.cpp
             ///
+            typedef struct gf {
+                int NUMTOTALDBCHUNKS;
+                int NUMCOREPERNODE;
+            } GF;
+            GF *gf = (GF*) appptr;
+            int NUMCOREPERNODE = gf->NUMCOREPERNODE;
+            int NUMTOTALDBCHUNKS = gf->NUMTOTALDBCHUNKS;
             int numNodes = nprocs / NUMCOREPERNODE;
             int numDBPerNode = int(ceil(NUMTOTALDBCHUNKS / numNodes));
            
@@ -1334,7 +1332,8 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     
                     vector<int> vSelectedNodeNum;
                     int selectedProcNum = 
-                        assign_proc_num(vWorkItems[taskNum], mDbCoreNum, vvTaskTable, vSelectedNodeNum);
+                        assign_proc_num(vWorkItems[taskNum], mDbCoreNum, 
+                            vvTaskTable, vSelectedNodeNum, NUMCOREPERNODE);
                 
                     ///
                     /// This is the case when all procs in a node assigned with ]

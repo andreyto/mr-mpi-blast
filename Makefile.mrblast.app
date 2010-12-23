@@ -7,18 +7,24 @@ SRC = mrblast
 
 ### MPI and MR-MPI #####################################################
 CC = mpicc
-CXX = mpic++
+
+### OPENMPI
+#CXX = mpic++
+### MVAPICH
+CXX = mpicxx
+
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
+CONF_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/conf -lconfigfile
 #MRMPI_USRLIB = -lmrmpi
-#MRMPI_USRLIB = -L ./mrmpi -lmrmpi
+#CONF_USRLIB = -lconffile
 CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)   
-ORIG_LIBS = $(MRMPI_USRLIB)
+ORIG_LIBS = $(MRMPI_USRLIB) $(CONF_USRLIB)
 LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS) 
  
 ### XML parsing ########################################################
-CPPFLAGS = $(LIBXML_INCLUDE) $(LIBXSLT_INCLUDE) $(ORIG_CPPFLAGS) 
+#CPPFLAGS = $(LIBXML_INCLUDE) $(LIBXSLT_INCLUDE) $(ORIG_CPPFLAGS) 
 ########################################################################
 
 #CCC = mpic++

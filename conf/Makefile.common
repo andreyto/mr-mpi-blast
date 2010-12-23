@@ -1,0 +1,25 @@
+# Settings
+
+OBJ =	ConfigFile.o 
+EXE = 	libconfigfile.a
+
+# Targets
+
+lib:	$(OBJ)
+	$(ARCHIVE) $(ARFLAGS) $(EXE) $(OBJ)
+
+clean:
+	rm *.o *.d *.a
+
+# Rules
+
+%.o:%.cpp
+	$(CC) $(CCFLAGS) -c $<
+
+%.d:%.cpp
+	$(CC) $(CCFLAGS) $(DEPFLAGS) $< > $@
+
+# Individual dependencies
+
+DEPENDS = $(OBJ:.o=.d)
+include $(DEPENDS)

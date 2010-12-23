@@ -55,8 +55,8 @@ class KeyValue {
 
   void print(int, int, int);
   /// SSJ
-  void print2file(int, int, int, FILE *);
-  void print2file2(int, int, int, FILE *);
+  //void print2file(int, int, int, FILE *);
+  //void print2file2(int, int, int, FILE *);
   
       
  private:

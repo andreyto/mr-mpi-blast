@@ -1,0 +1,57 @@
+////////////////////////////////////////////////////////////////////////
+//
+//  MPI-MR-BLAST: Parallelizing BLAST on MR-MPI
+//
+//  Author: Seung-Jin Sul
+//          (ssul@jcvi.org)
+//
+//  Revisions
+//
+//      09.01.2010  Start!
+//
+//      09.05.2010  blast call done
+//
+//      09.07.2010  Adding KV in a mapper and aggregating the vecResults
+//
+//      09.09.2010  Start v2. Decide to run several MR-MPI jobs and each
+//                  job searches on a specific DB chunk.
+//
+//      09.10.2010  v2 done!
+//                  Add print2file member function to KeyValue class.
+//
+//
+//
+//      09.15.2010  v3 with NCBI C++ Toolkit started.
+//
+//      09.20.2010  Running version is done. ASN.1 parsing should be done.
+//
+//      09.21.2010  XML parsing tried but returned back to use raw blast
+//                  output for creating KV
+//
+//      09.22.2010  Using raw blast output, KV is constructed. Running
+//                  version is done. Start testing on Ranger.
+//
+//      09.29.2010  Using work items, v4 is done.
+//
+//      10.01.2010  Value sorting by bit score is done.
+//
+//      10.06.2010  Divide & conquer for KV overflow is done.
+//
+//      10.11.2010  Instrumenting for section timing.
+//
+//      10.13.2010  Doxygen commenting
+//                  Add map() in mapreduce.cpp for handling vector<string> 
+//                  work items.
+//
+//      10.20.2010  Save in workers.
+//
+//      10.27.2010  Custom scheduler done!
+//
+//      11.18.2010  Check if the KMV pair does not fit in one page of memory,
+//                  = check if the char *multivalue argument != NULL
+//                  and the nvalues argument != 0. 
+//                  If there is KMV overflow, use multivalue_blocks().
+//
+//      12.20.2010 fixes by AT -> done
+//
+////////////////////////////////////////////////////////////////////////

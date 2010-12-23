@@ -737,7 +737,7 @@ void KeyValue::print(int nstride, int kflag, int vflag)
   }
 }
 
-
+/*
 /// SSJ
 void KeyValue::print2file(int nstride, int kflag, int vflag, FILE *fp)
 {
@@ -803,7 +803,6 @@ void KeyValue::print2file(int nstride, int kflag, int vflag, FILE *fp)
     }
   }
 }
-
 
 /// TOKENIZER ROUTINES
 vector<string> &split2(const string &s, char delim, vector<string> &vecElems)
@@ -896,6 +895,6 @@ void KeyValue::print2file2(int nstride, int kflag, int vflag, FILE *fp)
     }
   }
 }
-
+*/
 
 /// EOF
