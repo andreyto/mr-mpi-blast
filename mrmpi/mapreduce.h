@@ -92,14 +92,7 @@ public:
     uint64_t map(MapReduce *, void (*)(uint64_t, char *, int, char *, int,
                                        class KeyValue *, void *),
                  void *, int addflag = 0);
-    
-    /// ssj
-    uint64_t map(std::vector<std::string> workItems, void (*)(int, char *, class KeyValue *, void *),
-                 void *, int addflag = 0);
-    //uint64_t map(std::queue<std::string> workItems, void (*)(int, char *, class KeyValue *, void *),
-                 //void *, int addflag = 0);                 
-    ///
-    
+        
     void open(int addflag = 0);
     void print(int, int, int, int);
     uint64_t reduce(void (*)(char *, int, char *,

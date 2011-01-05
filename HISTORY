@@ -54,4 +54,7 @@
 //
 //      12.20.2010 fixes by AT -> done
 //
-////////////////////////////////////////////////////////////////////////
+//      12.29.2010      Boost::program_options for processing config file and
+//                      command line argments.
+//
+

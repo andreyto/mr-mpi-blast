@@ -16,20 +16,15 @@ CXX = mpicxx
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
-CONF_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/conf -lconfigfile
 #MRMPI_USRLIB = -lmrmpi
-#CONF_USRLIB = -lconffile
+BOOST_USRLIB = -lboost_program_options
 CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)   
-ORIG_LIBS = $(MRMPI_USRLIB) $(CONF_USRLIB)
+ORIG_LIBS = $(MRMPI_USRLIB) $(BOOST_USRLIB)
 LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS) 
  
 ### XML parsing ########################################################
 #CPPFLAGS = $(LIBXML_INCLUDE) $(LIBXSLT_INCLUDE) $(ORIG_CPPFLAGS) 
 ########################################################################
-
-#CCC = mpic++
-#F77 = mpif77
-#FC = mpi
 
 # new_project.sh will copy everything in the following block to any
 # Makefile.*_app generated from this sample project.  Do not change
@@ -56,9 +51,7 @@ REQUIRES = objects -Cygwin
 ## These settings are necessary for optimized WorkShop builds, due to
 ## BLAST's own use of them.
 #CXXFLAGS = $(FAST_CXXFLAGS) $(ORIG_CXXFLAGS) 
-
 #LDFLAGS = $(FAST_LDFLAGS)
-
 #REQUIRES = objects -Cygwin LIBXML LIBXSLT
 ########################################################################
 

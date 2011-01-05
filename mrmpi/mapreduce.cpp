@@ -65,7 +65,7 @@ double MapReduce::commtime = 0.0;
 
 void map_file_standalone(int, KeyValue *, void *);
 int compare_standalone(const void *, const void *);
-int assign_proc_num(string, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
+int assign_proc_num(char*, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
                     
 #define MIN(A,B) ((A) < (B)) ? (A) : (B)
 #define MAX(A,B) ((A) > (B)) ? (A) : (B)
@@ -80,8 +80,8 @@ int assign_proc_num(string, multimap<string,int> &, vector< vector<bool> > &, ve
 #define ALIGNKV 4
 #define INTMAX 0x7FFFFFFF
 
-//#define NUMTOTALDBCHUNKS 2  /// Total number of DB chunks 
-//#define NUMCOREPERNODE 4
+//#define NTOTALDBCHUNKS 2  /// Total number of DB chunks 
+//#define NCOREPERNODE 4
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
@@ -1027,7 +1027,7 @@ uint64_t MapReduce::map(int nmap, void (*appmap)(int, KeyValue *, void *),
 }
 
 /// TOKENIZER ROUTINES
-vector<string> &split3(const string &s, char delim, vector<string> &vecElems)
+vector<string> &split(const string &s, char delim, vector<string> &vecElems)
 {
     stringstream ss(s);
     string item;
@@ -1037,17 +1037,17 @@ vector<string> &split3(const string &s, char delim, vector<string> &vecElems)
     return vecElems;
 }
 
-vector<string> split3(const string &s, char delim)
+vector<string> split(const string &s, char delim)
 {
     vector<string> vecElems;
-    return split3(s, delim, vecElems);
+    return split(s, delim, vecElems);
 }
 
-int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum, 
+int assign_proc_num(char* workItem, multimap<string,int> &mDbCoreNum, 
                     vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum,
-                    int NUMCOREPERNODE) 
+                    int NCOREPERNODE) 
 {
-    vector<string> vTemp = split3(workItem, ',');
+    vector<string> vTemp = split(string(workItem), ',');
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
     multimap<string, int>::iterator it; 
     
@@ -1080,7 +1080,7 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
     }
     
     bool bFound = false; 
-    for (; i < NUMCOREPERNODE; ++i) {
+    for (; i < NCOREPERNODE; ++i) {
         if (!vvTaskTable[selectedNodeNum][i]) {
             vvTaskTable[selectedNodeNum][i] = true;
             selectedProcNum = i;
@@ -1093,7 +1093,7 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
     /// Send job to the proc
     ///
     if (bFound)
-        return (selectedProcNum + selectedNodeNum * NUMCOREPERNODE);
+        return (selectedProcNum + selectedNodeNum * NCOREPERNODE);
     else 
         return -1;
 }
@@ -1104,6 +1104,7 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
  * Instead of using master file (char* file), use vector<string> to pass
  * work items to map fuction. 
  */
+/*
 uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                         void (*appmap)(int, char *, KeyValue *, void *),
                         void *appptr, int addflag)
@@ -1188,7 +1189,6 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
     // mapstyle 0 = chunk of tasks to each proc
     // mapstyle 1 = strided tasks to each proc
     // mapstyle 2 = master/slave assignment of tasks
-    //
     // mapstyle 3 = master/slave with DB assignment
 
     if (nprocs == 1) {
@@ -1255,7 +1255,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
      * workers considering the name of DB chunks.
      * Main goal is to assign work items which have the same DB chunk names
      * to workers running on the same node physically.
-     */
+     
     else if (mapstyle == 3) {
         if (me == 0) {
             int doneflag = -1;
@@ -1266,37 +1266,37 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             /// Prepare a mutimap for mapstyle=3 in mapreduce.cpp
             ///
             typedef struct gf {
-                int NUMTOTALDBCHUNKS;
-                int NUMCOREPERNODE;
+                int NTOTALDBCHUNKS;
+                int NCOREPERNODE;
             } GF;
             GF *gf = (GF*) appptr;
-            int NUMCOREPERNODE = gf->NUMCOREPERNODE;
-            int NUMTOTALDBCHUNKS = gf->NUMTOTALDBCHUNKS;
-            int numNodes = nprocs / NUMCOREPERNODE;
-            int numDBPerNode = int(ceil(NUMTOTALDBCHUNKS / numNodes));
+            int NCOREPERNODE = gf->NCOREPERNODE;
+            int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
+            int nNodes = nprocs / NCOREPERNODE;
+            int nDBPerNode = int(ceil(NTOTALDBCHUNKS / nNodes));
            
             /// 
             /// Assgin each node with one or more DB chunks
             ///
             multimap<string, int> mDbCoreNum;
-            if (NUMTOTALDBCHUNKS >= numNodes) { /// ex) 109 > 64 nodes (=1024cores)
+            if (NTOTALDBCHUNKS >= nNodes) { /// ex) 109 > 64 nodes (=1024cores)
                 int nodeIdx = 0;
-                for (int i = 0; i < NUMTOTALDBCHUNKS; ++i) {
-                    vector<string> vTemp = split3(vWorkItems[i], ',');
+                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
+                    vector<string> vTemp = split(vWorkItems[i], ',');
                     mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
                     nodeIdx++;
-                    if (nodeIdx == numNodes) nodeIdx = 0;
+                    if (nodeIdx == nNodes) nodeIdx = 0;
                 }
             }
             else { /// ex) 109 < 128 nodes (=2048cores)
                 int nodeIdx = 0;
-                for (int i = 0; i < NUMTOTALDBCHUNKS; ++i) {
-                    vector<string> vTemp = split3(vWorkItems[i], ',');
+                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
+                    vector<string> vTemp = split(vWorkItems[i], ',');
                     mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
                     nodeIdx++;
                 }
-                for (int i = 0; i < numNodes - NUMTOTALDBCHUNKS; ++i) {
-                    vector<string> vTemp = split3(vWorkItems[i], ',');
+                for (int i = 0; i < nNodes - NTOTALDBCHUNKS; ++i) {
+                    vector<string> vTemp = split(vWorkItems[i], ',');
                     mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
                     nodeIdx++;
                 }          
@@ -1314,8 +1314,8 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             /// Prepare a proc/node task assign table
             ///
             vector< vector<bool> > vvTaskTable;
-            for (int i = 0; i < numNodes; ++i) {
-                vector<bool> vBoolTemp(NUMCOREPERNODE, false);
+            for (int i = 0; i < nNodes; ++i) {
+                vector<bool> vBoolTemp(NCOREPERNODE, false);
                 vvTaskTable.push_back(vBoolTemp);
             }
             
@@ -1333,7 +1333,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     vector<int> vSelectedNodeNum;
                     int selectedProcNum = 
                         assign_proc_num(vWorkItems[taskNum], mDbCoreNum, 
-                            vvTaskTable, vSelectedNodeNum, NUMCOREPERNODE);
+                            vvTaskTable, vSelectedNodeNum, NCOREPERNODE);
                 
                     ///
                     /// This is the case when all procs in a node assigned with ]
@@ -1375,7 +1375,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     ndone++;
                 }
             }
-            ***************************************************************/
+            ***************************************************************
             
             while (ndone < nprocs - 1) {
                 int iproc, tmp;
@@ -1387,12 +1387,12 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                 /// Check the iproc returned from worker and decide work items 
                 /// to assign
                 ///
-                int iprocNode = (int)iproc / NUMCOREPERNODE;
+                int iprocNode = (int)iproc / NCOREPERNODE;
                 
                 /// 
                 /// Update vvTaskTable
                 ///
-                int procNumInTable = iproc % NUMCOREPERNODE;
+                int procNumInTable = iproc % NCOREPERNODE;
                 assert(vvTaskTable[iprocNode][procNumInTable] == true);
                
                 if (!(iprocNode == 0 && procNumInTable == 0))    
@@ -1412,7 +1412,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                 int tempf = 0;
                 int &f = tempf;
                 int nTrial = 0;
-                int MAXTRIAL = 20;  /// max num of trial to find node number which 
+                int nMaxTrial = 20;  /// max num of trial to find node number which 
                                     /// has the DB chunk of the work item.
 
                 while (1) {
@@ -1420,7 +1420,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     if (qWorkItems.empty()) break;      
 
                     f = qWorkItems.front();                    
-                    vector<string> vTemp = split3(vWorkItems[f], ',');
+                    vector<string> vTemp = split(vWorkItems[f], ',');
                     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
                     multimap<string, int>::iterator it; 
                     
@@ -1447,8 +1447,8 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     ///
                     /// 
                     ///
-                    if (bFound || nTrial > MAXTRIAL) {                        
-                        //if (nTrial > MAXTRIAL) {
+                    if (bFound || nTrial > nMaxTrial) {                        
+                        //if (nTrial > nMaxTrial) {
                             //cout << "### INFO: force assignment\n";
                         //}
 
@@ -1495,7 +1495,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
-                ****************************************************************/
+                ****************************************************************
             }
         } /// master
         else {
@@ -1522,7 +1522,8 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
     uint64_t nkeyall;
     MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
     return nkeyall;
-}                        
+}          
+*/              
                         
 /* ----------------------------------------------------------------------
    create a KV via a parallel map operation for list of files in file
@@ -1678,7 +1679,247 @@ uint64_t MapReduce::map(char *file,
      * to workers running on the same node physically.
      */
     else if (mapstyle == 3) {  
-        
+        if (me == 0) {
+            int doneflag = -1;
+            int ndone = 0;
+            int itask = 0;
+             
+            ///
+            /// Prepare a mutimap for mapstyle=3 in mapreduce.cpp
+            ///
+            typedef struct gf {
+                int NTOTALDBCHUNKS;
+                int NCOREPERNODE;
+                int NMAXTRIAL;
+            } GF;
+            GF *gf = (GF*) appptr;
+            int NCOREPERNODE = gf->NCOREPERNODE;
+            int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
+            int nMaxTrial = gf->NMAXTRIAL;  /// max num of trial to find node 
+                                            /// number which has the DB chunk 
+                                            /// of the work item.
+            int nNodes = nprocs / NCOREPERNODE;
+            int nDBPerNode = int(ceil(NTOTALDBCHUNKS / nNodes));
+            
+            /// 
+            /// Assgin each node with one or more DB chunks
+            ///
+            multimap<string, int> mDbCoreNum;
+            if (NTOTALDBCHUNKS >= nNodes) { /// ex) 109 > 64 nodes (=1024cores)
+                int nodeIdx = 0;
+                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
+                    vector<string> vTemp = split(string(files[i]), ',');
+                    mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
+                    nodeIdx++;
+                    if (nodeIdx == nNodes) nodeIdx = 0;
+                }
+            }
+            else { /// ex) 109 < 128 nodes (=2048cores)
+                int nodeIdx = 0;
+                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
+                    vector<string> vTemp = split(string(files[i]), ',');
+                    mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
+                    nodeIdx++;
+                }
+                for (int i = 0; i < nNodes - NTOTALDBCHUNKS; ++i) {
+                    vector<string> vTemp = split(string(files[i]), ',');
+                    mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
+                    nodeIdx++;
+                }          
+            }            
+
+            ///
+            /// V3: Make a queue with task number
+            /// Assing jobs to workders using the queue and files[itask]
+            ///
+            queue<int> qWorkItems;
+            for (int i = 0; i < nmap; ++i)  
+                qWorkItems.push(i);
+            
+            ///
+            /// Prepare a proc/node task assign table
+            ///
+            vector< vector<bool> > vvTaskTable;
+            for (int i = 0; i < nNodes; ++i) {
+                vector<bool> vBoolTemp(NCOREPERNODE, false);
+                vvTaskTable.push_back(vBoolTemp);
+            }
+            
+            ///
+            /// Check work item queue and db chunk assign table
+            /// 1. Get a work item, get db name, check node num to assign
+            ///
+            int numProcUsed = 1;
+            
+            while(!qWorkItems.empty() && numProcUsed < nprocs) {
+                if (itask < nmap) {
+                    /// Get the front item from the queue
+                    int& taskNum = qWorkItems.front();
+                    
+                    vector<int> vSelectedNodeNum;
+                    int selectedProcNum = 
+                        assign_proc_num(files[taskNum], mDbCoreNum, 
+                            vvTaskTable, vSelectedNodeNum, NCOREPERNODE);
+                    ///
+                    /// This is the case when all procs in a node assigned with ]
+                    /// a set of DB chunk name are used. Thus, put the work item 
+                    /// back to the queue and get another one.
+                    /// This routine should be repeated until we find a free slot.
+                    ///
+                    if (selectedProcNum == -1) {                        
+                        qWorkItems.pop();
+                        qWorkItems.push(taskNum);
+                        continue;
+                    }
+                         
+                    MPI_Send(&itask, 1, MPI_INT, selectedProcNum, 0, comm);
+                    
+                    /////////////////
+                    qWorkItems.pop();
+                    /////////////////
+
+                    numProcUsed++;
+                    itask++;
+                }
+                else{ /// # work items < nprocs
+                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    //ndone++;
+                }
+            }
+            
+            ///* ORIG **********************************************************
+            //itask = 0;
+            //for (int iproc = 1; iproc < nprocs; iproc++) {
+                //if (itask < nmap) {
+                    //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
+                    //itask++;
+                //}
+                //else { /// # work items < nprocs
+                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    //ndone++;
+                //}
+            //}
+            ///*****************************************************************
+            
+            while (ndone < nprocs - 1) {
+                int iproc, tmp;
+                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
+                iproc = status.MPI_SOURCE;
+                           
+                ///
+                /// Check the iproc returned from worker and decide work items 
+                /// to assign
+                ///
+                int iprocNode = (int)iproc / NCOREPERNODE;
+                
+                /// 
+                /// Update vvTaskTable
+                ///
+                int procNumInTable = iproc % NCOREPERNODE;
+                assert(vvTaskTable[iprocNode][procNumInTable] == true);
+               
+                if (!(iprocNode == 0 && procNumInTable == 0))    
+                    vvTaskTable[iprocNode][procNumInTable] = false;
+                            
+                /// 
+                /// Get the front of the queue and check the db chunk name
+                /// If iproc's node has one of the db chunk names, just pop the 
+                /// task out of the queue and aassign the task to worker.
+                /// If not, pop and push back the task number at the back of the 
+                /// queue, and examine the next front item from the queue.
+                ///
+                int selectedProcNum = 0;
+                int selectedNodeNum = 0;
+                int tempf = 0;
+                int &f = tempf;
+                int nTrial = 0;
+
+                while (1) {
+
+                    if (qWorkItems.empty()) break;      
+
+                    f = qWorkItems.front();                    
+                    vector<string> vTemp = split(string(files[f]), ',');
+                    pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
+                    multimap<string, int>::iterator it; 
+                    
+                    ///
+                    /// Decide node num for the new db chunk name
+                    ///
+                    ii = mDbCoreNum.equal_range(vTemp[1]); 
+                    vector<int> vSelectedNodeNum;
+                    for(it = ii.first; it != ii.second; ++it) {
+                        vSelectedNodeNum.push_back((int) it->second);
+                    }
+
+                    ///
+                    /// Compare the returned node num with new db chunk's node num
+                    ///
+                    bool bFound = false;
+                    for (int i = 0; i < vSelectedNodeNum.size(); ++i) {
+                        if (iprocNode == vSelectedNodeNum[i]) {
+                            bFound = true;
+                            break;
+                        }
+                    }
+                    
+                    ///
+                    /// 
+                    ///
+                    if (bFound || nTrial > nMaxTrial) {                        
+                        assert(vvTaskTable[iprocNode][procNumInTable] == false);
+                        vvTaskTable[iprocNode][procNumInTable] = true;
+                 
+                        selectedNodeNum = iprocNode;
+                        selectedProcNum = iproc;
+                        
+                        /////////////////
+                        qWorkItems.pop();
+                        /////////////////
+                                               
+                        break;  /// to escape from while(1)            
+                    }
+                    else {
+                        nTrial++;
+                        ///////////////////
+                        qWorkItems.pop();
+                        qWorkItems.push(f);
+                        ////////////////////                        
+                    }                   
+                }
+                
+                if (itask < nmap) {
+                    assert(selectedProcNum != 0);
+                    MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
+                    numProcUsed++;
+                    itask++;
+                }
+                else {
+                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    ndone++;
+                }
+ 
+                /// ORIG *******************************************************
+                //if (itask < nmap) {
+                    //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
+                    //itask++;
+                //}
+                //else {
+                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    //ndone++;
+                //}
+                ///*************************************************************
+            }
+        } /// master
+        else {
+            while (1) {
+                int itask;
+                MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
+                if (itask < 0) break;
+                appmap(itask, files[itask], kv, appptr);
+                MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
+            }
+        } /// worker      
         
         
     }
