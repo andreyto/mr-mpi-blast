@@ -80,16 +80,6 @@ using namespace std;
 /// ASN & split
 #include <boost/algorithm/string.hpp>
 
-///For CSeq_align for output
-//#include <objects/seqalign/Seq_align.hpp>
-//#include <util/range.hpp>
-
-/// Blast output: 
-//#include <algo/blast/format/blast_format.hpp>
-//#include <objtools/align_format/align_format_util.hpp>
-//#include <objtools/align_format/tabular.hpp>
-//#include <objtools/blast_format/tabular.hpp>
-
 /// For args processing for Blast
 #include <algo/blast/blastinput/blastn_args.hpp>
 
@@ -209,8 +199,6 @@ bool    check_exclusion(string qGi, string sGi, uint64_t qCutLocStart,
 int main(int argc, char **argv)
 /* -------------------------------------------------------------------------- */
 {
-    //double realstarttime = clock();
-    
     ///    
     /// Read conf file, mrblast.ini and set parameters
     ///
@@ -370,11 +358,9 @@ int main(int argc, char **argv)
     mr2->verbosity = 0;
     mr2->timer = 0;
     mr2->mapstyle = MAPSTYLE;  /// master/slave mode=2, custom scheduler=3
-    //mr2->keyalign = sizeof(uint64_t);
     
     MPI_Barrier(MPI_COMM_WORLD);
     prog_start = MPI_Wtime();
-    //double progstarttime = clock();
     
     MYID = MPI_myId;
     PNAME = MPI_procName;
@@ -599,20 +585,14 @@ int main(int argc, char **argv)
     delete mr2;
     delete pTargetDb;   
     
-    
-    //cout << "MPI startup time is " << (double)((progstarttime 
-        //- realstarttime) / CLOCKS_PER_SEC) << endl;
+ 
     profile_time = MPI_Wtime() - profile_time;
     if (MYID == 0) {
         cerr << "Total Execution Time: " << profile_time << endl;
     }
-    
-    
-    
+        
     MPI_Finalize();
-    
-    
-    
+        
     if (LOGORNOT) {
         if (LOGTOFILE) {
             logFile.close();
@@ -1009,7 +989,6 @@ void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue,
             << res->bitscore 
             << endl;
     }
-    //cout << "INFO: file saved, " << WORKEROUTPUTFILENAME << endl; 
     outputFile.close();
     vforsort.clear();
     
