@@ -102,6 +102,10 @@ namespace po = boost::program_options;
 #include <boost/program_options/parsers.hpp>
 namespace pod = boost::program_options::detail;
 
+/// Import search strategy
+#include <objects/blast/Blast4_request.hpp>
+#include <algo/blast/api/search_strategy.hpp>
+
 USING_NCBI_SCOPE;
 USING_SCOPE(blast);
 
@@ -139,6 +143,9 @@ string LOGFILENAME;
 static CSearchDatabase *pTargetDb = 0;
 string prevDbChunkName;
 
+/// Import search strategy
+string STRATEGYFILENAME;
+
 /// Misc.
 unsigned int MYID;
 char* PNAME;
@@ -146,7 +153,8 @@ bool EXCLUSIONORNOT;
 string OUTPREFIX;
 string INDEXFILENAME;
 string QUERYFILENAME;
-    
+bool OPTDUMPED = false; /// For loggin Blast opts
+#define NDEBUG 1
 
 /// For timing
 double prog_start;
@@ -196,7 +204,6 @@ void    mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue,
 /// Check hit exclusion
 bool    check_exclusion(string qGi, string sGi, uint64_t qCutLocStart, 
             uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd, int threshold);
-
 
 /* -------------------------------------------------------------------------- */
 int main(int argc, char **argv)
@@ -272,6 +279,8 @@ int main(int argc, char **argv)
         ("help", "print help message")        
         ("query-file,i", po::value<string>(), "set input query file")
         ("index-file,d", po::value<string>(), "set input index file")
+        ("import_search_strategy,s", po::value<string>(), 
+            "set search strategy file")
     ;
     
     po::options_description OptionalDesc("Optional");
@@ -316,6 +325,14 @@ int main(int argc, char **argv)
         }
         if (vm.count("index-file")) {
             INDEXFILENAME = vm["index-file"].as<string>();
+        }
+        else {
+            cerr << "ERROR: index file was not set.\n\n"; 
+            cout << allDesc;
+            return 1;
+        }
+        if (vm.count("import_search_strategy")) {
+            STRATEGYFILENAME = vm["import_search_strategy"].as<string>();
         }
         else {
             cerr << "ERROR: index file was not set.\n\n"; 
@@ -646,7 +663,10 @@ int main(int argc, char **argv)
  * @param ptr
  */
 
-void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
+void mr_run_blast(int itask, 
+                  char *file, 
+                  KeyValue *kv, 
+                  void *ptr)
 {
     /// 
     /// Make a option handle and cblastinputsource
@@ -658,18 +678,36 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     //const CArgs& args = GetArgs();
     //string allArgs;
     //cout << "All args = " << args.Print(allArgs) << endl;
-    //RecoverSearchStrategy(args, m_CmdLineArgs);
-    //CRef<CBlastOptionsHandle> opts_hndl(&*m_CmdLineArgs->SetOptions(args));
-    //const CBlastOptions& opt = opts_hndl->GetOptions();
+    //import_search_strategy(STRATEGYFILENAME, CmdLineArgs);
     
-    EProgram program = ProgramNameToEnum("blastn");
-    CRef<CBlastOptionsHandle> opts(CBlastOptionsFactory::Create(program));
-    set_default_opts(opts);
-    opts->Validate();
+    ifstream strategyFile(STRATEGYFILENAME.c_str(), ios::in);
+    if (!strategyFile.is_open()) {
+        cerr << "ERROR: failed to open a search strategy file" << endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    CNcbiIstream* in = &strategyFile;
+    CRef<CBlast4_request> b4req;
+    try { 
+        b4req = ExtractBlast4Request(*in);
+    } catch (const CSerialException&) {
+        NCBI_THROW(CInputException, eInvalidInput, 
+                   "Failed to read search strategy");
+    }
+    CImportStrategy strat(b4req);
+    CRef<blast::CBlastOptionsHandle> opts = strat.GetOptionsHandle();
+    
+    //CRef<CBlastOptionsHandle> opts_hndl(&*CmdLineArgs->SetOptions(args));
+    const CBlastOptions& opt = opts->GetOptions();
+    
+    //EProgram program = ProgramNameToEnum("blastn");
+    //CRef<CBlastOptionsHandle> opts(CBlastOptionsFactory::Create(program));
+    //set_default_opts(opts);    
+    //opts->Validate();
 
-    /// DEBUG
-    if (MYID == 0) opts->GetOptions().DebugDumpText(cerr, "opts", 1);
-    ///
+    if (MYID == 1 && OPTDUMPED == false) {
+        OPTDUMPED = true;
+        opts->GetOptions().DebugDumpText(LOG, "opts", 1);
+    }
 
     CRef<CObjectManager> objmgr = CObjectManager::GetInstance();
     if (!objmgr) {
@@ -713,7 +751,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     unsigned long long endOffset 
         = boost::lexical_cast<unsigned long long>(vWorkItemTokens[1]);
     
-    LOG << LOGMSG << "Offsets = " << beginOffset << " " << endOffset << endl;
+    LOG << LOGMSG << "Offsets = " << beginOffset << " " << endOffset;
     
     unsigned long long blSize = endOffset-beginOffset;
     char* buff2 = (char*) malloc(sizeof(char)*blSize);
@@ -727,6 +765,7 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
         fgets(buff2, blSize, qf);
         if (buff2[0] == '>') {
             vHeaders.push_back(string(buff2));
+            LOG << " " << string(buff2) << endl;
             nQuery++;
         }
         query += string(buff2);
@@ -756,7 +795,9 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
     double blast_call_time = MPI_Wtime();
     
     LOG << LOGMSG << "Blast call starts." << endl;
+    //////////////////////////////////////////
     CSearchResultSet results = *blaster.Run();
+    //////////////////////////////////////////
     LOG << LOGMSG << "Blast call ends." 
            << "\t" << MPI_Wtime() - blast_call_time << endl;
     
@@ -948,7 +989,8 @@ void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr)
  * @param e2
  */
  
-inline bool mycompare(STRUCTEVALUE e1, STRUCTEVALUE e2)
+inline bool mycompare(STRUCTEVALUE e1, 
+                      STRUCTEVALUE e2)
 {
     return (e1.evalue < e2.evalue);
 }
@@ -965,9 +1007,13 @@ inline bool mycompare(STRUCTEVALUE e1, STRUCTEVALUE e2)
  * @param ptr
  */
  
-void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue,
-                                  int nvalues, int *valuebytes, KeyValue *kv, 
-                                  void *ptr) 
+void mr_sort_multivalues_by_evalue(char *key, 
+                                   int keybytes, 
+                                   char *multivalue,
+                                   int nvalues, 
+                                   int *valuebytes, 
+                                   KeyValue *kv, 
+                                   void *ptr) 
 {
     double sort_and_save_time = MPI_Wtime();
     LOG << LOGMSG << "Sort/save starts." << endl;
@@ -1025,7 +1071,8 @@ void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue,
  
 void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
 {
-    //optsHandle->SetEvalueThreshold(EVALUE);
+    optsHandle->SetDefaults();
+    optsHandle->SetEvalueThreshold(EVALUE);
     //optsHandle->SetMatchReward(0);
     //optsHandle->SetMismatchPenalty(0);
     //optsHandle->SetMatrixName("BLOSUM62");
@@ -1041,6 +1088,90 @@ void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
     return;
 }
 
+
+void import_search_strategy(string strategyFile, 
+                            blast::CBlastAppArgs* cmdline_args)
+{
+    ////CNcbiIstream* in = cmdline_args->GetImportSearchStrategyStream(args);
+    ifstream s(strategyFile.c_str(), ios::in);
+    CNcbiIstream* in = &s;
+    if ( !in ) {
+        return;
+    }
+    const bool is_remote_search = false;
+    const bool override_query = true;
+    const bool override_subject = true;
+    s_ImportSearchStrategy(in, cmdline_args, is_remote_search, override_query,
+                           override_subject);
+    //if (CMbIndexArgs::HasBeenSet(args)) {
+        //ERR_POST(Warning << "Overriding megablast BLAST DB indexed options in saved strategy");
+    //}
+}
+
+/// Imports search strategy, using CImportStrategy.
+static void s_ImportSearchStrategy(CNcbiIstream* in, 
+                                   blast::CBlastAppArgs* cmdline_args,
+                                   bool is_remote_search, 
+                                   bool override_query, 
+                                   bool override_subject)
+{
+    //if ( !in ) {
+        //return;
+    //}
+
+    //CRef<CBlast4_request> b4req;
+    //try { 
+        //b4req = ExtractBlast4Request(*in);
+    //} catch (const CSerialException&) {
+        //NCBI_THROW(CInputException, eInvalidInput, 
+                   //"Failed to read search strategy");
+    //}
+
+    //CImportStrategy strategy(b4req);
+
+    //CRef<blast::CBlastOptionsHandle> opts_hndl = strategy.GetOptionsHandle();
+    //cmdline_args->SetOptionsHandle(opts_hndl);
+    //const EBlastProgramType prog = opts_hndl->GetOptions().GetProgramType();
+    //cmdline_args->SetTask(strategy.GetTask());
+
+    //// Get the subject
+    //if (override_subject) {
+        //ERR_POST(Warning << "Overriding database/subject in saved strategy");
+    //} else {
+        //CRef<blast::CBlastDatabaseArgs> db_args;
+        //CRef<CBlast4_subject> subj = strategy.GetSubject();
+    //const bool subject_is_protein = Blast_SubjectIsProtein(prog) ? true : false;
+
+        //if (subj->IsDatabase()) {
+            //CBlastOptionsBuilder bob(strategy.GetProgram(), strategy.GetService(), CBlastOptions::eBoth);
+            //bob.GetSearchOptions(&strategy.GetAlgoOptions(), &strategy.GetProgramOptions());
+            //db_args = s_ImportDatabase(*subj, bob, subject_is_protein,
+                                       //is_remote_search);
+        //} else {
+            //db_args = s_ImportSubjects(*subj, subject_is_protein);
+        //}
+        //_ASSERT(db_args.NotEmpty());
+        //cmdline_args->SetBlastDatabaseArgs(db_args);
+    //}
+
+    //// Get the query, queries, or pssm
+    //if (override_query) {
+        //ERR_POST(Warning << "Overriding query in saved strategy");
+    //} else {
+        //CRef<CBlast4_queries> queries = strategy.GetQueries();
+        //if (queries->IsPssm()) {
+            //s_ImportPssm(*queries, opts_hndl, cmdline_args);
+        //} else {
+            //s_ImportQueries(*queries, opts_hndl, cmdline_args);
+        //}
+        //// Set the range restriction for the query, if applicable
+        //const TSeqRange query_range = strategy.GetQueryRange();
+        //if (query_range != TSeqRange::GetEmpty()) {
+            //cmdline_args->GetQueryOptionsArgs()->SetRange(query_range);
+        //}
+    //}
+}
+
 /** Check exclusion - Based on the coordinates of query and subject, decide 
  * whether the result should be included in the final result or not.
  * @param qGi: query ID
@@ -1054,8 +1185,12 @@ void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
  * @param threshold: overlap threshold (default = 100bp).
  */
  
-bool check_exclusion(string qGi, string sGi, uint64_t qCutLocStart,
-                     uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd,
+bool check_exclusion(string qGi, 
+                     string sGi, 
+                     uint64_t qCutLocStart,
+                     uint64_t qCutLocEnd, 
+                     uint64_t sStart, 
+                     uint64_t sEnd,
                      int threshold)
 {
     /// 
