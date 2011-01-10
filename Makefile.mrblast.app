@@ -18,12 +18,22 @@ MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
 #MRMPI_USRLIB = -lmrmpi
 BOOST_USRLIB = -lboost_program_options
-CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)   
+
+### RANGER
+#/opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
+ 
+CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS) $(BOOST_INCLUDE)
 ORIG_LIBS = $(MRMPI_USRLIB) $(BOOST_USRLIB)
 LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS) 
  
 ### XML parsing ########################################################
 #CPPFLAGS = $(LIBXML_INCLUDE) $(LIBXSLT_INCLUDE) $(ORIG_CPPFLAGS) 
+########################################################################
+
+### Boost include 
+### if Boost is not installed /usr/inlcude, change this location!!!
+#BOOST_INCLUDE = -I/usr/include/boost
+#CPPFLAGS = $(BOOST_INCLUDE) $(ORIG_CPPFLAGS) 
 ########################################################################
 
 # new_project.sh will copy everything in the following block to any

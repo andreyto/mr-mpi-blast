@@ -8,20 +8,20 @@
 ////////////////////////////////////////////////////////////////////////
 
 /*
- *     This program is free software; you can redistribute it and/or modify
- *     it under the terms of the GNU General Public License as published by
- *     the Free Software Foundation; either version 2 of the License, or
- *     (at your option) any later version.
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
  *
- *     This program is distributed in the hope that it will be useful,
- *     but WITHOUT ANY WARRANTY; without even the implied warranty of
- *     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *     GNU General Public License for more details.
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
  *
- *     You should have received a copy of the GNU General Public License
- *     along with this program; if not, write to the Free Software
- *     Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *     MA 02110-1301, USA.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ *  MA 02110-1301, USA.
  */
 
 /*
@@ -54,81 +54,55 @@
 using namespace MAPREDUCE_NS;
 using namespace std;
 
-/// NCBI
-#include <ncbi_pch.hpp>
-
-#include <corelib/ncbiapp.hpp>
-#include <corelib/ncbienv.hpp>
-#include <corelib/ncbiargs.hpp>
-
-#include <objmgr/object_manager.hpp>
-
-#include <objects/seqalign/Seq_align_set.hpp>
-
-#include <algo/blast/api/sseqloc.hpp>
+/// ----------------------------------------------------------------------------
+/// NCBI C++ Toolkit
+/// ----------------------------------------------------------------------------
 #include <algo/blast/api/local_blast.hpp>
-#include <algo/blast/api/uniform_search.hpp>
-#include <algo/blast/api/blast_types.hpp>
-#include <algo/blast/api/blast_aux.hpp>
 #include <algo/blast/api/objmgr_query_data.hpp>
-#include <algo/blast/api/blast_options_handle.hpp>
-#include <algo/blast/api/blast_nucl_options.hpp>
-#include <algo/blast/api/blast_prot_options.hpp>
-#include <algo/blast/blastinput/blast_input.hpp>
 #include <algo/blast/blastinput/blast_fasta_input.hpp>
-
-/// ASN & split
-#include <boost/algorithm/string.hpp>
-
-/// For args processing for Blast
-#include <algo/blast/blastinput/blastn_args.hpp>
-
-/// For typedef unsigned long long int uint64_t
-#include <stdint.h>
-
-/// For queue
-#include <queue>
-
-/// str2int, int2str
-#include <boost/lexical_cast.hpp>
-
-/// Processing command line arguments
-#include <boost/program_options.hpp>
-namespace po = boost::program_options;
-
-/// Configuration file processing
-#include <boost/config.hpp>
-#include <boost/program_options/detail/config_file.hpp>
-#include <boost/program_options/parsers.hpp>
-namespace pod = boost::program_options::detail;
-
+ 
 /// Import search strategy
 #include <objects/blast/Blast4_request.hpp>
 #include <algo/blast/api/search_strategy.hpp>
 
 USING_NCBI_SCOPE;
 USING_SCOPE(blast);
+/// ----------------------------------------------------------------------------
 
-/// Etc
-const int MAXSTR = 256;
-const int QUERY = 0;
-const int SUBJECT = 1;
 
 /// ----------------------------------------------------------------------------
-/// Set from mrblast.ini conf file
+/// Boost lib
 /// ----------------------------------------------------------------------------
-unsigned int NMAXQUERY; /// num query to accumulate from qeury file
+/// For tokenizer
+#include <boost/algorithm/string.hpp>
+
+/// For str -> int, int -> str
+#include <boost/lexical_cast.hpp>
+
+/// For processing command line arguments
+#include <boost/program_options.hpp>
+namespace po = boost::program_options;
+
+/// For processing configuration file 
+#include <boost/program_options/detail/config_file.hpp>
+namespace pod = boost::program_options::detail;
+/// ----------------------------------------------------------------------------
+
+
+/// For typedef unsigned long long int uint64_t
+#include <stdint.h>
+
+
+/// ----------------------------------------------------------------------------
+/// Settings from mrblast.ini conf file
+/// ----------------------------------------------------------------------------
+bool EXCLUSIONORNOT;
 int EXCLUSIONTHRESHOLD; /// Exclusion threshold = 100bp
-
-/// Blast options
-double EVALUE;
-string BLASTOPTS; /// To pass Blast user options 
-
+string EXCLUSIONHISTFILE;
+ 
 /// DB options
 string DBCHUNKLISTFILE;
-string EXCLUSIONHISTFILE;
 int NTOTALDBCHUNKS;
-int NITERATION;
 
 /// Log
 int LOGORNOT = 0;
@@ -137,6 +111,16 @@ ostream* LOGSTREAM = NULL;
 #define LOG (*LOGSTREAM)
 string LOGMSG;
 string LOGFILENAME;
+
+/// To pass NTOTALDBCHUNKS and NCOREPERNODE to map() for custom scheduler
+/// NMAXTRIAL = max num of trial to find node number which 
+///             has the DB partition of the work item.
+typedef struct gf {
+    int NTOTALDBCHUNKS;
+    int NCOREPERNODE;
+    int NMAXTRIAL;
+} GF;
+GF GF1;
 /// ----------------------------------------------------------------------------
 
 /// Blast target DB setting
@@ -147,32 +131,38 @@ string prevDbChunkName;
 string STRATEGYFILENAME;
 
 /// Misc.
+const int MAXSTR = 256;
+const int QUERY = 0;    /// To retireve query info from CSeq_align
+const int SUBJECT = 1;  /// To retireve suject info from CSeq_align
 unsigned int MYID;
-char* PNAME;
-bool EXCLUSIONORNOT;
+char* PROCNAME;
+bool OPTDUMPED = false; /// For dumping Blast opts out
 string OUTPREFIX;
 string INDEXFILENAME;
 string QUERYFILENAME;
-bool OPTDUMPED = false; /// For loggin Blast opts
+int NITERATION;
+int MAPSTYLE = 0;
+unsigned int NQUERYPERWORKITEM;
 #define NDEBUG 1
 
-/// For timing
-double prog_start;
+/// For syncronized timing
+#ifndef MPI_WTIME_IS_GLOBAL
 #define MPI_WTIME_IS_GLOBAL 1
+#endif
 
-/// To pass Blast hits, outfmt=6
+/// To pass Blast hits following outfmt=6 format.
 /// subject id, % identity, alignment length, mismatches, gap opens, 
 /// q. start, q. end, s. start, s. end, evalue, bit score
 typedef struct blastres {
     unsigned long long subjectid;
     double identity;
-    int alignlen; 
+    unsigned int alignlen; 
     int mismatches;
-    int gapopens;
-    int qstart; 
-    int qend;
-    int sstart;
-    int send;
+    unsigned int gapopens;
+    unsigned int qstart; 
+    unsigned int qend;
+    unsigned int sstart;
+    unsigned int send;
     double evalue; 
     int bitscore;
 } BLASTRES;
@@ -184,26 +174,17 @@ typedef struct structEvalue {
     double evalue;
 } STRUCTEVALUE;
 string WORKEROUTPUTFILENAME = "";
-
-/// To pass NTOTALDBCHUNKS and NCOREPERNODE to map() for custom scheduler
-/// NMAXTRIAL = max num of trial to find node number which 
-///             has the DB chunk of the work item.
-typedef struct gf {
-    int NTOTALDBCHUNKS;
-    int NCOREPERNODE;
-    int NMAXTRIAL;
-} GF;
-GF GF1;
  
 /// MR-MPI CALLS
-void    set_default_opts(CRef<CBlastOptionsHandle> optsHandle);
 void    mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr);                   
 void    mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, 
             int nvalues, int *valuebytes, KeyValue *kv, void *ptr);                         
+inline bool mycompare(STRUCTEVALUE e1, STRUCTEVALUE e2);
 
 /// Check hit exclusion
-bool    check_exclusion(string qGi, string sGi, uint64_t qCutLocStart, 
-            uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd, int threshold);
+inline bool check_exclusion(string qGi, string sGi, uint64_t qCutLocStart, 
+                uint64_t qCutLocEnd, uint64_t sStart, uint64_t sEnd, 
+                int threshold);
 
 /* -------------------------------------------------------------------------- */
 int main(int argc, char **argv)
@@ -218,8 +199,8 @@ int main(int argc, char **argv)
         return 1;
     }
     
-    std::set<std::string> options;
-    std::map<std::string, std::string> parameters;
+    set<string> options;
+    map<string, string> parameters;
     options.insert("*");
     
     try {      
@@ -229,18 +210,13 @@ int main(int argc, char **argv)
         DBCHUNKLISTFILE = parameters["DBCHUNKLISTFILE"];
         EXCLUSIONHISTFILE = parameters["EXCLUSIONHISTFILE"];
         LOGFILENAME = parameters["LOGFILENAME"];
-        BLASTOPTS = parameters["BLASTOPTS"];
         try {   
-            NMAXQUERY = boost::lexical_cast<unsigned int>(
-                parameters["NMAXQUERY"]);
             NTOTALDBCHUNKS = boost::lexical_cast<unsigned int>(
                 parameters["NTOTALDBCHUNKS"]);
             GF1.NTOTALDBCHUNKS = NTOTALDBCHUNKS;
             GF1.NCOREPERNODE = boost::lexical_cast<unsigned int>(
                 parameters["NCOREPERNODE"]);
-            GF1.NMAXTRIAL= boost::lexical_cast<int>(
-                parameters["NMAXTRIAL"]);           
-            EVALUE = boost::lexical_cast<double>(parameters["EVALUE"]);
+            GF1.NMAXTRIAL= boost::lexical_cast<int>(parameters["NMAXTRIAL"]);           
             EXCLUSIONTHRESHOLD = boost::lexical_cast<int>(
                 parameters["EXCLUSIONTHRESHOLD"]);     
             LOGORNOT = boost::lexical_cast<int>(parameters["LOGORNOT"]);
@@ -269,31 +245,33 @@ int main(int argc, char **argv)
     ///
     /// If mapstyle = 2, to use the default master/slave mode in MR-MPI.
     /// If mapstyle = 3, to use the modified master/slave mode for controlling 
-    /// DB chunk locality.
+    /// DB partition locality.
     ///
-    int MAPSTYLE = 0;
-    unsigned int NQUERYPERWORKITEM;
-    
     po::options_description generalDesc("General options");
     generalDesc.add_options() 
         ("help", "print help message")        
         ("query-file,i", po::value<string>(), "set input query file")
         ("index-file,d", po::value<string>(), "set input index file")
-        ("import_search_strategy,s", po::value<string>(), 
+        ("import-search-strategy,s", po::value<string>(), 
             "set search strategy file")
     ;
     
     po::options_description OptionalDesc("Optional");
     OptionalDesc.add_options() 
-        ("block-size,b", po::value<unsigned int>(&NQUERYPERWORKITEM)->default_value(0), 
-            "set the number/size of queries per work item (default=0, which means all queries)")
-        ("iteration,n", po::value<int>(&NITERATION)->default_value(1), 
+        ("block-size,b", 
+            po::value<unsigned int>(&NQUERYPERWORKITEM)->default_value(0), 
+            "set the number of queries per work item (default=0=all)")
+        ("iteration,n", 
+            po::value<int>(&NITERATION)->default_value(1), 
             "set the number of iterations")            
-        ("output-prefix,o", po::value<string>(&OUTPREFIX)->default_value("output"), 
+        ("output-prefix,o", 
+            po::value<string>(&OUTPREFIX)->default_value("output"), 
             "set output prefix for output file names (default=output)")
-        ("map-style,m", po::value<int>(&MAPSTYLE)->default_value(2), 
+        ("map-style,m", 
+            po::value<int>(&MAPSTYLE)->default_value(2), 
             "set MR-MPI mapstyle: 2=master/slave, 3=new scheduler")
-        ("self-exclusion,x", po::value<bool>(&EXCLUSIONORNOT)->default_value(false), 
+        ("self-exclusion,x", 
+            po::value<bool>(&EXCLUSIONORNOT)->default_value(false), 
             "enable self exclusion")
     ;
     
@@ -315,27 +293,24 @@ int main(int argc, char **argv)
         return 1;
     }
     else {
-        if (vm.count("query-file")) {
+        if (vm.count("query-file"))  
             QUERYFILENAME = vm["query-file"].as<string>();
-        }
         else {
             cerr << "ERROR: query file was not set.\n\n"; 
             cout << allDesc;
             return 1;
         }
-        if (vm.count("index-file")) {
+        if (vm.count("index-file"))  
             INDEXFILENAME = vm["index-file"].as<string>();
-        }
         else {
             cerr << "ERROR: index file was not set.\n\n"; 
             cout << allDesc;
             return 1;
         }
-        if (vm.count("import_search_strategy")) {
-            STRATEGYFILENAME = vm["import_search_strategy"].as<string>();
-        }
+        if (vm.count("import-search-strategy")) 
+            STRATEGYFILENAME = vm["import-search-strategy"].as<string>();
         else {
-            cerr << "ERROR: index file was not set.\n\n"; 
+            cerr << "ERROR: option file was not set.\n\n"; 
             cout << allDesc;
             return 1;
         }
@@ -356,19 +331,6 @@ int main(int argc, char **argv)
     }
         
     ///
-    /// Log stream setting
-    ///
-    ofstream logFile;
-    if (LOGORNOT) {
-        if (LOGTOFILE) {
-            LOGFILENAME = OUTPREFIX + LOGFILENAME;
-            logFile.open(LOGFILENAME.c_str(), ios::out);
-            LOGSTREAM = &logFile;
-        } 
-        else LOGSTREAM = &cout;        
-    }  
-    
-    ///
     /// MPI setup
     ///
     char MPI_procName[MAXSTR];
@@ -378,8 +340,23 @@ int main(int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
     MPI_Get_processor_name(MPI_procName, &MPI_length);
     
+    ///
+    /// Set Log stream 
+    ///
+    ofstream logFile;
+    if (LOGORNOT) {
+        if (LOGTOFILE) {
+            LOGFILENAME = OUTPREFIX + "-" 
+                + boost::lexical_cast<string>(MPI_myId) + "-" + LOGFILENAME;
+            logFile.open(LOGFILENAME.c_str(), ios::out);
+            LOGSTREAM = &logFile;
+        } 
+        else LOGSTREAM = &cout;        
+    }  
+    
+    
     LOGMSG = "[LOG] Rank:" + boost::lexical_cast<string>(MPI_myId) + " ";
-    LOG << LOGMSG << "proc name = " << MPI_procName << endl;
+    if (LOGORNOT) LOG << LOGMSG << "proc name = " << MPI_procName << endl;
     
     MPI_Barrier(MPI_COMM_WORLD);  
     double profile_time = MPI_Wtime();
@@ -387,7 +364,7 @@ int main(int argc, char **argv)
     /// 
     /// MR-MPI init
     ///
-    LOG << LOGMSG << "MR-MPI Init starts.\n";
+    if (LOGORNOT) LOG << LOGMSG << "MR-MPI Init starts.\n";
     MapReduce *mr2 = new MapReduce(MPI_COMM_WORLD);
     
     /*
@@ -406,9 +383,8 @@ int main(int argc, char **argv)
     mr2->timer = 0;
     mr2->mapstyle = MAPSTYLE;  /// master/slave mode=2, custom scheduler=3
     MPI_Barrier(MPI_COMM_WORLD);
-    prog_start = MPI_Wtime();
     MYID = MPI_myId;
-    PNAME = MPI_procName;
+    PROCNAME = MPI_procName;
         
     ///
     /// Make a file for map() which contains a list of file
@@ -423,7 +399,7 @@ int main(int argc, char **argv)
     uint64_t nQueryBlocks = 0;
     
     double master_init_time = MPI_Wtime();
-    LOG << LOGMSG << "Master's init work starts." << endl;
+    if (LOGORNOT) LOG << LOGMSG << "Master's init work starts." << endl;
            
     if (MPI_myId == 0) {
         ///
@@ -456,7 +432,7 @@ int main(int argc, char **argv)
         
         string beginOffset;
         string endOffset;
-        if (NQUERYPERWORKITEM) {
+        if (NQUERYPERWORKITEM) { /// If NQUERYPERWORKITEM > 0
             unsigned int n = 0;
             while (!getline(indexFile, line).eof()) {
                 vector<string> vOffsets;
@@ -468,8 +444,8 @@ int main(int argc, char **argv)
                 if (n == NQUERYPERWORKITEM - 1) {
                     endOffset = vOffsets[1];
                     for (uint64_t j = 0; j < nDbChunks; ++j) { 
-                        vWorkItems.push_back(beginOffset + "," + endOffset + ","
-                            + vDbChunkNames[j]);
+                        vWorkItems.push_back(beginOffset + "," + endOffset 
+                            + "," + vDbChunkNames[j]);
                     }
                     nQueryBlocks++;
                     n = 0;
@@ -484,8 +460,7 @@ int main(int argc, char **argv)
                 nQueryBlocks++;
             }
         }
-        else {
-            /// Use all
+        else { /// If NQUERYPERWORKITEM = 0, Use all sequences as 1 block.
             getline(indexFile, line);
             vector<string> vOffsets;
             boost::split(vOffsets, line, boost::is_any_of(","));
@@ -520,16 +495,14 @@ int main(int argc, char **argv)
     ///
     uint64_t nSubWorkItemFiles = 0;
     uint64_t nWorkItemsPerFile = 0;
-    if (MYID == 0) { 
-
-        
+    if (MYID == 0) {        
         uint64_t nRemains = 0;
         if (NITERATION > 1) {
             nSubWorkItemFiles = NITERATION;
             nWorkItemsPerFile = (nQueryBlocks / NITERATION) * nDbChunks;            
             nRemains = (nQueryBlocks % NITERATION) * nDbChunks;
         }
-        else { /// NITERATION = 1
+        else { /// If NITERATION = 1
             nWorkItemsPerFile = nWorkItems;
             nRemains = 0;
             nSubWorkItemFiles = 1;
@@ -579,7 +552,7 @@ int main(int argc, char **argv)
     }
     
     MPI_Barrier(MPI_COMM_WORLD); 
-    LOG << LOGMSG << "Master's init work ends." 
+    if (LOGORNOT) LOG << LOGMSG << "Master's init work ends." 
         << "\t" << MPI_Wtime() - master_init_time << endl;
     
     ///
@@ -602,24 +575,26 @@ int main(int argc, char **argv)
         /// map, collate reduce
         ///
         double map_time = MPI_Wtime();
-        LOG << LOGMSG << "map() starts." << endl;
-        nvecRes = mr2->map((char*)subMasterFileName.c_str(), &mr_run_blast, &GF1);
-        LOG << LOGMSG << "map() ends." << "\t" <<  MPI_Wtime() - map_time << endl;
+        if (LOGORNOT) LOG << LOGMSG << "map() starts." << endl;
+        nvecRes 
+            = mr2->map((char*)subMasterFileName.c_str(), &mr_run_blast, &GF1);
+        if (LOGORNOT) LOG << LOGMSG << "map() ends." << "\t" 
+            <<  MPI_Wtime() - map_time << endl;
                             
         WORKEROUTPUTFILENAME 
             = OUTPREFIX + "-" + boost::lexical_cast<string>(n) + "-" 
             + boost::lexical_cast<string>(MPI_myId) + ".txt";
         
         double collate_time = MPI_Wtime();
-        LOG << LOGMSG << "collate starts." << endl;
+        if (LOGORNOT) LOG << LOGMSG << "collate starts." << endl;
         mr2->collate(NULL);
-        LOG << LOGMSG << "collate ends." 
+        if (LOGORNOT) LOG << LOGMSG << "collate ends." 
             << "\t" << MPI_Wtime() - collate_time << endl;
         
         double reduce_time = MPI_Wtime();
-        LOG << LOGMSG << "reduce starts." << endl;
+        if (LOGORNOT) LOG << LOGMSG << "reduce starts." << endl;
         mr2->reduce(&mr_sort_multivalues_by_evalue, NULL);
-        LOG << LOGMSG << "reduce ends." 
+        if (LOGORNOT) LOG << LOGMSG << "reduce ends." 
             << "\t" <<  MPI_Wtime() - reduce_time << endl;
         
         ///
@@ -649,7 +624,10 @@ int main(int argc, char **argv)
     if (LOGORNOT && LOGTOFILE) logFile.close();    
     
     profile_time = MPI_Wtime() - profile_time;
-    if (MYID == 0) cout << "Total Execution Time: " << profile_time << endl;
+    if (MYID == 0) {
+        cout << "Total Execution Time: " << profile_time << endl;
+        if (LOGORNOT) LOG << "Total Execution Time: " << profile_time << endl;
+    }
     
     MPI_Finalize();
             
@@ -669,17 +647,8 @@ void mr_run_blast(int itask,
                   void *ptr)
 {
     /// 
-    /// Make a option handle and cblastinputsource
+    /// Set Blast opotions from file.
     ///
-    //CRef<CBlastnAppArgs> CmdLineArgs; 
-    //CmdLineArgs.Reset(new CBlastnAppArgs());
-    
-    /*** Get the BLAST options ***/
-    //const CArgs& args = GetArgs();
-    //string allArgs;
-    //cout << "All args = " << args.Print(allArgs) << endl;
-    //import_search_strategy(STRATEGYFILENAME, CmdLineArgs);
-    
     ifstream strategyFile(STRATEGYFILENAME.c_str(), ios::in);
     if (!strategyFile.is_open()) {
         cerr << "ERROR: failed to open a search strategy file" << endl;
@@ -694,15 +663,8 @@ void mr_run_blast(int itask,
                    "Failed to read search strategy");
     }
     CImportStrategy strat(b4req);
-    CRef<blast::CBlastOptionsHandle> opts = strat.GetOptionsHandle();
-    
-    //CRef<CBlastOptionsHandle> opts_hndl(&*CmdLineArgs->SetOptions(args));
-    const CBlastOptions& opt = opts->GetOptions();
-    
-    //EProgram program = ProgramNameToEnum("blastn");
-    //CRef<CBlastOptionsHandle> opts(CBlastOptionsFactory::Create(program));
-    //set_default_opts(opts);    
-    //opts->Validate();
+    CRef<blast::CBlastOptionsHandle> opts = strat.GetOptionsHandle();    
+    opts->Validate();
 
     if (MYID == 1 && OPTDUMPED == false) {
         OPTDUMPED = true;
@@ -711,7 +673,7 @@ void mr_run_blast(int itask,
 
     CRef<CObjectManager> objmgr = CObjectManager::GetInstance();
     if (!objmgr) {
-        throw std::runtime_error("Could not initialize object manager");
+        throw runtime_error("Could not initialize object manager");
     }
 
     bool isProtein = false;
@@ -719,7 +681,7 @@ void mr_run_blast(int itask,
     CBlastInputSourceConfig iconfig(dlconfig);
     
     ///
-    /// Split work item: <beginOffset,endOffset,db chunk name>
+    /// Split work item: <beginOffset,endOffset,db partition name>
     ///
     string workItem(file);
     vector<string> vWorkItemTokens;
@@ -727,20 +689,20 @@ void mr_run_blast(int itask,
     assert(vWorkItemTokens.size() == 3);
 
     ///
-    /// Target db chunk setting
+    /// Target db name setting
     ///
     string dbChunkName = vWorkItemTokens[2];
-    LOG << LOGMSG << "DB name = " << dbChunkName << endl;
+    if (LOGORNOT) LOG << LOGMSG << "DB name = " << dbChunkName << endl;
     
     double db_load_time = MPI_Wtime();
-    LOG << LOGMSG << "DB loading starts." << endl;
+    if (LOGORNOT) LOG << LOGMSG << "DB loading starts." << endl;
     if(pTargetDb == 0 || dbChunkName != prevDbChunkName) {
         delete pTargetDb;
         pTargetDb = new CSearchDatabase(dbChunkName,
                                         CSearchDatabase::eBlastDbIsNucleotide);
     }
     prevDbChunkName = dbChunkName;
-    LOG << LOGMSG << "DB loading ends." 
+    if (LOGORNOT) LOG << LOGMSG << "DB loading ends." 
         << "\t" << MPI_Wtime() - db_load_time << endl;
 
     ///
@@ -751,7 +713,8 @@ void mr_run_blast(int itask,
     unsigned long long endOffset 
         = boost::lexical_cast<unsigned long long>(vWorkItemTokens[1]);
     
-    LOG << LOGMSG << "Offsets = " << beginOffset << " " << endOffset;
+    if (LOGORNOT) LOG << LOGMSG << "Query offsets = " << beginOffset << " " << endOffset 
+        << endl;
     
     unsigned long long blSize = endOffset-beginOffset;
     char* buff2 = (char*) malloc(sizeof(char)*blSize);
@@ -764,15 +727,17 @@ void mr_run_blast(int itask,
     while (ftell(qf) < endOffset) {
         fgets(buff2, blSize, qf);
         if (buff2[0] == '>') {
+            /// Here I collect headers of fasta input seqs
+            /// for retrieving query sequence info.
             vHeaders.push_back(string(buff2));
-            LOG << " " << string(buff2) << endl;
+            
             nQuery++;
         }
         query += string(buff2);
     }    
     fclose(qf);
     free(buff2);
-    LOG << LOGMSG << "Num query for Blast call = " << nQuery << endl;        
+    if (LOGORNOT) LOG << LOGMSG << "Num query for Blast call = " << nQuery << endl;        
  
     ///
     /// Set queries as fasta input
@@ -787,18 +752,18 @@ void mr_run_blast(int itask,
     /// Run blast
     ///
     double blaster_init_time = MPI_Wtime();
-    LOG << LOGMSG << "Blaster init starts." << endl;
+    if (LOGORNOT) LOG << LOGMSG << "Blaster init starts." << endl;
     CLocalBlast blaster(queryFactory, opts, *pTargetDb);
-    LOG << LOGMSG << "Blaster init ends." 
+    if (LOGORNOT) LOG << LOGMSG << "Blaster init ends." 
            << "\t" << MPI_Wtime() - blaster_init_time << endl;
         
     double blast_call_time = MPI_Wtime();
     
-    LOG << LOGMSG << "Blast call starts." << endl;
+    if (LOGORNOT) LOG << LOGMSG << "Blast call starts." << endl;
     //////////////////////////////////////////
     CSearchResultSet results = *blaster.Run();
     //////////////////////////////////////////
-    LOG << LOGMSG << "Blast call ends." 
+    if (LOGORNOT) LOG << LOGMSG << "Blast call ends." 
            << "\t" << MPI_Wtime() - blast_call_time << endl;
     
     ///
@@ -823,7 +788,7 @@ void mr_run_blast(int itask,
     /// Get the results
     ///   
     double adding_kv_time = MPI_Wtime();
-    LOG << LOGMSG << "Adding hits to KV starts." << endl;
+    if (LOGORNOT) LOG << LOGMSG << "Adding hits to KV starts." << endl;
     
     for (uint64_t i = 0; i < results.GetNumResults(); ++i) {
 
@@ -845,12 +810,11 @@ void mr_run_blast(int itask,
                 /// doxyhtml/classCSeq__align.html
                 ///
                 double pIdentity=0.0;
-                s.GetNamedScore(CSeq_align::eScore_PercentIdentity, 
-                    pIdentity);
+                s.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
 
-                int alignLen=0, qStart=0, qEnd=0;
-                int sStart=0, sEnd=0;
-                int gapOpens=0;
+                unsigned int alignLen=0, qStart=0, qEnd=0;
+                unsigned int sStart=0, sEnd=0;
+                unsigned int gapOpens=0;
                 gapOpens    = s.GetNumGapOpenings();
                 qStart      = s.GetSeqStart(QUERY);
                 qEnd        = s.GetSeqStop(QUERY);
@@ -924,9 +888,8 @@ void mr_run_blast(int itask,
                         /// TO KV
                         ///
                         const char* newKey = (char*)((uniqueQID).c_str()); 
-                        kv->add((char*)newKey, strlen(newKey) + 1, 
-                            (char*)&res, BLASTRESSZ);
-                    
+                        kv->add((char*)newKey, strlen(newKey) + 1, (char*)&res, 
+                            BLASTRESSZ);
                     }
                     /// 
                     /// Found a self hits. Record the hits in a histroy file
@@ -935,8 +898,8 @@ void mr_run_blast(int itask,
                         string exFileName = OUTPREFIX + "-" 
                             + boost::lexical_cast<string>(MYID) + "-" 
                             + EXCLUSIONHISTFILE;
-                        ofstream exFile(exFileName.c_str(), ios::out 
-                            | ios::app);
+                        ofstream exFile(exFileName.c_str(), 
+                                        ios::out | ios::app);
                             
                         if (!exFile) {
                             cerr << "ERROR: failed to open a exclusion "
@@ -978,7 +941,7 @@ void mr_run_blast(int itask,
             }
         }
     }
-    LOG << LOGMSG << "Adding hits to KV ends." 
+    if (LOGORNOT) LOG << LOGMSG << "Adding hits to KV ends." 
            << "\t" << MPI_Wtime() - adding_kv_time << endl;
 }
 
@@ -1016,7 +979,7 @@ void mr_sort_multivalues_by_evalue(char *key,
                                    void *ptr) 
 {
     double sort_and_save_time = MPI_Wtime();
-    LOG << LOGMSG << "Sort/save starts." << endl;
+    if (LOGORNOT) LOG << LOGMSG << "Sort/save starts." << endl;
     
     /// Check if there is KMV overflow
     assert(multivalue != NULL && nvalues != 0);
@@ -1061,116 +1024,9 @@ void mr_sort_multivalues_by_evalue(char *key,
     outputFile.close();
     vforsort.clear();
     
-    LOG << LOGMSG << "Sort/save ends." 
+    if (LOGORNOT) LOG << LOGMSG << "Sort/save ends." 
            << "\t" << MPI_Wtime() - sort_and_save_time << endl;
 }   
- 
-/** Set Blast options
- * @param optsHandle
- */
- 
-void set_default_opts(CRef<CBlastOptionsHandle> optsHandle)
-{
-    optsHandle->SetDefaults();
-    optsHandle->SetEvalueThreshold(EVALUE);
-    //optsHandle->SetMatchReward(0);
-    //optsHandle->SetMismatchPenalty(0);
-    //optsHandle->SetMatrixName("BLOSUM62");
-    //optsHandle->SetCutoffScore(CUTOFFSCORE);
-    if (CBlastNucleotideOptionsHandle* nuclHandle =
-                dynamic_cast<CBlastNucleotideOptionsHandle*>(&*optsHandle)) {
-
-        //nuclHandle->SetMatchReward(0);
-        //nuclHandle->SetMismatchPenalty(0);
-        nuclHandle->SetEvalueThreshold(EVALUE);
-    }
-
-    return;
-}
-
-
-void import_search_strategy(string strategyFile, 
-                            blast::CBlastAppArgs* cmdline_args)
-{
-    ////CNcbiIstream* in = cmdline_args->GetImportSearchStrategyStream(args);
-    ifstream s(strategyFile.c_str(), ios::in);
-    CNcbiIstream* in = &s;
-    if ( !in ) {
-        return;
-    }
-    const bool is_remote_search = false;
-    const bool override_query = true;
-    const bool override_subject = true;
-    s_ImportSearchStrategy(in, cmdline_args, is_remote_search, override_query,
-                           override_subject);
-    //if (CMbIndexArgs::HasBeenSet(args)) {
-        //ERR_POST(Warning << "Overriding megablast BLAST DB indexed options in saved strategy");
-    //}
-}
-
-/// Imports search strategy, using CImportStrategy.
-static void s_ImportSearchStrategy(CNcbiIstream* in, 
-                                   blast::CBlastAppArgs* cmdline_args,
-                                   bool is_remote_search, 
-                                   bool override_query, 
-                                   bool override_subject)
-{
-    //if ( !in ) {
-        //return;
-    //}
-
-    //CRef<CBlast4_request> b4req;
-    //try { 
-        //b4req = ExtractBlast4Request(*in);
-    //} catch (const CSerialException&) {
-        //NCBI_THROW(CInputException, eInvalidInput, 
-                   //"Failed to read search strategy");
-    //}
-
-    //CImportStrategy strategy(b4req);
-
-    //CRef<blast::CBlastOptionsHandle> opts_hndl = strategy.GetOptionsHandle();
-    //cmdline_args->SetOptionsHandle(opts_hndl);
-    //const EBlastProgramType prog = opts_hndl->GetOptions().GetProgramType();
-    //cmdline_args->SetTask(strategy.GetTask());
-
-    //// Get the subject
-    //if (override_subject) {
-        //ERR_POST(Warning << "Overriding database/subject in saved strategy");
-    //} else {
-        //CRef<blast::CBlastDatabaseArgs> db_args;
-        //CRef<CBlast4_subject> subj = strategy.GetSubject();
-    //const bool subject_is_protein = Blast_SubjectIsProtein(prog) ? true : false;
-
-        //if (subj->IsDatabase()) {
-            //CBlastOptionsBuilder bob(strategy.GetProgram(), strategy.GetService(), CBlastOptions::eBoth);
-            //bob.GetSearchOptions(&strategy.GetAlgoOptions(), &strategy.GetProgramOptions());
-            //db_args = s_ImportDatabase(*subj, bob, subject_is_protein,
-                                       //is_remote_search);
-        //} else {
-            //db_args = s_ImportSubjects(*subj, subject_is_protein);
-        //}
-        //_ASSERT(db_args.NotEmpty());
-        //cmdline_args->SetBlastDatabaseArgs(db_args);
-    //}
-
-    //// Get the query, queries, or pssm
-    //if (override_query) {
-        //ERR_POST(Warning << "Overriding query in saved strategy");
-    //} else {
-        //CRef<CBlast4_queries> queries = strategy.GetQueries();
-        //if (queries->IsPssm()) {
-            //s_ImportPssm(*queries, opts_hndl, cmdline_args);
-        //} else {
-            //s_ImportQueries(*queries, opts_hndl, cmdline_args);
-        //}
-        //// Set the range restriction for the query, if applicable
-        //const TSeqRange query_range = strategy.GetQueryRange();
-        //if (query_range != TSeqRange::GetEmpty()) {
-            //cmdline_args->GetQueryOptionsArgs()->SetRange(query_range);
-        //}
-    //}
-}
 
 /** Check exclusion - Based on the coordinates of query and subject, decide 
  * whether the result should be included in the final result or not.
@@ -1185,13 +1041,13 @@ static void s_ImportSearchStrategy(CNcbiIstream* in,
  * @param threshold: overlap threshold (default = 100bp).
  */
  
-bool check_exclusion(string qGi, 
-                     string sGi, 
-                     uint64_t qCutLocStart,
-                     uint64_t qCutLocEnd, 
-                     uint64_t sStart, 
-                     uint64_t sEnd,
-                     int threshold)
+inline bool check_exclusion(string qGi, 
+                            string sGi, 
+                            uint64_t qCutLocStart,
+                            uint64_t qCutLocEnd, 
+                            uint64_t sStart, 
+                            uint64_t sEnd,
+                            int threshold)
 {
     /// 
     /// To exclude Blast result from the original sequence from which

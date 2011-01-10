@@ -1672,12 +1672,12 @@ uint64_t MapReduce::map(char *file,
             }
         }
     }
-    /*
-     * Here I add my mapstyle (mapstyle=3) to assign work items to nproc-1 
-     * workers considering the name of DB chunks.
-     * Main goal is to assign work items which have the same DB chunk names
-     * to workers running on the same node physically.
-     */
+    ///
+    /// Here I add my mapstyle (mapstyle=3) to assign work items to nproc-1 
+    /// workers considering the name of DB chunks.
+    /// Main goal is to assign work items which have the same DB chunk names
+    /// to workers running on the same node physically.
+    /// 
     else if (mapstyle == 3) {  
         if (me == 0) {
             int doneflag = -1;
