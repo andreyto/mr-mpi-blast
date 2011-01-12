@@ -3,7 +3,7 @@
 #################################
 
 APP = mrblast
-SRC = mrblast 
+SRC = mrblast
 
 ### MPI and MR-MPI #####################################################
 CC = mpicc

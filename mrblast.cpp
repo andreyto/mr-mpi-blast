@@ -108,9 +108,9 @@ int NTOTALDBCHUNKS;
 int LOGORNOT = 0;
 int LOGTOFILE = 0;
 ostream* LOGSTREAM = NULL;
-#define LOG (*LOGSTREAM)
 string LOGMSG;
 string LOGFILENAME;
+#define LOG (*LOGSTREAM)
 
 /// To pass NTOTALDBCHUNKS and NCOREPERNODE to map() for custom scheduler
 /// NMAXTRIAL = max num of trial to find node number which 
@@ -119,6 +119,8 @@ typedef struct gf {
     int NTOTALDBCHUNKS;
     int NCOREPERNODE;
     int NMAXTRIAL;
+    int logornot;
+    ostream* logstream;
 } GF;
 GF GF1;
 /// ----------------------------------------------------------------------------
@@ -353,7 +355,8 @@ int main(int argc, char **argv)
         } 
         else LOGSTREAM = &cout;        
     }  
-    
+    GF1.logornot = LOGORNOT;
+    GF1.logstream = LOGSTREAM;    
     
     LOGMSG = "[LOG] Rank:" + boost::lexical_cast<string>(MPI_myId) + " ";
     if (LOGORNOT) LOG << LOGMSG << "proc name = " << MPI_procName << endl;
