@@ -55,7 +55,6 @@ extern ostream* LOGSTREAM;
 extern int LOGORNOT;
 string LOGMSG2;
 #define LOG (*LOGSTREAM)
-#include <iterator>
         
 /// For tokenizer
 #include <boost/algorithm/string.hpp>
@@ -1037,30 +1036,13 @@ uint64_t MapReduce::map(int nmap, void (*appmap)(int, KeyValue *, void *),
     return nkeyall;
 }
 
-/// TOKENIZER ROUTINES
-//vector<string> &split(const string &s, char delim, vector<string> &vecElems)
-//{
-    //stringstream ss(s);
-    //string item;
-    //while (getline(ss, item, delim)) {
-        //vecElems.push_back(item);
-    //}
-    //return vecElems;
-//}
 
-//vector<string> split(const string &s, char delim)
-//{
-    //vector<string> vecElems;
-    //return split(s, delim, vecElems);
-//}
-
-int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum, 
+int assign_proc_num(string workItem, multimap<string,int> &mmDbCoreNum, 
                     vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum,
                     int NCOREPERNODE) 
 {
-    //vector<string> vTemp = split(string(workItem), ',');
-    vector<string> vTemp;
-    boost::split(vTemp, workItem, boost::is_any_of(","));
+    vector<string> vWorkItemTokens;
+    boost::split(vWorkItemTokens, workItem, boost::is_any_of(","));
     
     if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts.\n";
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
@@ -1069,14 +1051,14 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
     ///
     /// Decide node num to use 
     ///
-    ii = mDbCoreNum.equal_range(vTemp[2]); 
+    ii = mmDbCoreNum.equal_range(vWorkItemTokens[2]); 
     int selectedNodeNum = 0;
     
     ///
     /// If two or more nodes are assigned to a db chunk name.
     /// randomly select one of them. 
     ///
-    for(it = ii.first; it != ii.second; ++it) {
+    for (it = ii.first; it != ii.second; ++it) {
         nodeNum.push_back((int) it->second);
     }
     if (nodeNum.size() > 1)
@@ -1088,14 +1070,14 @@ int assign_proc_num(string workItem, multimap<string,int> &mDbCoreNum,
     /// update task assign table
     ///
     int selectedProcNum = 0;
-    int i = 0;
+    size_t i = 0;
     if (selectedNodeNum == 0) {
         vvTaskTable[selectedNodeNum][i] = true;
         i++; /// master                     
     }
     
     bool bFound = false; 
-    for (; i < NCOREPERNODE; ++i) {
+    for (; i < (unsigned)NCOREPERNODE; ++i) {
         if (!vvTaskTable[selectedNodeNum][i]) {
             vvTaskTable[selectedNodeNum][i] = true;
             selectedProcNum = i;
@@ -1293,12 +1275,12 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             /// 
             /// Assgin each node with one or more DB chunks
             ///
-            multimap<string, int> mDbCoreNum;
+            multimap<string, int> mmDbCoreNum;
             if (NTOTALDBCHUNKS >= nNodes) { /// ex) 109 > 64 nodes (=1024cores)
                 int nodeIdx = 0;
                 for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
-                    vector<string> vTemp = split(vWorkItems[i], ',');
-                    mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
+                    vector<string> vWorkItemTokens = split(vWorkItems[i], ',');
+                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[1], nodeIdx)); 
                     nodeIdx++;
                     if (nodeIdx == nNodes) nodeIdx = 0;
                 }
@@ -1306,13 +1288,13 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
             else { /// ex) 109 < 128 nodes (=2048cores)
                 int nodeIdx = 0;
                 for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
-                    vector<string> vTemp = split(vWorkItems[i], ',');
-                    mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
+                    vector<string> vWorkItemTokens = split(vWorkItems[i], ',');
+                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[1], nodeIdx)); 
                     nodeIdx++;
                 }
                 for (int i = 0; i < nNodes - NTOTALDBCHUNKS; ++i) {
-                    vector<string> vTemp = split(vWorkItems[i], ',');
-                    mDbCoreNum.insert(pair <string, int> (vTemp[1], nodeIdx)); 
+                    vector<string> vWorkItemTokens = split(vWorkItems[i], ',');
+                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[1], nodeIdx)); 
                     nodeIdx++;
                 }          
             }            
@@ -1347,7 +1329,7 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     
                     vector<int> vSelectedNodeNum;
                     int selectedProcNum = 
-                        assign_proc_num(vWorkItems[taskNum], mDbCoreNum, 
+                        assign_proc_num(vWorkItems[taskNum], mmDbCoreNum, 
                             vvTaskTable, vSelectedNodeNum, NCOREPERNODE);
                 
                     ///
@@ -1435,14 +1417,14 @@ uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
                     if (qWorkItems.empty()) break;      
 
                     f = qWorkItems.front();                    
-                    vector<string> vTemp = split(vWorkItems[f], ',');
+                    vector<string> vWorkItemTokens = split(vWorkItems[f], ',');
                     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
                     multimap<string, int>::iterator it; 
                     
                     ///
                     /// Decide node num for the new db chunk name
                     ///
-                    ii = mDbCoreNum.equal_range(vTemp[1]); 
+                    ii = mmDbCoreNum.equal_range(vWorkItemTokens[1]); 
                     vector<int> vSelectedNodeNum;
                     for(it = ii.first; it != ii.second; ++it) {
                         vSelectedNodeNum.push_back((int) it->second);
@@ -1693,8 +1675,7 @@ uint64_t MapReduce::map(char *file,
     /// Main goal is to assign work items which have the same DB chunk names
     /// to workers running on the same node physically.
     /// 
-    else if (mapstyle == 3) {  
-        
+    else if (mapstyle == 3) {          
         ///
         /// Init 
         ///
@@ -1727,102 +1708,103 @@ uint64_t MapReduce::map(char *file,
             /// 
             /// Assgin each node with one or more DB chunks
             ///
-            multimap<string, int> mDbCoreNum;
+            multimap<string, int> mmDbCoreNum;
         
             if (NTOTALDBCHUNKS >= nNodes) { /// ex) 109 > 64 nodes (=1024cores)
                 int nodeIdx = 0;
-                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
+                for (size_t i = 0; i < (unsigned)NTOTALDBCHUNKS; ++i) {
                     string workItem(files[i]);
-                    vector<string> vTemp;
-                    boost::split(vTemp, workItem, boost::is_any_of(","));                    
-                    mDbCoreNum.insert(pair <string, int> (vTemp[2], nodeIdx)); 
+                    vector<string> vWorkItemTokens;
+                    boost::split(vWorkItemTokens, workItem, 
+                                 boost::is_any_of(","));                    
+                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[2], 
+                                       nodeIdx)); 
                     nodeIdx++;
                     if (nodeIdx == nNodes) nodeIdx = 0;
                 }
             }
             else { /// ex) 109 < 128 nodes (=2048cores)
                 int nodeIdx = 0;
-                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
-                    //vector<string> vTemp = split(string(files[i]), ',');
+                for (size_t i = 0; i < (unsigned)NTOTALDBCHUNKS; ++i) {
                     string workItem(files[i]);
-                    vector<string> vTemp;
-                    boost::split(vTemp, workItem, boost::is_any_of(","));
-                    mDbCoreNum.insert(pair <string, int> (vTemp[2], nodeIdx)); 
+                    vector<string> vWorkItemTokens;
+                    boost::split(vWorkItemTokens, workItem, 
+                                 boost::is_any_of(","));
+                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[2], 
+                                       nodeIdx)); 
                     nodeIdx++;
                 }
-                for (int i = 0; i < nNodes - NTOTALDBCHUNKS; ++i) {
-                    //vector<string> vTemp = split(string(files[i]), ',');
+                for (size_t i = 0; i < (unsigned)(nNodes-NTOTALDBCHUNKS); ++i) {
                     string workItem(files[i]);
-                    vector<string> vTemp;
-                    boost::split(vTemp, workItem, boost::is_any_of(","));
-                    mDbCoreNum.insert(pair <string, int> (vTemp[2], nodeIdx)); 
+                    vector<string> vWorkItemTokens;
+                    boost::split(vWorkItemTokens, workItem, 
+                                 boost::is_any_of(","));
+                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[2], 
+                                       nodeIdx)); 
                     nodeIdx++;
                 }          
-            }            
-
-            if (LOGORNOT) LOG << LOGMSG2 << "MASTER: mDbCoreNum.size() = " 
-                << (int) mDbCoreNum.size() << endl;            
+            }                  
             
             ///
             /// V3: Make a queue with task number
             /// Assing jobs to workders using the queue and files[itask]
             ///
             queue<int> qWorkItems;
-            for (int i = 0; i < nmap; ++i)  
+            for (size_t i = 0; i < nmap; ++i)  
                 qWorkItems.push(i);
             
             ///
             /// Prepare a proc/node task assign table
             ///
             vector< vector<bool> > vvTaskTable;
-            for (int i = 0; i < nNodes; ++i) {
+            for (size_t i = 0; i < nNodes; ++i) {
                 vector<bool> vBoolTemp(NCOREPERNODE, false);
                 vvTaskTable.push_back(vBoolTemp);
             }
-            if (LOGORNOT) LOG << LOGMSG2 
-                << "MASTER: vvTaskTable.size() = " << vvTaskTable.size() 
-                << endl;
             
             ///
             /// Check work item queue and db chunk assign table
             /// 1. Get a work item, get db name, check node num to assign
             ///
             int numProcUsed = 1;
+            vector<bool> vUsedProcNum(nprocs, false);
             
-            while(!qWorkItems.empty() && numProcUsed < nprocs) {
-                if (itask < nmap) {
+            //while(!qWorkItems.empty() && numProcUsed < nprocs) {
+            while(numProcUsed < nprocs) {
+                /// 
+                /// IF # work done < # total work
+                /// 
+                if (itask < nmap && !qWorkItems.empty()) { 
                     /// Get the front item from the queue
                     int& taskNum = qWorkItems.front();
                     if (LOGORNOT) LOG << LOGMSG2 
                         << "MASTER: The front item in the queue = " << taskNum 
                         << endl;
-                    
+                    if (LOGORNOT) LOG << LOGMSG2 
+                        << "MASTER: Num items in the queue = " 
+                        << qWorkItems.size() << endl;
+                        
                     vector<int> vSelectedNodeNum;
                     string workItem(files[taskNum]);
                     int selectedProcNum = 
-                        assign_proc_num(workItem, mDbCoreNum, vvTaskTable, 
+                        assign_proc_num(workItem, mmDbCoreNum, vvTaskTable, 
                                         vSelectedNodeNum, NCOREPERNODE);
                     ///
-                    /// This is the case when all procs in a node assigned with ]
+                    /// This is the case when all procs in a node assigned with 
                     /// a set of DB chunk name are used. Thus, put the work item 
                     /// back to the queue and get another one.
-                    /// This routine should be repeated until we find a free slot.
+                    /// This routine should be repeated until we find a free 
+                    /// slot.
                     ///
                     if (selectedProcNum == -1) {                        
                         qWorkItems.pop();
                         qWorkItems.push(taskNum);
                         continue;
                     }
+                       
+                    assert(vUsedProcNum[selectedProcNum] == false);
+                    vUsedProcNum[selectedProcNum] = true;
                     
-                    if (LOGORNOT) LOG << LOGMSG2 
-                        << "MASTER: itask, vSelectedNodeNum[0], selectedProc, "
-                        << "numProcUsed, nprocs = " 
-                        << itask << "," 
-                        << vSelectedNodeNum[0] << "," 
-                        << selectedProcNum << "," 
-                        << numProcUsed << ","
-                        << nprocs << endl;
-                         
                     MPI_Send(&itask, 1, MPI_INT, selectedProcNum, 0, comm);
                     
                     /////////////////
@@ -1832,17 +1814,30 @@ uint64_t MapReduce::map(char *file,
                     numProcUsed++;
                     itask++;
                 }
-                else{ /// # work items < nprocs
+                else {      /// If there is ranks which have no assignment due
+                            /// to # work item < # ranks.
+                    if (LOGORNOT) LOG << LOGMSG2
+                        << "MASTER: itask >= nmap.\n";
                     //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     //ndone++;
+                    /// No need to send done flag to master node.
+                    for (size_t i = 1; i < vUsedProcNum.size(); i++) {
+                        if (!vUsedProcNum[i]) {
+                            if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send DONE "
+                                << "flag to Rank=" << i << endl;
+                            MPI_Send(&doneflag, 1, MPI_INT, i, 0, comm);
+                            ndone++;
+                            numProcUsed++; 
+                        }
+                    }
                 }
             }
             
             if (LOGORNOT) {
                 LOG << LOGMSG2
-                    << "MASTER: AFTER INITIAL ASSIGNMENT...\n";
-                for (int i = 0; i < nNodes; ++i) {
-                    for (int j = 0; j < NCOREPERNODE; ++j) {
+                    << "MASTER: After initial assignment...\n";
+                for (size_t i = 0; i < nNodes; ++i) {
+                    for (size_t j = 0; j < NCOREPERNODE; ++j) {
                         LOG << vvTaskTable[i][j];
                     }
                     LOG << endl;
@@ -1866,6 +1861,8 @@ uint64_t MapReduce::map(char *file,
             
             while (ndone < nprocs - 1) {
                 int iproc, tmp;
+                if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Waiting any worker done"
+                    << endl;
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
                            
@@ -1886,9 +1883,9 @@ uint64_t MapReduce::map(char *file,
                             
                 if (LOGORNOT) {
                     LOG << LOGMSG2
-                        << "MASTER: after delete...\n";
-                    for (int i = 0; i < nNodes; ++i) {
-                        for (int j = 0; j < NCOREPERNODE; ++j) {
+                        << "MASTER: After delete...\n";
+                    for (size_t i = 0; i < nNodes; ++i) {
+                        for (size_t j = 0; j < (unsigned)NCOREPERNODE; ++j) {
                             LOG << vvTaskTable[i][j];
                         }
                         LOG << endl;
@@ -1914,17 +1911,18 @@ uint64_t MapReduce::map(char *file,
                     if (qWorkItems.empty()) break;      
 
                     f = qWorkItems.front();                    
-                    //vector<string> vTemp = split(string(files[f]), ',');
                     string workItem(files[f]);
-                    vector<string> vTemp;
-                    boost::split(vTemp, workItem, boost::is_any_of(","));
-                    pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
+                    vector<string> vWorkItemTokens;
+                    boost::split(vWorkItemTokens, workItem, 
+                                 boost::is_any_of(","));
+                    pair<multimap<string, int>::iterator, 
+                    multimap<string, int>::iterator> ii;
                     multimap<string, int>::iterator it; 
                     
                     ///
                     /// Decide node num for the new db chunk name
                     ///
-                    ii = mDbCoreNum.equal_range(vTemp[2]); 
+                    ii = mmDbCoreNum.equal_range(vWorkItemTokens[2]); 
                     vector<int> vSelectedNodeNum;
                     for(it = ii.first; it != ii.second; ++it) {
                         vSelectedNodeNum.push_back((int) it->second);
@@ -1934,7 +1932,7 @@ uint64_t MapReduce::map(char *file,
                     /// Compare the returned node num with new db chunk's node num
                     ///
                     bool bFound = false;
-                    for (int i = 0; i < vSelectedNodeNum.size(); ++i) {
+                    for (size_t i = 0; i < vSelectedNodeNum.size(); ++i) {
                         if (iprocNode == vSelectedNodeNum[i]) {
                             bFound = true;
                             break;
@@ -1950,9 +1948,9 @@ uint64_t MapReduce::map(char *file,
                         
                         if (LOGORNOT) {
                             LOG << LOGMSG2
-                                << "MASTER: after reassign...\n";
-                            for (int i = 0; i < nNodes; ++i) {
-                                for (int j = 0; j < NCOREPERNODE; ++j) {
+                                << "MASTER: After reassignment...\n";
+                            for (size_t i = 0; i < nNodes; ++i) {
+                                for (size_t j = 0; j < NCOREPERNODE; ++j) {
                                     LOG << vvTaskTable[i][j];
                                 }
                                 LOG << endl;
@@ -1986,7 +1984,7 @@ uint64_t MapReduce::map(char *file,
                     numProcUsed++;
                     itask++;
                 }
-                else {
+                else { /// itask >= nmap ==> # work done >= # total work
                     if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send DONE to Rank=" 
                         << iproc << endl;
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
@@ -2008,6 +2006,8 @@ uint64_t MapReduce::map(char *file,
         else {
             while (1) {
                 int itask;
+                if (LOGORNOT) LOG << LOGMSG2 << "WORKER: waiting assignment"
+                    << endl;
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
                 if (LOGORNOT) LOG << LOGMSG2 << "WORKER: Recieve task num "
                     << itask << " from MASTER" << endl;
@@ -2027,7 +2027,7 @@ uint64_t MapReduce::map(char *file,
 
     // clean up file list
 
-    for (int i = 0; i < nmap; i++) delete [] files[i];
+    for (size_t i = 0; i < nmap; i++) delete [] files[i];
     memory->sfree(files);
 
     kv->complete();
