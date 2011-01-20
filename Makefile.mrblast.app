@@ -15,16 +15,32 @@ CXX = mpicxx
 
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
+
 MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
 #MRMPI_USRLIB = -lmrmpi
-BOOST_USRLIB = -lboost_program_options
+
+#BOOST_USRLIB = -lboost_program_options
+#BOOST_USRLIB = -L/home/ssul/work/packages2/x86_64-rhel5/lib -lboost_program_options-gcc41-mt
+
+### boost_1_45_0
+#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_date_time -lboost_system -lboost_filesystem -lboost_regex -lboost_thread -lboost_log -lboost_log_setup
+BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options
+#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_log -lboost_log_setup
 
 ### RANGER
-#/opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
- 
-CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS) $(BOOST_INCLUDE)
+#BOOST_INCLUDE = /opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
+### My Boost
+#BOOST_INCLUDE = -I/home/ssul/work/packages/include/boost-1_37
+
+### boost_1_45_0
+BOOST_INCLUDE = -I/home/ssul/work/packages2/include
+#BOOST_INCLUDE = -I/home/ssul/work/packages2/include/
+#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options
+
+#CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS) 
+CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)
 ORIG_LIBS = $(MRMPI_USRLIB) $(BOOST_USRLIB)
-LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS) 
+LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS)
  
 ### XML parsing ########################################################
 #CPPFLAGS = $(LIBXML_INCLUDE) $(LIBXSLT_INCLUDE) $(ORIG_CPPFLAGS) 
@@ -32,8 +48,8 @@ LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS)
 
 ### Boost include 
 ### if Boost is not installed /usr/inlcude, change this location!!!
-#BOOST_INCLUDE = -I/usr/include/boost
-#CPPFLAGS = $(BOOST_INCLUDE) $(ORIG_CPPFLAGS) 
+#BOOST_INCLUDE = -I/usr/include/boost 
+CPPFLAGS = $(BOOST_INCLUDE) $(ORIG_CPPFLAGS) 
 ########################################################################
 
 # new_project.sh will copy everything in the following block to any

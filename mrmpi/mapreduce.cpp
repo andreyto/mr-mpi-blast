@@ -1094,433 +1094,7 @@ int assign_proc_num(string workItem, multimap<string,int> &mmDbCoreNum,
     else 
         return -1;
 }
-      
-/* 
- * ssj 10.13.2010
- * 
- * Instead of using master file (char* file), use vector<string> to pass
- * work items to map fuction. 
- */
-/*
-uint64_t MapReduce::map(std::vector<std::string> vWorkItems,
-                        void (*appmap)(int, char *, KeyValue *, void *),
-                        void *appptr, int addflag)
-{
-    int n;
-    char line[MAXLINE];
-    MPI_Status status;
-    
-    if (timer) start_timer();
-    if (verbosity) file_stats(0);
-    
-    if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
-    delete kmv;
-    kmv = NULL;
-    
-    if (addflag == 0) {
-        if (kv) myfree(kv->memtag);
-        delete kv;
-        kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
-    }
-    else if (kv == NULL) {
-        kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
-    }
-    else {
-        kv->append();
-    }
-    
-    int nmap = 0;
-    int maxfiles = 0;
-    char **files = NULL;
-    //FILE *fp;
-
-    if (me == 0) {
-        //fp = fopen(file, "r");
-        //if (fp == NULL) error->one("Could not open file of file names");
-        if (vWorkItems.size() == 0) error->one("No work items");
-    }
-    
-    unsigned int numItem = 0;
-    while (1) {
-        if (me == 0) {
-            //if (fgets(line, MAXLINE, fp) == NULL) n = 0;
-            //else n = strlen(line) + 1;
-            if (numItem == vWorkItems.size()) n = 0;
-            else {
-                memcpy(line, vWorkItems[numItem].c_str(), vWorkItems[numItem].length()+1);
-                n = strlen(line) + 1;
-            }
-        }
-        MPI_Bcast(&n, 1, MPI_INT, 0, comm);
-        if (n == 0) {
-            //if (me == 0) fclose(fp);
-            break;
-        }
-
-        MPI_Bcast(line, n, MPI_CHAR, 0, comm);
-
-        char *ptr = line;
-        while (isspace(*ptr)) ptr++;
-        if (strlen(ptr) == 0) error->all("Blank line in file of file names");
-        char *ptr2 = ptr + strlen(ptr) - 1;
-        while (isspace(*ptr2)) ptr2--;
-        ptr2++;
-        *ptr2 = '\0';
-
-        if (nmap == maxfiles) {
-            maxfiles += FILECHUNK;
-            files = (char **)
-                    memory->srealloc(files, maxfiles * sizeof(char *), "MR:files");
-        }
-        n = strlen(ptr) + 1;
-        files[nmap] = new char[n];
-        strcpy(files[nmap], ptr);
-        nmap++; // num of work items
-        numItem++;
-    }
-    
-    // nprocs = 1 = all tasks to single processor
-    // mapstyle 0 = chunk of tasks to each proc
-    // mapstyle 1 = strided tasks to each proc
-    // mapstyle 2 = master/slave assignment of tasks
-    // mapstyle 3 = master/slave with DB assignment
-
-    if (nprocs == 1) {
-        for (int itask = 0; itask < nmap; itask++)
-            appmap(itask, files[itask], kv, appptr);
-
-    }
-    else if (mapstyle == 0) {
-        uint64_t nmap64 = nmap;
-        int lo = me * nmap64 / nprocs;
-        int hi = (me + 1) * nmap64 / nprocs;
-        for (int itask = lo; itask < hi; itask++)
-            appmap(itask, files[itask], kv, appptr);
-
-    }
-    else if (mapstyle == 1) {
-        for (int itask = me; itask < nmap; itask += nprocs)
-            appmap(itask, files[itask], kv, appptr);
-
-    }
-    else if (mapstyle == 2) {
-        if (me == 0) {
-            int doneflag = -1;
-            int ndone = 0;
-            int itask = 0;
-            for (int iproc = 1; iproc < nprocs; iproc++) {
-                if (itask < nmap) {
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
-                }
-                else {
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
-            }
-            while (ndone < nprocs - 1) {
-                int iproc, tmp;
-                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
-                iproc = status.MPI_SOURCE;
-
-                if (itask < nmap) {
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
-                }
-                else {
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
-            }
-
-        }
-        else {
-            while (1) {
-                int itask;
-                MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
-                if (itask < 0) break;
-                appmap(itask, files[itask], kv, appptr);
-                MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
-            }
-        }
-    }
-    /*
-     * Here I add my mapstyle (mapstyle=3) to assign work items to nproc-1 
-     * workers considering the name of DB chunks.
-     * Main goal is to assign work items which have the same DB chunk names
-     * to workers running on the same node physically.
-     
-    else if (mapstyle == 3) {
-        if (me == 0) {
-            int doneflag = -1;
-            int ndone = 0;
-            int itask = 0;
-             
-            ///
-            /// Prepare a mutimap for mapstyle=3 in mapreduce.cpp
-            ///
-            typedef struct gf {
-                int NTOTALDBCHUNKS;
-                int NCOREPERNODE;
-            } GF;
-            GF *gf = (GF*) appptr;
-            int NCOREPERNODE = gf->NCOREPERNODE;
-            int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
-            int nNodes = nprocs / NCOREPERNODE;
-            int nDBPerNode = int(ceil(NTOTALDBCHUNKS / nNodes));
            
-            /// 
-            /// Assgin each node with one or more DB chunks
-            ///
-            multimap<string, int> mmDbCoreNum;
-            if (NTOTALDBCHUNKS >= nNodes) { /// ex) 109 > 64 nodes (=1024cores)
-                int nodeIdx = 0;
-                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
-                    vector<string> vWorkItemTokens = split(vWorkItems[i], ',');
-                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[1], nodeIdx)); 
-                    nodeIdx++;
-                    if (nodeIdx == nNodes) nodeIdx = 0;
-                }
-            }
-            else { /// ex) 109 < 128 nodes (=2048cores)
-                int nodeIdx = 0;
-                for (int i = 0; i < NTOTALDBCHUNKS; ++i) {
-                    vector<string> vWorkItemTokens = split(vWorkItems[i], ',');
-                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[1], nodeIdx)); 
-                    nodeIdx++;
-                }
-                for (int i = 0; i < nNodes - NTOTALDBCHUNKS; ++i) {
-                    vector<string> vWorkItemTokens = split(vWorkItems[i], ',');
-                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[1], nodeIdx)); 
-                    nodeIdx++;
-                }          
-            }            
-
-            ///
-            /// V3: Make a queue with task number
-            /// Assing jobs to workders using the queue and files[itask]
-            ///
-            queue<int> qWorkItems;
-            for (int i = 0; i < vWorkItems.size(); ++i)  
-                qWorkItems.push(i);
-            
-            ///
-            /// Prepare a proc/node task assign table
-            ///
-            vector< vector<bool> > vvTaskTable;
-            for (int i = 0; i < nNodes; ++i) {
-                vector<bool> vBoolTemp(NCOREPERNODE, false);
-                vvTaskTable.push_back(vBoolTemp);
-            }
-            
-            ///
-            /// Check work item queue and db chunk assign table
-            /// 1. Get a work item, get db name, check node num to assign
-            ///
-            int numProcUsed = 1;
-            
-            while(!qWorkItems.empty() && numProcUsed < nprocs) {
-                if (itask < nmap) {
-                    /// Get the front item from the queue
-                    int& taskNum = qWorkItems.front();
-                    
-                    vector<int> vSelectedNodeNum;
-                    int selectedProcNum = 
-                        assign_proc_num(vWorkItems[taskNum], mmDbCoreNum, 
-                            vvTaskTable, vSelectedNodeNum, NCOREPERNODE);
-                
-                    ///
-                    /// This is the case when all procs in a node assigned with ]
-                    /// a set of DB chunk name are used. Thus, put the work item 
-                    /// back to the queue and get another one.
-                    /// This routine should be repeated until we find a free slot.
-                    ///
-                    if (selectedProcNum == -1) {                        
-                        qWorkItems.pop();
-                        qWorkItems.push(taskNum);
-                        continue;
-                    }
-                         
-                    MPI_Send(&itask, 1, MPI_INT, selectedProcNum, 0, comm);
-                    
-                    /////////////////
-                    qWorkItems.pop();
-                    /////////////////
-
-                    numProcUsed++;
-                    itask++;
-                }
-                else{ /// # work items < nprocs
-                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    //ndone++;
-                }
-            }
-            
-            /* ORIG ********************************************************
-            itask = 0;
-            for (int iproc = 1; iproc < nprocs; iproc++) {
-                if (itask < nmap) {
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
-                }
-                else { /// # work items < nprocs
-                    //std::cout << "Send done (1) vWorkItems[itask] = " << vWorkItems[itask] << ", iproc = " << iproc << std::endl;  
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
-            }
-            ***************************************************************
-            
-            while (ndone < nprocs - 1) {
-                int iproc, tmp;
-                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
-                iproc = status.MPI_SOURCE;
-                //cout << "iproc done = " << iproc << endl;
-                           
-                ///
-                /// Check the iproc returned from worker and decide work items 
-                /// to assign
-                ///
-                int iprocNode = (int)iproc / NCOREPERNODE;
-                
-                /// 
-                /// Update vvTaskTable
-                ///
-                int procNumInTable = iproc % NCOREPERNODE;
-                assert(vvTaskTable[iprocNode][procNumInTable] == true);
-               
-                if (!(iprocNode == 0 && procNumInTable == 0))    
-                    ///////////////////////////////////////////////
-                    vvTaskTable[iprocNode][procNumInTable] = false;
-                    ///////////////////////////////////////////////
-                            
-                /// 
-                /// Get the front of the queue and check the db chunk name
-                /// If iproc's node has one of the db chunk names, just pop the 
-                /// task out of the queue and aassign the task to worker.
-                /// If not, pop and push back the task number at the back of the 
-                /// queue, and examine the next front item from the queue.
-                ///
-                int selectedProcNum = 0;
-                int selectedNodeNum = 0;
-                int tempf = 0;
-                int &f = tempf;
-                int nTrial = 0;
-                int nMaxTrial = 20;  /// max num of trial to find node number which 
-                                    /// has the DB chunk of the work item.
-
-                while (1) {
-
-                    if (qWorkItems.empty()) break;      
-
-                    f = qWorkItems.front();                    
-                    vector<string> vWorkItemTokens = split(vWorkItems[f], ',');
-                    pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
-                    multimap<string, int>::iterator it; 
-                    
-                    ///
-                    /// Decide node num for the new db chunk name
-                    ///
-                    ii = mmDbCoreNum.equal_range(vWorkItemTokens[1]); 
-                    vector<int> vSelectedNodeNum;
-                    for(it = ii.first; it != ii.second; ++it) {
-                        vSelectedNodeNum.push_back((int) it->second);
-                    }
-
-                    ///
-                    /// Compare the returned node num with new db chunk's node num
-                    ///
-                    bool bFound = false;
-                    for (int i = 0; i < vSelectedNodeNum.size(); ++i) {
-                        if (iprocNode == vSelectedNodeNum[i]) {
-                            bFound = true;
-                            break;
-                        }
-                    }
-                    
-                    ///
-                    /// 
-                    ///
-                    if (bFound || nTrial > nMaxTrial) {                        
-                        //if (nTrial > nMaxTrial) {
-                            //cout << "### INFO: force assignment\n";
-                        //}
-
-                        assert(vvTaskTable[iprocNode][procNumInTable] == false);
-                        vvTaskTable[iprocNode][procNumInTable] = true;
-                 
-                        selectedNodeNum = iprocNode;
-                        selectedProcNum = iproc;
-                        
-                        /////////////////
-                        qWorkItems.pop();
-                        /////////////////
-                                               
-                        break;  /// to escape from while(1)            
-                    }
-                    else {
-                        nTrial++;
-                        ///////////////////
-                        qWorkItems.pop();
-                        qWorkItems.push(f);
-                        ////////////////////                        
-                    }                   
-                }
-                
-                if (itask < nmap) {
-                    assert(selectedProcNum != 0);
-                    MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
-                    numProcUsed++;
-                    itask++;
-                }
-                else {
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
- 
-                /* ORIG ********************************************************
-                if (itask < nmap) {
-                    //std::cout << "vWorkItems[itask] = " << vWorkItems[itask] << ", iproc = " << iproc << std::endl;
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
-                }
-                else {
-                    //std::cout << "Send done (2) vWorkItems[itask] = " << vWorkItems[itask] << ", iproc = " << iproc << std::endl;
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
-                ****************************************************************
-            }
-        } /// master
-        else {
-            while (1) {
-                int itask;
-                MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
-                if (itask < 0) break;
-                appmap(itask, files[itask], kv, appptr);
-                MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
-            }
-        } /// worker      
-    }
-    else error->all("Invalid mapstyle setting");
-
-    // clean up file list
-
-    for (int i = 0; i < nmap; i++) delete [] files[i];
-    memory->sfree(files);
-
-    kv->complete();
-
-    stats("Map", 0);
-
-    uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    return nkeyall;
-}          
-*/              
                         
 /* ----------------------------------------------------------------------
    create a KV via a parallel map operation for list of files in file
@@ -1628,6 +1202,28 @@ uint64_t MapReduce::map(char *file,
 
     }
     else if (mapstyle == 2) {
+        ///
+        /// Init 
+        ///
+        typedef struct gf {
+            int NTOTALDBCHUNKS;
+            int NCOREPERNODE;
+            int NMAXTRIAL;
+            int logornot;
+            ostream* logstream;
+        } GF;
+        GF *gf = (GF*) appptr;
+        int NCOREPERNODE = gf->NCOREPERNODE;
+        int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
+        int nMaxTrial = gf->NMAXTRIAL;  /// max num of trial to find node 
+                                        /// number which has the DB chunk 
+                                        /// of the work item.
+        LOGORNOT = gf->logornot;
+        LOGSTREAM = gf->logstream;
+        LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
+        if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts (mapstyle=2).\n";
+        double scheduler_start_time = MPI_Wtime();
+        
         if (me == 0) {
             int doneflag = -1;
             int ndone = 0;
@@ -1668,6 +1264,8 @@ uint64_t MapReduce::map(char *file,
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
+        if (LOGORNOT) LOG << LOGMSG2 << "Scheduler ends (mapstyle=2)" 
+           << "\t" << MPI_Wtime() - scheduler_start_time << endl; 
     }
     ///
     /// Here I add my mapstyle (mapstyle=3) to assign work items to nproc-1 
@@ -1695,7 +1293,8 @@ uint64_t MapReduce::map(char *file,
         LOGORNOT = gf->logornot;
         LOGSTREAM = gf->logstream;
         LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
-        if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts.\n";
+        if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts (mapstyle=3).\n";
+        double scheduler_start_time = MPI_Wtime();
                                             
         if (me == 0) {
             int doneflag = -1;
@@ -1770,7 +1369,7 @@ uint64_t MapReduce::map(char *file,
             vector<bool> vUsedProcNum(nprocs, false);
             
             //while(!qWorkItems.empty() && numProcUsed < nprocs) {
-            while(numProcUsed < nprocs) {
+            while (numProcUsed < nprocs) {
                 /// 
                 /// IF # work done < # total work
                 /// 
@@ -1818,8 +1417,7 @@ uint64_t MapReduce::map(char *file,
                             /// to # work item < # ranks.
                     if (LOGORNOT) LOG << LOGMSG2
                         << "MASTER: itask >= nmap.\n";
-                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    //ndone++;
+
                     /// No need to send done flag to master node.
                     for (size_t i = 1; i < vUsedProcNum.size(); i++) {
                         if (!vUsedProcNum[i]) {
@@ -1994,7 +1592,7 @@ uint64_t MapReduce::map(char *file,
                 /// ORIG *******************************************************
                 //if (itask < nmap) {
                     //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    //itask++;
+                        //itask++;
                 //}
                 //else {
                     //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
@@ -2019,9 +1617,72 @@ uint64_t MapReduce::map(char *file,
                     << "task num=" << itask << endl;               
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
-        } /// worker      
+        } /// worker         
+        if (LOGORNOT) LOG << LOGMSG2 << "Scheduler ends (mapstyle=3)" 
+           << "\t" << MPI_Wtime() - scheduler_start_time << endl; 
+    }
+    else if (mapstyle == 4) {
+        ///
+        /// Init 
+        ///
+        typedef struct gf {
+            int NTOTALDBCHUNKS;
+            int NCOREPERNODE;
+            int NMAXTRIAL;
+            int logornot;
+            ostream* logstream;
+        } GF;
+        GF *gf = (GF*) appptr;
+        int NCOREPERNODE = gf->NCOREPERNODE;
+        int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
+        int nMaxTrial = gf->NMAXTRIAL;  /// max num of trial to find node 
+                                        /// number which has the DB chunk 
+                                        /// of the work item.
+        LOGORNOT = gf->logornot;
+        LOGSTREAM = gf->logstream;
+        LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
+        if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts (mapstyle=4).\n";
         
-        
+        if (me == 0) {
+            int doneflag = -1;
+            int ndone = 0;
+            int itask = 0;
+            
+            for (int iproc = 1; iproc < nprocs; iproc++) {
+                if (itask < nmap) {
+                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
+                    itask++;
+                }
+                else {
+                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    ndone++;
+                }
+            }
+            
+            while (ndone < nprocs - 1) {
+                int iproc, tmp;
+                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
+                iproc = status.MPI_SOURCE;
+
+                if (itask < nmap) {
+                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
+                    itask++;
+                }
+                else {
+                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    ndone++;
+                }
+            }
+        }
+        else {
+            while (1) {
+                int itask;
+                MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
+                if (itask < 0) break;
+                appmap(itask, files[itask], kv, appptr);
+                MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
+            }
+        }
     }
     else error->all("Invalid mapstyle setting");
 
