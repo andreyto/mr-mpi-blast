@@ -28,6 +28,44 @@
 #include "memory.h"
 #include "error.h"
 
+using namespace MAPREDUCE_NS;
+
+// allocate space for static class variables and initialize them
+
+MapReduce *MapReduce::mrptr;
+int MapReduce::instances_now = 0;
+int MapReduce::instances_ever = 0;
+int MapReduce::mpi_finalize_flag = 0;
+uint64_t MapReduce::rsize = 0;
+uint64_t MapReduce::wsize = 0;
+uint64_t MapReduce::cssize = 0;
+uint64_t MapReduce::crsize = 0;
+double MapReduce::commtime = 0.0;
+
+// prototypes for non-class functions
+
+void map_file_standalone(int, KeyValue *, void *);
+int compare_standalone(const void *, const void *);
+                    
+#define MIN(A,B) ((A) < (B)) ? (A) : (B)
+#define MAX(A,B) ((A) > (B)) ? (A) : (B)
+
+#define ROUNDUP(A,B) (char *) (((uint64_t) A + B) & ~B);
+
+#define MAXLINE 1024
+#define ALIGNFILE 512         // same as in other classes
+#define FILECHUNK 128
+#define VALUECHUNK 128
+#define MBYTES 64
+#define ALIGNKV 4
+#define INTMAX 0x7FFFFFFF
+
+enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
+
+
+///
+/// Added by ssul
+///
 /// for ceil
 #include <math.h>
 
@@ -48,54 +86,18 @@ using namespace std;
 #include <vector>
 
 /// For logging
-extern int LOGGING;
 extern ostream* LOGSTREAM;
+extern int LOGORNOT;
 string LOGMSG2;
 #define LOG (*LOGSTREAM)
-typedef struct gf {
-    int NTOTALDBCHUNKS;
-    int NCOREPERNODE;
-    int NMAXTRIAL;
-} GF;
-                
+extern int NTOTALDBCHUNKS;
+extern int NCOREPERNODE;
+extern int NMAXTRIAL;
+        
 /// For tokenizer
 #include <boost/algorithm/string.hpp>
 
-
-using namespace MAPREDUCE_NS;
-
-// allocate space for static class variables and initialize them
-
-MapReduce *MapReduce::mrptr;
-int MapReduce::instances_now = 0;
-int MapReduce::instances_ever = 0;
-int MapReduce::mpi_finalize_flag = 0;
-uint64_t MapReduce::rsize = 0;
-uint64_t MapReduce::wsize = 0;
-uint64_t MapReduce::cssize = 0;
-uint64_t MapReduce::crsize = 0;
-double MapReduce::commtime = 0.0;
-
-// prototypes for non-class functions
-
-void map_file_standalone(int, KeyValue *, void *);
-int compare_standalone(const void *, const void *);
 int assign_proc_num(char*, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
-                    
-#define MIN(A,B) ((A) < (B)) ? (A) : (B)
-#define MAX(A,B) ((A) > (B)) ? (A) : (B)
-
-#define ROUNDUP(A,B) (char *) (((uint64_t) A + B) & ~B);
-
-#define MAXLINE 1024
-#define ALIGNFILE 512         // same as in other classes
-#define FILECHUNK 128
-#define VALUECHUNK 128
-#define MBYTES 64
-#define ALIGNKV 4
-#define INTMAX 0x7FFFFFFF
-
-enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
 /* ----------------------------------------------------------------------
    construct using caller's MPI communicator
@@ -1039,14 +1041,14 @@ uint64_t MapReduce::map(int nmap, void (*appmap)(int, KeyValue *, void *),
 }
 
 
-int assign_proc_num(string workItem, multimap<string,int> &mmDbCoreNum, 
+int assign_proc_num(string workItem, multimap<string, int> &mmDbCoreNum, 
                     vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum,
                     int NCOREPERNODE) 
 {
     vector<string> vWorkItemTokens;
     boost::split(vWorkItemTokens, workItem, boost::is_any_of(","));
     
-    //if (LOGGING) LOG << LOGMSG2 << "scheduler starts.\n";
+    if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts.\n";
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
     multimap<string, int>::iterator it; 
     
@@ -1204,28 +1206,6 @@ uint64_t MapReduce::map(char *file,
 
     }
     else if (mapstyle == 2) {
-        ///
-        /// Init 
-        ///
-        //typedef struct gf {
-            //int NTOTALDBCHUNKS;
-            //int NCOREPERNODE;
-            //int NMAXTRIAL;
-            ////int logornot;
-            ////ostream* logstream;
-        //} GF;
-        GF *gf = (GF*) appptr;
-        int NCOREPERNODE = gf->NCOREPERNODE;
-        int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
-        int nMaxTrial = gf->NMAXTRIAL;  /// max num of trial to find node 
-                                        /// number which has the DB chunk 
-                                        /// of the work item.
-        //LOGGING = gf->logornot;
-        //LOGSTREAM = gf->logstream;
-        LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
-        if (LOGGING) LOG << LOGMSG2 << "scheduler starts (mapstyle=2).\n";
-        double scheduler_start_time = MPI_Wtime();
-        
         if (me == 0) {
             int doneflag = -1;
             int ndone = 0;
@@ -1262,18 +1242,10 @@ uint64_t MapReduce::map(char *file,
                 int itask;
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
                 if (itask < 0) break;
-                double pure_work_time = MPI_Wtime();
-                if (LOGGING) LOG << LOGMSG2 << "WORKER: does its job with "
-                    << "itask=" << itask << " file=" << files[itask] << endl;
                 appmap(itask, files[itask], kv, appptr);
-                if (LOGGING) LOG << LOGMSG2 << "WORKER: Send it's done with "
-                    << "task num=" << itask 
-                    << "\t" << MPI_Wtime() - pure_work_time << endl;      
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
-        if (LOGGING) LOG << LOGMSG2 << "Scheduler ends (mapstyle=2)" 
-           << "\t" << MPI_Wtime() - scheduler_start_time << endl; 
     }
     ///
     /// Here I add my mapstyle (mapstyle=3) to assign work items to nproc-1 
@@ -1282,19 +1254,9 @@ uint64_t MapReduce::map(char *file,
     /// to workers running on the same node physically.
     /// 
     else if (mapstyle == 3) {          
-        ///
-        /// Init 
-        ///
-        GF *gf = (GF*) appptr;
-        int NCOREPERNODE = gf->NCOREPERNODE;
-        int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
-        int nMaxTrial = gf->NMAXTRIAL;  /// max num of trial to find node 
-                                        /// number which has the DB chunk 
-                                        /// of the work item.
-        //LOGGING = gf->b_logging;
-        //LOGSTREAM = gf->logstream;
+                    
         LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
-        if (LOGGING) LOG << LOGMSG2 << "scheduler starts (mapstyle=3)." << endl;
+        if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts (mapstyle=3).\n";
         double scheduler_start_time = MPI_Wtime();
                                             
         if (me == 0) {
@@ -1304,9 +1266,10 @@ uint64_t MapReduce::map(char *file,
             
             int nNodes = nprocs / NCOREPERNODE;
             int nDBPerNode = int(ceil(NTOTALDBCHUNKS / nNodes));
-            
+                         
             /// 
             /// Assgin each node with one or more DB chunks
+            /// A work item = <start, end, db>
             ///
             multimap<string, int> mmDbCoreNum;
         
@@ -1334,7 +1297,7 @@ uint64_t MapReduce::map(char *file,
                                        nodeIdx)); 
                     nodeIdx++;
                 }
-                for (size_t i = 0; i < (unsigned)(nNodes-NTOTALDBCHUNKS); ++i) {
+                for (size_t i = 0; i < (unsigned)(nNodes - NTOTALDBCHUNKS); ++i) {
                     string workItem(files[i]);
                     vector<string> vWorkItemTokens;
                     boost::split(vWorkItemTokens, workItem, 
@@ -1369,7 +1332,6 @@ uint64_t MapReduce::map(char *file,
             int numProcUsed = 1;
             vector<bool> vUsedProcNum(nprocs, false);
             
-            //while(!qWorkItems.empty() && numProcUsed < nprocs) {
             while (numProcUsed < nprocs) {
                 /// 
                 /// IF # work done < # total work
@@ -1377,15 +1339,20 @@ uint64_t MapReduce::map(char *file,
                 if (itask < nmap && !qWorkItems.empty()) { 
                     /// Get the front item from the queue
                     int& taskNum = qWorkItems.front();
-                    if (LOGGING) LOG << LOGMSG2 
+                    if (LOGORNOT) LOG << LOGMSG2 
                         << "MASTER: The front item in the queue = " << taskNum 
                         << endl;
-                    if (LOGGING) LOG << LOGMSG2 
+                    if (LOGORNOT) LOG << LOGMSG2 
                         << "MASTER: Num items in the queue = " 
                         << qWorkItems.size() << endl;
                         
                     vector<int> vSelectedNodeNum;
                     string workItem(files[taskNum]);
+                    
+                    assert(&mmDbCoreNum != NULL);
+                    assert(&vvTaskTable != NULL);
+                    assert(&vSelectedNodeNum != NULL);
+                    
                     int selectedProcNum = 
                         assign_proc_num(workItem, mmDbCoreNum, vvTaskTable, 
                                         vSelectedNodeNum, NCOREPERNODE);
@@ -1416,13 +1383,13 @@ uint64_t MapReduce::map(char *file,
                 }
                 else {      /// If there is ranks which have no assignment due
                             /// to # work item < # ranks.
-                    if (LOGGING) LOG << LOGMSG2
+                    if (LOGORNOT) LOG << LOGMSG2
                         << "MASTER: itask >= nmap.\n";
 
                     /// No need to send done flag to master node.
                     for (size_t i = 1; i < vUsedProcNum.size(); i++) {
                         if (!vUsedProcNum[i]) {
-                            if (LOGGING) LOG << LOGMSG2 << "MASTER: Send DONE "
+                            if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send DONE "
                                 << "flag to Rank=" << i << endl;
                             MPI_Send(&doneflag, 1, MPI_INT, i, 0, comm);
                             ndone++;
@@ -1432,7 +1399,7 @@ uint64_t MapReduce::map(char *file,
                 }
             }
             
-            if (LOGGING) {
+            if (LOGORNOT) {
                 LOG << LOGMSG2
                     << "MASTER: After initial assignment...\n";
                 for (size_t i = 0; i < nNodes; ++i) {
@@ -1443,24 +1410,9 @@ uint64_t MapReduce::map(char *file,
                 }
                 LOG << endl;
             }
-            
-            ///* ORIG **********************************************************
-            //itask = 0;
-            //for (int iproc = 1; iproc < nprocs; iproc++) {
-                //if (itask < nmap) {
-                    //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    //itask++;
-                //}
-                //else { /// # work items < nprocs
-                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    //ndone++;
-                //}
-            //}
-            ///*****************************************************************
-            
             while (ndone < nprocs - 1) {
                 int iproc, tmp;
-                if (LOGGING) LOG << LOGMSG2 << "MASTER: Waiting any worker done"
+                if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Waiting any worker done"
                     << endl;
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
@@ -1480,7 +1432,7 @@ uint64_t MapReduce::map(char *file,
                 if (!(iprocNode == 0 && procNumInTable == 0))    
                     vvTaskTable[iprocNode][procNumInTable] = false;
                             
-                if (LOGGING) {
+                if (LOGORNOT) {
                     LOG << LOGMSG2
                         << "MASTER: After delete...\n";
                     for (size_t i = 0; i < nNodes; ++i) {
@@ -1541,11 +1493,11 @@ uint64_t MapReduce::map(char *file,
                     ///
                     /// 
                     ///
-                    if (bFound || nTrial > nMaxTrial) {                        
+                    if (bFound || nTrial > NMAXTRIAL) {                        
                         assert(vvTaskTable[iprocNode][procNumInTable] == false);
                         vvTaskTable[iprocNode][procNumInTable] = true;
                         
-                        if (LOGGING) {
+                        if (LOGORNOT) {
                             LOG << LOGMSG2
                                 << "MASTER: After reassignment...\n";
                             for (size_t i = 0; i < nNodes; ++i) {
@@ -1577,116 +1529,32 @@ uint64_t MapReduce::map(char *file,
                 
                 if (itask < nmap) {
                     assert(selectedProcNum != 0);
-                    if (LOGGING) LOG << LOGMSG2 << "MASTER: Send Job=" 
+                    if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send Job=" 
                         << f << " to Rank=" << selectedProcNum << endl;
                     MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
                     numProcUsed++;
                     itask++;
                 }
                 else { /// itask >= nmap ==> # work done >= # total work
-                    if (LOGGING) LOG << LOGMSG2 << "MASTER: Send DONE to Rank=" 
+                    if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send DONE to Rank=" 
                         << iproc << endl;
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
- 
-                /// ORIG *******************************************************
-                //if (itask < nmap) {
-                    //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                        //itask++;
-                //}
-                //else {
-                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    //ndone++;
-                //}
-                ///*************************************************************
             }
         } /// master
         else {
             while (1) {
                 int itask;
-                if (LOGGING) LOG << LOGMSG2 << "WORKER: waiting assignment"
-                    << endl;
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
-                if (LOGGING) LOG << LOGMSG2 << "WORKER: Recieve task num "
-                    << itask << " from MASTER" << endl;
                 if (itask < 0) break;
-                double pure_work_time = MPI_Wtime();
-                if (LOGGING) LOG << LOGMSG2 << "WORKER: does its job with "
-                    << "itask=" << itask << " file=" << files[itask] << endl;
                 appmap(itask, files[itask], kv, appptr); 
-                if (LOGGING) LOG << LOGMSG2 << "WORKER: Send it's done with "
-                    << "task num=" << itask 
-                    << "\t" << MPI_Wtime() - pure_work_time << endl;                
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         } /// worker         
-        if (LOGGING) LOG << LOGMSG2 << "Scheduler ends (mapstyle=3)" 
+        if (LOGORNOT) LOG << LOGMSG2 << "Scheduler ends (mapstyle=3)" 
            << "\t" << MPI_Wtime() - scheduler_start_time << endl; 
-    }
-    //else if (mapstyle == 4) {
-        /////
-        ///// Init 
-        /////
-        //typedef struct gf {
-            //int NTOTALDBCHUNKS;
-            //int NCOREPERNODE;
-            //int NMAXTRIAL;
-            //int logornot;
-            //ostream* logstream;
-        //} GF;
-        //GF *gf = (GF*) appptr;
-        //int NCOREPERNODE = gf->NCOREPERNODE;
-        //int NTOTALDBCHUNKS = gf->NTOTALDBCHUNKS;
-        //int nMaxTrial = gf->NMAXTRIAL;  /// max num of trial to find node 
-                                        ///// number which has the DB chunk 
-                                        ///// of the work item.
-        //LOGGING = gf->logornot;
-        //LOGSTREAM = gf->logstream;
-        //LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
-        //if (LOGGING) LOG << LOGMSG2 << "scheduler starts (mapstyle=4).\n";
-        
-        //if (me == 0) {
-            //int doneflag = -1;
-            //int ndone = 0;
-            //int itask = 0;
-            
-            //for (int iproc = 1; iproc < nprocs; iproc++) {
-                //if (itask < nmap) {
-                    //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    //itask++;
-                //}
-                //else {
-                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    //ndone++;
-                //}
-            //}
-            
-            //while (ndone < nprocs - 1) {
-                //int iproc, tmp;
-                //MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
-                //iproc = status.MPI_SOURCE;
-
-                //if (itask < nmap) {
-                    //MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    //itask++;
-                //}
-                //else {
-                    //MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    //ndone++;
-                //}
-            //}
-        //}
-        //else {
-            //while (1) {
-                //int itask;
-                //MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
-                //if (itask < 0) break;
-                //appmap(itask, files[itask], kv, appptr);
-                //MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
-            //}
-        //}
-    //}
+    } 
     else error->all("Invalid mapstyle setting");
 
     // clean up file list

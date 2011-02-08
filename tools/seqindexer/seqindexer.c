@@ -10,7 +10,7 @@
 int main(int argc, char* argv[])
 {
     if (argc < 2) {
-        printf("Usage: lineindexer infile outfile\n\n");
+        printf("Usage: seqindexer infile outfile\n\n");
         return 1;
     }
     

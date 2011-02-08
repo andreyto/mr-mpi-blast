@@ -60,4 +60,10 @@
         
     01.11.2011 Update build_mrmpi.sh
         
-    
+    02.08.2011 
+        - Add convert.py for generating search option strategy file
+        - Change to make use of the begin offset as UUID instead of query 
+          sequence ID
+        - Change blSize in reading query sequence before run Blaster()
+        - Remove GF struct
+        

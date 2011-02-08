@@ -5,6 +5,8 @@
 //  Author: Seung-Jin Sul
 //          (ssul@jcvi.org)
 //
+//  Last updated: 02/08/2011
+//
 ////////////////////////////////////////////////////////////////////////
 
 /*
@@ -86,10 +88,6 @@ namespace po = boost::program_options;
 /// For processing configuration file 
 #include <boost/program_options/detail/config_file.hpp>
 namespace pod = boost::program_options::detail;
-
-/// log
-//#include <boost/log/trivial.hpp>
-
 /// ----------------------------------------------------------------------------
 
 /// For typedef unsigned long long int uint32_t
@@ -99,8 +97,12 @@ namespace pod = boost::program_options::detail;
 /// ----------------------------------------------------------------------------
 /// Settings from mrblast.ini conf file
 /// ----------------------------------------------------------------------------
-int EXCLUSIONORNOT = 0;
-int EXCLUSIONTHRESHOLD; /// Exclusion threshold = 100bp
+int VERBOSITY;              /// log from mr-mpi lib
+int TIMER;                  /// log elapsed time for each mapreduce call 
+int MEMSIZE;                /// # the page size (in Mbytes)
+
+bool EXCLUSIONORNOT;
+int EXCLUSIONTHRESHOLD;     /// Exclusion threshold = 100bp
 string EXCLUSIONHISTFILE;
  
 /// DB options
@@ -108,26 +110,20 @@ string DBCHUNKLISTFILE;
 int NTOTALDBCHUNKS;
 
 /// Log
-int LOGGING = 0;
+int LOGORNOT = 0;
+int LOGTOFILE = 0;
+ostream* LOGSTREAM = NULL;
 string LOGMSG;
 string LOGFILENAME;
-ofstream LOGFILE;
-ostream* LOGSTREAM = NULL;
-#define save_log(e) {LOGFILE << e << endl;}
-
-/// To pass NTOTALDBCHUNKS and NCOREPERNODE to map() for custom scheduler
-/// NMAXTRIAL = max num of trial to find node number which 
-///             has the DB partition of the work item.
-typedef struct gf {
-    int NTOTALDBCHUNKS;
-    int NCOREPERNODE;
-    int NMAXTRIAL;
-} GF;
-GF GF1;
+#define LOG (*LOGSTREAM)
+bool OPTDUMPED = false;     /// For dumping Blast opts out
+int NCOREPERNODE;
+int NMAXTRIAL;              /// max num of trial to find node number which 
+                            /// has the DB partition of the work item.
 /// ----------------------------------------------------------------------------
 
 /// Blast target DB setting
-static CSearchDatabase *p_TargetDb = 0;
+static CSearchDatabase *pTargetDb = 0;
 string prevDbChunkName;
 
 /// Import search strategy
@@ -135,17 +131,17 @@ string STRATEGYFILENAME;
 
 /// Misc.
 const int MAXSTR = 256;
-const int QUERY = 0;    /// To retireve query info from CSeq_align
-const int SUBJECT = 1;  /// To retireve suject info from CSeq_align
-int MYID;
-bool OPTDUMP = false; /// For dumping Blast opts out
-string OUTPREFIX;
+const int MAXSTR2 = 1000000;
+const int QUERY = 0;        /// To retireve query info from CSeq_align
+const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
+int MYID;                   /// MPI rank
+string OUTPREFIX;           /// Prefix string for output file names
 string INDEXFILENAME;
 string QUERYFILENAME;
-int NITERATION;
+int NITERATION;             /// iteration number
 int MAPSTYLE = 0;
-int NQUERYPERWORKITEM;
-//#define NDEBUG 1
+int NQUERYPERWORKITEM;      /// block size
+#define NDEBUG 1
 
 /// For syncronized timing
 #ifndef MPI_WTIME_IS_GLOBAL
@@ -172,20 +168,21 @@ int BLASTRESSZ = sizeof(BLASTRES);
 
 /// To sort Blast hits by evalue
 typedef struct structEvalue {
-    BLASTRES* p_res;
+    BLASTRES* p;
     double evalue;
 } STRUCTEVALUE;
 string WORKEROUTPUTFILENAME = "";
  
 /// MR-MPI CALLS
-void    mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr);                   
-void    mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, 
-            int nvalues, int *valuebytes, KeyValue *kv, void *ptr);                         
+void mr_run_blast(int itask, char *file, KeyValue *kv, void *ptr);                   
+void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, 
+                                   int nvalues, int *valuebytes, KeyValue *kv, 
+                                   void *ptr);                         
 inline bool mycompare(STRUCTEVALUE e1, STRUCTEVALUE e2);
 
 /// Check hit exclusion
 inline bool check_exclusion(string qGi, string sGi, int qCutLocStart, 
-                int qCutLocEnd, int sStart, int sEnd, int threshold);
+                            int qCutLocEnd, int sStart, int sEnd, int threshold);
 
 
 
@@ -213,26 +210,30 @@ int main(int argc, char **argv)
         DBCHUNKLISTFILE = parameters["DBCHUNKLISTFILE"];
         EXCLUSIONHISTFILE = parameters["EXCLUSIONHISTFILE"];
         LOGFILENAME = parameters["LOGFILENAME"];
-        try {   
-            GF1.NCOREPERNODE = boost::lexical_cast<int>(
+        try { 
+            VERBOSITY = boost::lexical_cast<int>(
+                parameters["VERBOSITY"]);
+            TIMER = boost::lexical_cast<int>(
+                parameters["TIMER"]);
+            MEMSIZE = boost::lexical_cast<int>(
+                parameters["MEMSIZE"]);         
+            NCOREPERNODE = boost::lexical_cast<int>(
                 parameters["NCOREPERNODE"]);
-            GF1.NMAXTRIAL= boost::lexical_cast<int>(
+            NMAXTRIAL= boost::lexical_cast<int>(
                 parameters["NMAXTRIAL"]);           
-            EXCLUSIONORNOT = boost::lexical_cast<int>(
-                parameters["EXCLUSIONORNOT"]);
             EXCLUSIONTHRESHOLD = boost::lexical_cast<int>(
                 parameters["EXCLUSIONTHRESHOLD"]);     
-            LOGGING = boost::lexical_cast<int>(
-                parameters["LOGGING"]);
+            LOGORNOT = boost::lexical_cast<int>(
+                parameters["LOGORNOT"]);
+            LOGTOFILE = boost::lexical_cast<int>(
+                parameters["LOGTOFILE"]);
         }
         catch(const boost::bad_lexical_cast &) {
             cerr << "Exception: bad_lexical_cast" << endl;
-            return 1;
         }
     }
     catch(exception& e) {
         cerr<< "Exception: " << e.what() << endl;
-        return 1;
     }
         
     /// 
@@ -275,6 +276,9 @@ int main(int argc, char **argv)
         ("map-style,m", 
             po::value<int>(&MAPSTYLE)->default_value(2), 
             "set MR-MPI mapstyle: 2=master/slave, 3=new scheduler")
+        ("self-exclusion,x", 
+            po::value<bool>(&EXCLUSIONORNOT)->default_value(false), 
+            "enable self exclusion")
     ;
     
     po::options_description allDesc("Allowed options");
@@ -298,21 +302,21 @@ int main(int argc, char **argv)
             QUERYFILENAME = vm["query-file"].as<string>();
         else {
             cerr << "ERROR: query file was not set.\n\n"; 
-            cerr << allDesc;
+            cout << allDesc;
             return 1;
         }
         if (vm.count("index-file"))  
             INDEXFILENAME = vm["index-file"].as<string>();
         else {
             cerr << "ERROR: index file was not set.\n\n"; 
-            cerr << allDesc;
+            cout << allDesc;
             return 1;
         }
         if (vm.count("import-search-strategy")) 
             STRATEGYFILENAME = vm["import-search-strategy"].as<string>();
         else {
             cerr << "ERROR: option file was not set.\n\n"; 
-            cerr << allDesc;
+            cout << allDesc;
             return 1;
         }
         
@@ -327,34 +331,39 @@ int main(int argc, char **argv)
             NITERATION = vm["iteration"].as<int>();
         if (vm.count("map-style")) 
             MAPSTYLE = vm["map-style"].as<int>();
+        if (vm.count("self-exclusion")) 
+            EXCLUSIONORNOT = vm["self-exclusion"].as<bool>();
     }
         
     ///
     /// MPI setup
     ///
-    int MPI_myId, MPI_nProcs;
+    //char MPI_procName[MAXSTR];
+    //int MPI_myId;
     MPI_Init(&argc, &argv);    
-    MPI_Comm_rank(MPI_COMM_WORLD, &MPI_myId);
-    MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
-    MYID = MPI_myId;
+    MPI_Comm_rank(MPI_COMM_WORLD, &MYID);
     
     ///
     /// Set Log stream 
     ///
-    if (LOGGING) {
-        LOGFILENAME = OUTPREFIX + "-" 
-            + boost::lexical_cast<string>(MYID) + "-" + LOGFILENAME;
-        LOGFILE.open(LOGFILENAME.c_str(), ios::out);
-        LOGSTREAM = &LOGFILE;
-        if (MYID == 0) cout << "[INFO] Logging is enabled." << endl;     
+    ofstream logFile;
+    if (LOGORNOT) {
+        if (LOGTOFILE) {
+            LOGFILENAME = OUTPREFIX + "-" 
+                + boost::lexical_cast<string>(MYID) + "-" + LOGFILENAME;
+            logFile.open(LOGFILENAME.c_str(), ios::out);
+            LOGSTREAM = &logFile;
+        } 
+        else LOGSTREAM = &cout;        
     }  
+    else LOGSTREAM = NULL;  
     LOGMSG = "[LOG] Rank:" + boost::lexical_cast<string>(MYID) + " ";
     double profile_time = MPI_Wtime();
     
     /// 
     /// MR-MPI init
     ///
-    if (LOGGING) save_log(LOGMSG << "MR-MPI Init starts.");
+    if (LOGORNOT) LOG << LOGMSG << "MR-MPI Init starts.\n";
     MapReduce *mr2 = new MapReduce(MPI_COMM_WORLD);
     
     /*
@@ -369,16 +378,18 @@ int main(int argc, char **argv)
     * valuealign = N = byte-alignment of values
     * fpath = string 
     */
-    mr2->verbosity = 0;
-    mr2->timer = 0;
+    mr2->verbosity = VERBOSITY;
+    mr2->timer = TIMER;
+    mr2->memsize = MEMSIZE;
+    mr2->keyalign = sizeof(uint32_t);  /// key value is the begin offset 
     mr2->mapstyle = MAPSTYLE;  /// master/slave mode=2, custom scheduler=3
     MPI_Barrier(MPI_COMM_WORLD);
-            
+        
     ///
     /// Make a file for map() which contains a list of file
     /// names. A file name is a form of "queryFile,dbChunkName"
     /// In map(), the file name is splitted into "queryFile" and
-    /// "dbChunkName". We've got 109 DB chunks, FYI.
+    /// "dbChunkName". We've got 109 DB chunks (Jul 2010).
     ///
     vector<string> vWorkItems;
     vector<string> vDbChunkNames;
@@ -388,7 +399,7 @@ int main(int argc, char **argv)
     uint32_t nWorkItemsPerFile = 0;
     
     double master_init_time = MPI_Wtime();
-    if (LOGGING) save_log(LOGMSG << "Master's init work starts.");
+    if (LOGORNOT) LOG << LOGMSG << "Master's init work starts." << endl;
            
     if (MYID == 0) {
         ///
@@ -405,7 +416,6 @@ int main(int argc, char **argv)
         }
         dbChunkNameFile.close();        
         NTOTALDBCHUNKS = vDbChunkNames.size();
-        GF1.NTOTALDBCHUNKS = NTOTALDBCHUNKS;
         
         ///
         /// Read seqeunce line index file 
@@ -419,7 +429,7 @@ int main(int argc, char **argv)
             cerr << "ERROR: Index file open error.\n";
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        
+    
         string beginOffset;
         string endOffset;
         if (NQUERYPERWORKITEM) { /// If NQUERYPERWORKITEM > 0
@@ -442,7 +452,7 @@ int main(int argc, char **argv)
                 }      
                 else n++;
             }        
-            if (n != 0) {
+            if (n != 0) { /// If (total num seqs % NQUERYPERWORKITEM != 0)
                 for (size_t j = 0; j < (unsigned)NTOTALDBCHUNKS; ++j) { 
                     vWorkItems.push_back(beginOffset + "," + endOffset + ","
                         + vDbChunkNames[j]);
@@ -468,9 +478,9 @@ int main(int argc, char **argv)
         indexFile.close();
         nWorkItems = vWorkItems.size();
         vDbChunkNames.clear();
-        cout << "[INFO] Number of query blocks = " << nQueryBlocks << endl;     
-        cout << "[INFO] Number of DB partitions = " << NTOTALDBCHUNKS << endl;     
-        cout << "[INFO] Number of work items = " << nWorkItems << endl;
+        cout << "[INFO] number of query blocks = " << nQueryBlocks << endl;     
+        cout << "[INFO] number of DB partitions = " << NTOTALDBCHUNKS << endl;     
+        cout << "[INFO] number of work items = " << nWorkItems << endl;
         
         ///
         /// Split work item master file into sub master files and process the 
@@ -484,11 +494,11 @@ int main(int argc, char **argv)
             nSubWorkItemFiles = NITERATION;
             nWorkItemsPerFile = (nQueryBlocks / NITERATION) * NTOTALDBCHUNKS;            
             nRemains = (nQueryBlocks % NITERATION) * NTOTALDBCHUNKS;
-            if (LOGGING) save_log(LOGMSG 
+            if (LOGORNOT) LOG << LOGMSG 
                 << "nSubWorkItemFiles, nWorkItemsPerFile, nRemains = " 
                 << nSubWorkItemFiles << " " 
                 << nWorkItemsPerFile << " " 
-                << nRemains);              
+                << nRemains << endl;                
         }
         else { /// If NITERATION = 1
             nWorkItemsPerFile = nWorkItems;
@@ -539,8 +549,8 @@ int main(int argc, char **argv)
              << nSubWorkItemFiles << endl;
     } /// master
     MPI_Barrier(MPI_COMM_WORLD); 
-    if (LOGGING) save_log(LOGMSG << "Master's init work ends." 
-        << "\t" << MPI_Wtime() - master_init_time);
+    if (LOGORNOT) LOG << LOGMSG << "Master's init work ends." 
+        << "\t" << MPI_Wtime() - master_init_time << endl;
     
     ///
     /// Iteratively call blast and save results for nSubWorkItemFiles
@@ -554,9 +564,8 @@ int main(int argc, char **argv)
     /// n iterations
     ///
     for (size_t n = 0; n < nSubWorkItemFiles; ++n) {
-        double iter_time = MPI_Wtime();
-        if (MYID == 0) cout << "[INFO] Iteration = " << n << " starts." << endl;
-        if (LOGGING) save_log(LOGMSG << "### Iteration = " << n << " ###");
+        if (LOGORNOT) LOG << LOGMSG << "### Iteration = " << n 
+            << " ###" << endl;
         string subMasterFileName = OUTPREFIX + "-workitems-" 
             + boost::lexical_cast<string>(n) + ".txt";
    
@@ -565,27 +574,27 @@ int main(int argc, char **argv)
         ///
         uint32_t nvecRes;
         double map_time = MPI_Wtime();
-        if (LOGGING) save_log(LOGMSG << "map() starts.");
+        if (LOGORNOT) LOG << LOGMSG << "map() starts." << endl;
         nvecRes = mr2->map((char*)subMasterFileName.c_str(), 
-                           &mr_run_blast, &GF1);
-        if (LOGGING) save_log(LOGMSG << "map() ends." << "\t" 
-            <<  MPI_Wtime() - map_time);
+                           &mr_run_blast, (void*)NULL);
+        if (LOGORNOT) LOG << LOGMSG << "map() ends." << "\t" 
+            <<  MPI_Wtime() - map_time << endl;
                             
         WORKEROUTPUTFILENAME = OUTPREFIX + "-hits-" 
             + boost::lexical_cast<string>(n) + "-" 
             + boost::lexical_cast<string>(MYID) + ".txt";
         
         double collate_time = MPI_Wtime();
-        if (LOGGING) save_log(LOGMSG << "collate starts.");
+        if (LOGORNOT) LOG << LOGMSG << "collate starts." << endl;
         mr2->collate(NULL);
-        if (LOGGING) save_log(LOGMSG << "collate ends." 
-            << "\t" << MPI_Wtime() - collate_time);
+        if (LOGORNOT) LOG << LOGMSG << "collate ends." 
+            << "\t" << MPI_Wtime() - collate_time << endl;
         
         double reduce_time = MPI_Wtime();
-        if (LOGGING) save_log(LOGMSG << "reduce starts.");
+        if (LOGORNOT) LOG << LOGMSG << "reduce starts." << endl;
         mr2->reduce(&mr_sort_multivalues_by_evalue, NULL);
-        if (LOGGING) save_log(LOGMSG << "reduce ends." 
-            << "\t" <<  MPI_Wtime() - reduce_time);
+        if (LOGORNOT) LOG << LOGMSG << "reduce ends." 
+            << "\t" <<  MPI_Wtime() - reduce_time << endl;
         
         ///
         /// Save history
@@ -598,8 +607,8 @@ int main(int argc, char **argv)
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
             else {
-                if (LOGGING) save_log(LOGMSG << "Save history to " 
-                    << histFileName);
+                if (LOGORNOT) LOG << LOGMSG << "Save history to "
+                    << histFileName << endl;
                 time_t timer;
                 timer = time(NULL);
                 histFile << subMasterFileName << "," 
@@ -607,21 +616,19 @@ int main(int argc, char **argv)
             }
             histFile.close();
         }            
-        MPI_Barrier(MPI_COMM_WORLD);     
-        
-        if (MYID == 0) cout << "[INFO] Iteration = " << n << " ends.\t" 
-            << MPI_Wtime() - iter_time << endl;
+        MPI_Barrier(MPI_COMM_WORLD);           
     }
      
     delete mr2;
-    delete p_TargetDb;      
+    delete pTargetDb;      
+    if (LOGORNOT && LOGTOFILE) logFile.close();    
     
     profile_time = MPI_Wtime() - profile_time;
     if (MYID == 0) {
         cout << "Total execution time: " << profile_time << endl;
-        if (LOGGING) save_log("[LOG] Total execution time: " << profile_time);
+        if (LOGORNOT) LOG << "[LOG] Total execution time: " << profile_time 
+            << endl;
     }
-    if (LOGGING) LOGFILE.close();    
     
     MPI_Finalize();
             
@@ -660,9 +667,9 @@ void mr_run_blast(int itask,
     CRef<blast::CBlastOptionsHandle> opts = strat.GetOptionsHandle();    
     opts->Validate();
 
-    if (LOGGING && MYID == 1 && OPTDUMP == false) {
-        OPTDUMP = true;
-        opts->GetOptions().DebugDumpText(LOGFILE, "opts", 1);
+    if (MYID == 1 && OPTDUMPED == false) {
+        OPTDUMPED = true;
+        opts->GetOptions().DebugDumpText(cout, "opts", 1);
     }
 
     CRef<CObjectManager> objmgr = CObjectManager::GetInstance();
@@ -686,18 +693,18 @@ void mr_run_blast(int itask,
     /// Target db name setting
     ///
     string dbChunkName = vWorkItemTokens[2];
-    if (LOGGING) save_log(LOGMSG << "DB name = " << dbChunkName);
+    if (LOGORNOT) LOG << LOGMSG << "DB name = " << dbChunkName << endl;
     
     double db_load_time = MPI_Wtime();
-    if (LOGGING) save_log(LOGMSG << "DB loading starts.");
-    if(p_TargetDb == 0 || dbChunkName != prevDbChunkName) {
-        delete p_TargetDb;
-        p_TargetDb = new CSearchDatabase(dbChunkName,
+    if (LOGORNOT) LOG << LOGMSG << "DB loading starts." << endl;
+    if(pTargetDb == 0 || dbChunkName != prevDbChunkName) {
+        delete pTargetDb;
+        pTargetDb = new CSearchDatabase(dbChunkName,
                                         CSearchDatabase::eBlastDbIsNucleotide);
     }
     prevDbChunkName = dbChunkName;
-    if (LOGGING) save_log(LOGMSG << "DB loading ends." 
-        << "\t" << MPI_Wtime() - db_load_time);
+    if (LOGORNOT) LOG << LOGMSG << "DB loading ends." 
+        << "\t" << MPI_Wtime() - db_load_time << endl;
 
     ///
     /// Read sequence block and run blast
@@ -705,30 +712,37 @@ void mr_run_blast(int itask,
     uint32_t beginOffset = boost::lexical_cast<uint32_t>(vWorkItemTokens[0]);
     uint32_t endOffset   = boost::lexical_cast<uint32_t>(vWorkItemTokens[1]);
     
-    if (LOGGING) save_log(LOGMSG << "Query offsets = " << beginOffset << " " 
-        << endOffset);
+    if (LOGORNOT) LOG << LOGMSG << "Query offsets = " << beginOffset << " " 
+        << endOffset  << endl;
     
-    uint32_t blSize = endOffset - beginOffset;
-    char* buff2 = (char*) malloc(sizeof(char)*blSize);
+    /// Max num of characters per line = 1000000
+    char buff2[MAXSTR2];
     FILE *qf = fopen((char*)QUERYFILENAME.c_str(), "r");
     
+    ///
+    /// Read a block of sequeces from beginOffset
+    ///
     fseek(qf, beginOffset, SEEK_SET);    
     string query;
     vector<string> vHeaders;
+    vector<uint32_t> vBeginOffsets;
     uint32_t nQuery = 0;
+    
     while ((uint32_t)ftell(qf) < endOffset) {
-        fgets(buff2, blSize, qf);
+        vBeginOffsets.push_back((uint32_t)ftell(qf));
+        fgets(buff2, MAXSTR2, qf);
         if (buff2[0] == '>') {
             /// Here I collect headers of fasta input seqs
             /// for retrieving query sequence info.
-            vHeaders.push_back(string(buff2));            
+            if (EXCLUSIONORNOT) vHeaders.push_back(string(buff2));            
             nQuery++;
         }
+        /// Concatenate query sequces for Blast call
         query += string(buff2);
     }    
     fclose(qf);
-    free(buff2);
-    if (LOGGING) save_log(LOGMSG << "Num query for Blast call = " << nQuery);
+    if (LOGORNOT) LOG << LOGMSG << "Num query for Blast call = " 
+        << nQuery << endl;        
  
     ///
     /// Set queries as fasta input
@@ -743,24 +757,24 @@ void mr_run_blast(int itask,
     /// Run blast
     ///
     double blaster_init_time = MPI_Wtime();
-    if (LOGGING) save_log(LOGMSG << "Blaster init starts.");
-    CLocalBlast blaster(queryFactory, opts, *p_TargetDb);
-    if (LOGGING) save_log(LOGMSG << "Blaster init ends." 
-           << "\t" << MPI_Wtime() - blaster_init_time);
+    if (LOGORNOT) LOG << LOGMSG << "Blaster init starts." << endl;
+    CLocalBlast blaster(queryFactory, opts, *pTargetDb);
+    if (LOGORNOT) LOG << LOGMSG << "Blaster init ends." 
+           << "\t" << MPI_Wtime() - blaster_init_time << endl;
         
     double blast_call_time = MPI_Wtime();
     
-    if (LOGGING) save_log(LOGMSG << "Blast call starts.");
+    if (LOGORNOT) LOG << LOGMSG << "Blast call starts." << endl;
     //////////////////////////////////////////
     CSearchResultSet results = *blaster.Run();
     //////////////////////////////////////////
-    if (LOGGING) {
+    if (LOGORNOT) {
         double t = MPI_Wtime() - blast_call_time;
-        save_log(LOGMSG << "Blast call ends." << "\t" << t << endl
+        LOG << LOGMSG << "Blast call ends." << "\t" << t << endl
                       << "\t\tbyte/sec = " << "\t" 
                       << (endOffset - beginOffset) / t << endl 
                       << "\t\t#query : #result = " << "\t" << nQuery << " : "
-                      << results.GetNumResults());
+                      << results.GetNumResults() << endl;
     }          
     
     ///
@@ -785,7 +799,7 @@ void mr_run_blast(int itask,
     /// Get the results
     ///   
     double adding_kv_time = MPI_Wtime();
-    if (LOGGING) save_log(LOGMSG << "Adding hits to KV starts.");
+    if (LOGORNOT) LOG << LOGMSG << "Adding hits to KV starts." << endl;
     
     for (size_t i = 0; i < results.GetNumResults(); ++i) {
 
@@ -827,19 +841,20 @@ void mr_run_blast(int itask,
                 s.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
                 s.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
                 
-                ///
-                /// Tokenize query header
-                /// 
-                string qHeader = 
-                    vHeaders[boost::lexical_cast<uint32_t>(queryID)-1];
-                vector<string> vQueryId;
-                boost::split(vQueryId, qHeader, boost::is_any_of("|"));
-                string uniqueQID = vQueryId[2]; /// query id
+                /// Get the saved beginOffset from vBeginOffsets
+                uint32_t uniqueQID = 
+                    vBeginOffsets[boost::lexical_cast<uint32_t>(queryID)-1];
                 
                 /// 
                 /// Add a csv blast result to kv
                 /// 
-                if (EXCLUSIONORNOT) {     
+                if (EXCLUSIONORNOT) {
+                    /// Tokenize query header
+                    string qHeader = 
+                        vHeaders[boost::lexical_cast<uint32_t>(queryID)-1];
+                    vector<string> vQueryId;
+                    boost::split(vQueryId, qHeader, boost::is_any_of("|"));
+                                        
                     ///
                     /// The below infomation is only for our own simulated
                     /// sequence data sets which has 
@@ -884,9 +899,9 @@ void mr_run_blast(int itask,
                         /// ADD <KEY = "QUERYID", VALUE="BLASTRESULT">
                         /// TO KV
                         ///
-                        const char* newKey = (char*)((uniqueQID).c_str()); 
-                        kv->add((char*)newKey, strlen(newKey) + 1, (char*)&res, 
-                            BLASTRESSZ);
+                        uint32_t newKey = uniqueQID;
+                        kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res, 
+                        BLASTRESSZ);  
                     }
                     /// 
                     /// Found a self hits. Record the hits in a histroy file
@@ -931,15 +946,15 @@ void mr_run_blast(int itask,
                     res.evalue      = eValue;
                     res.bitscore    = bitScore;     
                                             
-                    const char* newKey = (char*)((uniqueQID).c_str()); 
-                    kv->add((char*)newKey, strlen(newKey) + 1, (char*)&res, 
-                        BLASTRESSZ);
+                    uint32_t newKey = uniqueQID;
+                    kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res, 
+                        BLASTRESSZ);                    
                 }
             }
         }
     }
-    if (LOGGING) save_log(LOGMSG << "Adding hits to KV ends." 
-           << "\t" << MPI_Wtime() - adding_kv_time);
+    if (LOGORNOT) LOG << LOGMSG << "Adding hits to KV ends." 
+           << "\t" << MPI_Wtime() - adding_kv_time << endl;
 }
 
 
@@ -976,7 +991,7 @@ void mr_sort_multivalues_by_evalue(char *key,
                                    void *ptr) 
 {
     double sort_and_save_time = MPI_Wtime();
-    if (LOGGING) save_log(LOGMSG << "Sort/save starts.");
+    if (LOGORNOT) LOG << LOGMSG << "Sort/save starts." << endl;
     
     /// Check if there is KMV overflow
     assert(multivalue != NULL && nvalues != 0);
@@ -989,7 +1004,7 @@ void mr_sort_multivalues_by_evalue(char *key,
     for (size_t n = 0; n < (unsigned)nvalues; n++) {                
         BLASTRES* res = (BLASTRES*)multivalue;
         STRUCTEVALUE structEvalue;
-        structEvalue.p_res = res;
+        structEvalue.p = res;
         structEvalue.evalue = res->evalue;
         vforsort.push_back(structEvalue);
         multivalue += BLASTRESSZ;         
@@ -1003,8 +1018,8 @@ void mr_sort_multivalues_by_evalue(char *key,
     ///
     ofstream outputFile(WORKEROUTPUTFILENAME.c_str(), ios::out | ios::app);
     for (size_t n = 0; n < (unsigned)nvalues; n++) {
-        BLASTRES* res = (BLASTRES*)(vforsort[n].p_res);
-        outputFile << key << "\t"
+        BLASTRES* res = (BLASTRES*)(vforsort[n].p);
+        outputFile << *(uint32_t *)key << "\t"
             << res->subjectid << "\t"
             << res->identity << "\t"
             << res->alignlen << "\t"
@@ -1020,10 +1035,10 @@ void mr_sort_multivalues_by_evalue(char *key,
     }
     outputFile.close();
     vforsort.clear();
-    if (LOGGING) save_log(LOGMSG << "Hits are saved to " 
-        << WORKEROUTPUTFILENAME);
-    if (LOGGING) save_log(LOGMSG << "Sort/save ends." 
-        << "\t" << MPI_Wtime() - sort_and_save_time);
+    if (LOGORNOT) LOG << LOGMSG << "Hits are save to " << WORKEROUTPUTFILENAME
+        << endl;
+    if (LOGORNOT) LOG << LOGMSG << "Sort/save ends." 
+        << "\t" << MPI_Wtime() - sort_and_save_time << endl;
 }   
 
 /** Check exclusion - Based on the coordinates of query and subject, decide 
