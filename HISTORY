@@ -66,4 +66,6 @@
           sequence ID
         - Change blSize in reading query sequence before run Blaster()
         - Remove GF struct
-        
+    
+    02.09.2011
+        - Add Boost.Log

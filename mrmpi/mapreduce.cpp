@@ -86,16 +86,18 @@ using namespace std;
 #include <vector>
 
 /// For logging
-extern ostream* LOGSTREAM;
 extern int LOGORNOT;
 string LOGMSG2;
-#define LOG (*LOGSTREAM)
 extern int NTOTALDBCHUNKS;
 extern int NCOREPERNODE;
 extern int NMAXTRIAL;
         
 /// For tokenizer
 #include <boost/algorithm/string.hpp>
+
+/// Boost.log
+#include <boost/log/trivial.hpp>
+
 
 int assign_proc_num(char*, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
 
@@ -1048,7 +1050,7 @@ int assign_proc_num(string workItem, multimap<string, int> &mmDbCoreNum,
     vector<string> vWorkItemTokens;
     boost::split(vWorkItemTokens, workItem, boost::is_any_of(","));
     
-    if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts.\n";
+    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 << "scheduler starts.";
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
     multimap<string, int>::iterator it; 
     
@@ -1253,10 +1255,11 @@ uint64_t MapReduce::map(char *file,
     /// Main goal is to assign work items which have the same DB chunk names
     /// to workers running on the same node physically.
     /// 
-    else if (mapstyle == 3) {          
-                    
+    else if (mapstyle == 3) {       
+        
         LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
-        if (LOGORNOT) LOG << LOGMSG2 << "scheduler starts (mapstyle=3).\n";
+        if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+            << "scheduler starts (mapstyle=3).";
         double scheduler_start_time = MPI_Wtime();
                                             
         if (me == 0) {
@@ -1339,12 +1342,11 @@ uint64_t MapReduce::map(char *file,
                 if (itask < nmap && !qWorkItems.empty()) { 
                     /// Get the front item from the queue
                     int& taskNum = qWorkItems.front();
-                    if (LOGORNOT) LOG << LOGMSG2 
-                        << "MASTER: The front item in the queue = " << taskNum 
-                        << endl;
-                    if (LOGORNOT) LOG << LOGMSG2 
+                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+                        << "MASTER: The front item in the queue = " << taskNum;
+                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
                         << "MASTER: Num items in the queue = " 
-                        << qWorkItems.size() << endl;
+                        << qWorkItems.size();
                         
                     vector<int> vSelectedNodeNum;
                     string workItem(files[taskNum]);
@@ -1383,14 +1385,14 @@ uint64_t MapReduce::map(char *file,
                 }
                 else {      /// If there is ranks which have no assignment due
                             /// to # work item < # ranks.
-                    if (LOGORNOT) LOG << LOGMSG2
-                        << "MASTER: itask >= nmap.\n";
+                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+                        << "MASTER: itask >= nmap.";
 
                     /// No need to send done flag to master node.
                     for (size_t i = 1; i < vUsedProcNum.size(); i++) {
                         if (!vUsedProcNum[i]) {
-                            if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send DONE "
-                                << "flag to Rank=" << i << endl;
+                            if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+                                << "MASTER: Send DONE " << "flag to Rank=" << i;
                             MPI_Send(&doneflag, 1, MPI_INT, i, 0, comm);
                             ndone++;
                             numProcUsed++; 
@@ -1398,22 +1400,11 @@ uint64_t MapReduce::map(char *file,
                     }
                 }
             }
-            
-            if (LOGORNOT) {
-                LOG << LOGMSG2
-                    << "MASTER: After initial assignment...\n";
-                for (size_t i = 0; i < nNodes; ++i) {
-                    for (size_t j = 0; j < NCOREPERNODE; ++j) {
-                        LOG << vvTaskTable[i][j];
-                    }
-                    LOG << endl;
-                }
-                LOG << endl;
-            }
+
             while (ndone < nprocs - 1) {
                 int iproc, tmp;
-                if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Waiting any worker done"
-                    << endl;
+                if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+                    << "MASTER: Waiting any worker done";
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
                            
@@ -1431,19 +1422,7 @@ uint64_t MapReduce::map(char *file,
                
                 if (!(iprocNode == 0 && procNumInTable == 0))    
                     vvTaskTable[iprocNode][procNumInTable] = false;
-                            
-                if (LOGORNOT) {
-                    LOG << LOGMSG2
-                        << "MASTER: After delete...\n";
-                    for (size_t i = 0; i < nNodes; ++i) {
-                        for (size_t j = 0; j < (unsigned)NCOREPERNODE; ++j) {
-                            LOG << vvTaskTable[i][j];
-                        }
-                        LOG << endl;
-                    }
-                    LOG << endl;
-                }
-            
+                                        
                 /// 
                 /// Get the front of the queue and check the db chunk name
                 /// If iproc's node has one of the db chunk names, just pop the 
@@ -1497,18 +1476,6 @@ uint64_t MapReduce::map(char *file,
                         assert(vvTaskTable[iprocNode][procNumInTable] == false);
                         vvTaskTable[iprocNode][procNumInTable] = true;
                         
-                        if (LOGORNOT) {
-                            LOG << LOGMSG2
-                                << "MASTER: After reassignment...\n";
-                            for (size_t i = 0; i < nNodes; ++i) {
-                                for (size_t j = 0; j < NCOREPERNODE; ++j) {
-                                    LOG << vvTaskTable[i][j];
-                                }
-                                LOG << endl;
-                            }
-                            LOG << endl;
-                        }
-                 
                         selectedNodeNum = iprocNode;
                         selectedProcNum = iproc;
                         
@@ -1529,15 +1496,16 @@ uint64_t MapReduce::map(char *file,
                 
                 if (itask < nmap) {
                     assert(selectedProcNum != 0);
-                    if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send Job=" 
-                        << f << " to Rank=" << selectedProcNum << endl;
+                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+                        << "MASTER: Send Job=" << f << " to Rank=" 
+                        << selectedProcNum;
                     MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
                     numProcUsed++;
                     itask++;
                 }
                 else { /// itask >= nmap ==> # work done >= # total work
-                    if (LOGORNOT) LOG << LOGMSG2 << "MASTER: Send DONE to Rank=" 
-                        << iproc << endl;
+                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+                        << "MASTER: Send DONE to Rank=" << iproc;
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
@@ -1552,8 +1520,9 @@ uint64_t MapReduce::map(char *file,
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         } /// worker         
-        if (LOGORNOT) LOG << LOGMSG2 << "Scheduler ends (mapstyle=3)" 
-           << "\t" << MPI_Wtime() - scheduler_start_time << endl; 
+        if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
+            << "Scheduler ends (mapstyle=3)" << "\t" 
+            << MPI_Wtime() - scheduler_start_time; 
     } 
     else error->all("Invalid mapstyle setting");
 

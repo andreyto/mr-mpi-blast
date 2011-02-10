@@ -29,12 +29,17 @@ import sys
 
 if __name__ == '__main__':
     
-    if len(sys.argv) != 3:
-        print "USAGE: python make_strategy_file.py oldOptionFile outFileName\n"
+    if len(sys.argv) != 4:
+        print "USAGE: python make_strategy_file.py oldOptionFile outFileName n/p\n"
         sys.exit(0)
     
     oldOptionFileName = sys.argv[1]
     outFileName = sys.argv[2]
+    protein = False
+    if (sys.argv[3] == 'p'):
+        protein = True
+    else:
+        protein = False
     
     ##
     ## Read oldOptionFile 
@@ -59,6 +64,9 @@ if __name__ == '__main__':
         #print str(i) + " " + str(s[i])
     
     cmd2 = stdout_value.strip() + " -export_search_strategy strategy_temp.txt" \
+        + " -dust yes " 
+    if (protein):
+        cmd2 += " -matrix BLOSUM62 "
         #+ " -matrix BLOSUM62 "
         #+ " -db_soft_mask 30 " ## Make sure -dust yes is default
     cmd2 = cmd2[9:] ## remove "/usr/bin/"
