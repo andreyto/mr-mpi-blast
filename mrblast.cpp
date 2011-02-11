@@ -121,6 +121,8 @@ int NMAXTRIAL;              /// max num of trial to find node number which
                             /// has the DB partition of the work item.
 /// ----------------------------------------------------------------------------
 
+bool ISPROTEIN = false;
+
 /// Blast target DB setting
 static CSearchDatabase *pTargetDb = 0;
 string prevDbChunkName;
@@ -273,6 +275,9 @@ int main(int argc, char **argv)
         ("map-style,m", 
             po::value<int>(&MAPSTYLE)->default_value(2), 
             "set MR-MPI mapstyle: 2=master/slave, 3=new scheduler")
+        ("is-protein,p", 
+            po::value<bool>(&ISPROTEIN)->default_value(false), 
+            "set the program as blastp (default=0)")
         ("self-exclusion,x", 
             po::value<bool>(&EXCLUSIONORNOT)->default_value(false), 
             "enable self exclusion")
@@ -658,8 +663,7 @@ void mr_run_blast(int itask,
         throw runtime_error("Could not initialize object manager");
     }
 
-    bool isProtein = false;
-    SDataLoaderConfig dlconfig(isProtein);
+    SDataLoaderConfig dlconfig(ISPROTEIN);
     CBlastInputSourceConfig iconfig(dlconfig);
     
     ///
@@ -681,7 +685,11 @@ void mr_run_blast(int itask,
     if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG << "DB loading starts.";
     if(pTargetDb == 0 || dbChunkName != prevDbChunkName) {
         delete pTargetDb;
-        pTargetDb = new CSearchDatabase(dbChunkName,
+        if (ISPROTEIN) 
+            pTargetDb = new CSearchDatabase(dbChunkName,
+                                        CSearchDatabase::eBlastDbIsProtein);
+        else
+            pTargetDb = new CSearchDatabase(dbChunkName,
                                         CSearchDatabase::eBlastDbIsNucleotide);
     }
     prevDbChunkName = dbChunkName;

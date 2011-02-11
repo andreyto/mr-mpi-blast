@@ -30,7 +30,7 @@ import sys
 if __name__ == '__main__':
     
     if len(sys.argv) != 4:
-        print "USAGE: python make_strategy_file.py oldOptionFile outFileName n/p\n"
+        print "USAGE: python convert.py legacyOptionFile newOptionFile n|p\n"
         sys.exit(0)
     
     oldOptionFileName = sys.argv[1]
@@ -63,10 +63,10 @@ if __name__ == '__main__':
     #for i in range(len(s)):
         #print str(i) + " " + str(s[i])
     
-    cmd2 = stdout_value.strip() + " -export_search_strategy strategy_temp.txt" \
-        + " -dust yes " 
-    if (protein):
-        cmd2 += " -matrix BLOSUM62 "
+    cmd2 = stdout_value.strip() + " -export_search_strategy strategy_temp.txt" 
+ 
+    #if (protein):
+        #cmd2 += " -matrix BLOSUM62 "
         #+ " -matrix BLOSUM62 "
         #+ " -db_soft_mask 30 " ## Make sure -dust yes is default
     cmd2 = cmd2[9:] ## remove "/usr/bin/"
@@ -78,6 +78,11 @@ if __name__ == '__main__':
     cmd2 = cmd2.replace("-max_intron_length 0","")
     cmd2 = cmd2.replace("-frame_shift_penalty 0","")
     cmd2 = cmd2.replace("-comp_based_stats D","")
+    if (protein):
+        cmd2 = cmd2.replace("-min_word_score 11","")
+        cmd2 = cmd2.replace("-penalty -3","")
+        cmd2 = cmd2.replace("-reward 1","")
+        
     print cmd2
     
     ##
@@ -89,7 +94,10 @@ if __name__ == '__main__':
     ##
     ## Make strategy file for mr-mpi-blast
     ##
-    f3 = open("header.txt", 'r')
+    if (protein):
+        f3 = open("header_blastp.txt", 'r')
+    else:
+        f3 = open("header_blastn.txt", 'r')
     headerStr = ""
     for line in f3:
         headerStr += line

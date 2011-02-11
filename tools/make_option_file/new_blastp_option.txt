@@ -1,7 +1,7 @@
 Blast4-request ::= {
   body queue-search {
     program "blastp",
-    service "plain",
+    service "megablast",
     queries bioseq-set {
       seq-set {
         seq {
@@ -9,29 +9,22 @@ Blast4-request ::= {
             local str "Query_1"
           },
           descr {
-            title "gi|4557231|ref|NP_000007.1| medium-chain specific acyl-CoA
- dehydrogenase, mitochondrial isoform a precursor [Homo sapiens]",
+            title "dummy",
             user {
               type str "CFastaReader",
               data {
                 {
                   label str "DefLine",
-                  data str ">gi|4557231|ref|NP_000007.1| medium-chain specific
- acyl-CoA dehydrogenase, mitochondrial isoform a precursor [Homo sapiens]"
+                  data str ">dummy"
                 }
               }
             }
           },
           inst {
             repr raw,
-            mol aa,
-            length 421,
-            seq-data ncbieaa "MAAGFGRCCRVLRSISRFHWRSQHTKANRQREPGLGFSFEFTEQQKEF
-QATARKFAREEIIPVAAEYDKTGEYPVPLIRRAWELGLMNTHIPENCGGLGLGTFDACLISEELAYGCTGVQTAIEGN
-SLGQMPIIIAGNDQQKKKYLGRMTEEPLMCAYCVTEPGAGSDVAGIKTKAEKKGDEYIINGQKMWITNGGKANWYFLL
-ARSDPDPKAPANKAFTGFIVEADTPGIQIGRKELNMGQRCSDTRGIVFEDVKVPKENVLIGDGAGFKVAMGAFDKTRP
-VVAAGAVGLAQRALDEATKYALERKTFGKLLVEHQAISFMLAEMAMKVELARMSYQRAAWEVDSGRRNTYYASIAKAF
-AGDIANQLATDAVQILGGNGFNTEYPVEKLMRDAKIYQIYEGTSQIQRLIVAREHIDKYKN"
+            mol na,
+            length 4,
+            seq-data ncbi2na '1B'H
           }
         }
       }
