@@ -84,20 +84,15 @@ using namespace std;
 /// For str -> int, int -> str
 #include <boost/lexical_cast.hpp>
 #include <vector>
-
-/// For logging
-extern int LOGORNOT;
-string LOGMSG2;
+ 
 extern int NTOTALDBCHUNKS;
-extern int NCOREPERNODE;
-extern int NMAXTRIAL;
+const int NMAXTRIAL = 20;
+const int NALLOCTABLEUNIT = 4;
         
 /// For tokenizer
 #include <boost/algorithm/string.hpp>
 
-/// Boost.log
-#include <boost/log/trivial.hpp>
-
+ 
 
 int assign_proc_num(char*, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
 
@@ -1045,12 +1040,11 @@ uint64_t MapReduce::map(int nmap, void (*appmap)(int, KeyValue *, void *),
 
 int assign_proc_num(string workItem, multimap<string, int> &mmDbCoreNum, 
                     vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum,
-                    int NCOREPERNODE) 
+                    int NALLOCTABLEUNIT) 
 {
     vector<string> vWorkItemTokens;
     boost::split(vWorkItemTokens, workItem, boost::is_any_of(","));
     
-    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 << "scheduler starts.";
     pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
     multimap<string, int>::iterator it; 
     
@@ -1083,7 +1077,7 @@ int assign_proc_num(string workItem, multimap<string, int> &mmDbCoreNum,
     }
     
     bool bFound = false; 
-    for (; i < (unsigned)NCOREPERNODE; ++i) {
+    for (; i < (unsigned)NALLOCTABLEUNIT; ++i) {
         if (!vvTaskTable[selectedNodeNum][i]) {
             vvTaskTable[selectedNodeNum][i] = true;
             selectedProcNum = i;
@@ -1093,10 +1087,10 @@ int assign_proc_num(string workItem, multimap<string, int> &mmDbCoreNum,
     }          
         
     ///
-    /// Send job to the proc
+    /// if decided, return selected proc num or return -1
     ///
     if (bFound)
-        return (selectedProcNum + selectedNodeNum * NCOREPERNODE);
+        return (selectedProcNum + selectedNodeNum * NALLOCTABLEUNIT);
     else 
         return -1;
 }
@@ -1256,18 +1250,13 @@ uint64_t MapReduce::map(char *file,
     /// to workers running on the same node physically.
     /// 
     else if (mapstyle == 3) {       
-        
-        LOGMSG2 = "[SCHEDULER] Rank:" + boost::lexical_cast<string>(me) + " ";
-        if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-            << "scheduler starts (mapstyle=3).";
-        double scheduler_start_time = MPI_Wtime();
-                                            
+                                                    
         if (me == 0) {
             int doneflag = -1;
             int ndone = 0;
             int itask = 0;             
             
-            int nNodes = nprocs / NCOREPERNODE;
+            int nNodes = nprocs / NALLOCTABLEUNIT;
             int nDBPerNode = int(ceil(NTOTALDBCHUNKS / nNodes));
                          
             /// 
@@ -1324,7 +1313,7 @@ uint64_t MapReduce::map(char *file,
             ///
             vector< vector<bool> > vvTaskTable;
             for (size_t i = 0; i < nNodes; ++i) {
-                vector<bool> vBoolTemp(NCOREPERNODE, false);
+                vector<bool> vBoolTemp(NALLOCTABLEUNIT, false);
                 vvTaskTable.push_back(vBoolTemp);
             }
             
@@ -1332,32 +1321,21 @@ uint64_t MapReduce::map(char *file,
             /// Check work item queue and db chunk assign table
             /// 1. Get a work item, get db name, check node num to assign
             ///
-            int numProcUsed = 1;
+            int numProcUsed = 1; /// except master
             vector<bool> vUsedProcNum(nprocs, false);
             
             while (numProcUsed < nprocs) {
-                /// 
-                /// IF # work done < # total work
-                /// 
+                /// If curr. task index < # total work
                 if (itask < nmap && !qWorkItems.empty()) { 
                     /// Get the front item from the queue
                     int& taskNum = qWorkItems.front();
-                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                        << "MASTER: The front item in the queue = " << taskNum;
-                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                        << "MASTER: Num items in the queue = " 
-                        << qWorkItems.size();
                         
                     vector<int> vSelectedNodeNum;
                     string workItem(files[taskNum]);
-                    
-                    assert(&mmDbCoreNum != NULL);
-                    assert(&vvTaskTable != NULL);
-                    assert(&vSelectedNodeNum != NULL);
-                    
+
                     int selectedProcNum = 
                         assign_proc_num(workItem, mmDbCoreNum, vvTaskTable, 
-                                        vSelectedNodeNum, NCOREPERNODE);
+                                        vSelectedNodeNum, NALLOCTABLEUNIT);
                     ///
                     /// This is the case when all procs in a node assigned with 
                     /// a set of DB chunk name are used. Thus, put the work item 
@@ -1385,26 +1363,20 @@ uint64_t MapReduce::map(char *file,
                 }
                 else {      /// If there is ranks which have no assignment due
                             /// to # work item < # ranks.
-                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                        << "MASTER: itask >= nmap.";
 
                     /// No need to send done flag to master node.
                     for (size_t i = 1; i < vUsedProcNum.size(); i++) {
                         if (!vUsedProcNum[i]) {
-                            if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                                << "MASTER: Send DONE " << "flag to Rank=" << i;
                             MPI_Send(&doneflag, 1, MPI_INT, i, 0, comm);
                             ndone++;
                             numProcUsed++; 
                         }
                     }
                 }
-            }
+            } /// while
 
             while (ndone < nprocs - 1) {
                 int iproc, tmp;
-                if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                    << "MASTER: Waiting any worker done";
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
                            
@@ -1412,14 +1384,15 @@ uint64_t MapReduce::map(char *file,
                 /// Check the iproc returned from worker and decide work items 
                 /// to assign
                 ///
-                int iprocNode = (int)iproc / NCOREPERNODE;
+                int iprocNode = (int)iproc / NALLOCTABLEUNIT;
                 
                 /// 
                 /// Update vvTaskTable
                 ///
-                int procNumInTable = iproc % NCOREPERNODE;
+                int procNumInTable = iproc % NALLOCTABLEUNIT;
                 assert(vvTaskTable[iprocNode][procNumInTable] == true);
                
+                /// if not the master,
                 if (!(iprocNode == 0 && procNumInTable == 0))    
                     vvTaskTable[iprocNode][procNumInTable] = false;
                                         
@@ -1492,20 +1465,16 @@ uint64_t MapReduce::map(char *file,
                         qWorkItems.push(f);
                         ////////////////////                        
                     }                   
-                }
+                } /// while
                 
+                /// if current task index < # total work items
                 if (itask < nmap) {
                     assert(selectedProcNum != 0);
-                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                        << "MASTER: Send Job=" << f << " to Rank=" 
-                        << selectedProcNum;
                     MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
                     numProcUsed++;
                     itask++;
                 }
-                else { /// itask >= nmap ==> # work done >= # total work
-                    if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-                        << "MASTER: Send DONE to Rank=" << iproc;
+                else { /// itask == nmap, i.e. # work done == # total work items
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
@@ -1520,9 +1489,6 @@ uint64_t MapReduce::map(char *file,
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         } /// worker         
-        if (LOGORNOT) BOOST_LOG_TRIVIAL(info) << LOGMSG2 
-            << "Scheduler ends (mapstyle=3)" << "\t" 
-            << MPI_Wtime() - scheduler_start_time; 
     } 
     else error->all("Invalid mapstyle setting");
 

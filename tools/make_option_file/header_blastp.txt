@@ -1,7 +1,7 @@
 Blast4-request ::= {
   body queue-search {
     program "blastp",
-    service "megablast",
+    service "plain",
     queries bioseq-set {
       seq-set {
         seq {

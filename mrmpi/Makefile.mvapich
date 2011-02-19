@@ -1,20 +1,26 @@
 # MPI-based Makefile using mpic++ and mpicc.
 
+### Open MPI
 #CC =           mpic++
+### MVAPICH
 CC =            mpicxx
 
-# local
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+### For Boost.Log
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###
+### local
 #BOOST_INCLUDE = -I/home/ssul/work/packages2/include
 #BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_log -lboost_log_setup
 
-# Ranger
-BOOST_INCLUDE = -I/opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
-BOOST_USRLIB = -L/opt/apps/gcc4_4/boost/1.39.0/lib -lboost_program_options-gcc44-mt
+### Ranger
+#BOOST_INCLUDE = -I/opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
+#BOOST_USRLIB = -L/opt/apps/gcc4_4/boost/1.39.0/lib -lboost_program_options-gcc44-mt
+#LIB = $(BOOST_USRLIB) $(LIB)
+#LIBS = $(LIB)
+#CCFLAGS =       -O2 $(BOOST_INCLUDE)
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 
-LIB = $(BOOST_USRLIB) $(LIB)
-LIBS = $(LIB)
-
-CCFLAGS =       -O2 $(BOOST_INCLUDE)
+CCFLAGS =       -O2  
 DEPFLAGS =      -M
 ARCHIVE =       ar
 ARFLAGS =       -rc

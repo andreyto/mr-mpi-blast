@@ -73,7 +73,8 @@
     02.11.2011
         - Add support for blastp
         
-        
+    02.14.2011
+        - Add TIMING option for comparing elapsed times. 
         
         
         
