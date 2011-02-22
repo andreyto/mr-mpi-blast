@@ -1,0 +1,41 @@
+# mpicxx = any machine with MPI compiler wrappers, mpicxx
+
+SHELL = /bin/sh
+
+#BOOST_INCLUDE = -I/home/ssul/work/packages2/include
+#BOOST_INCLUDE = -I/opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
+BOOST_INCLUDE = -I/work/01471/ssul/work/packages3/include
+
+# ---------------------------------------------------------------------
+# compiler/archive settings
+# specify flags and libraries needed for your compiler and MPI installation
+
+CC =        mpicxx
+#CCFLAGS =	-O2
+CCFLAGS =   -O2 $(BOOST_INCLUDE) 
+DEPFLAGS =	-M
+ARCHIVE =	ar
+ARFLAGS =	-rc
+SIZE =		size
+
+# ---------------------------------------------------------------------
+# build rules and dependencies
+# no need to edit this section
+
+# Library target
+
+lib:	$(OBJ)
+	$(ARCHIVE) $(ARFLAGS) $(EXE) $(OBJ)
+
+# Compilation rules
+
+%.o:%.cpp
+	$(CC) $(CCFLAGS) $(EXTRA_INC) -c $<
+
+%.d:%.cpp
+	$(CC) $(CCFLAGS) $(EXTRA_INC) $(DEPFLAGS) $< > $@
+
+# Individual dependencies
+
+DEPENDS = $(OBJ:.o=.d)
+include $(DEPENDS)

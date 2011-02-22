@@ -25,3 +25,7 @@ backup/*
 .#lock-map
 .#SRC-cache/
 .#SRC-cache/*
+exe/
+exe/*
+src/
+src/*

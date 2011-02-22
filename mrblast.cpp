@@ -89,6 +89,10 @@ namespace po = boost::program_options;
 #include <boost/program_options/detail/config_file.hpp>
 namespace pod = boost::program_options::detail;
 
+/// For Boost memory mapped file
+#include <boost/iostreams/device/mapped_file.hpp>
+#include <boost/filesystem/operations.hpp>         /// for real file size
+boost::iostreams::mapped_file_source MMAPFILE;     /// Read-only Boost mmap file
 /// ----------------------------------------------------------------------------
 
 /// For typedef unsigned long long int uint32_t
@@ -117,6 +121,7 @@ int LOGORNOT = 0;
 int TIMING = 0;
 int OPTDUMP = 0;            /// For dumping Blast opts out
 string LOGFILENAME;
+int CNT = 0;
 /// ----------------------------------------------------------------------------
 
 /// Log
@@ -133,11 +138,14 @@ static CSearchDatabase *pTargetDb = 0;
 string prevDbChunkName;
 
 /// Import search strategy
-string STRATEGYFILENAME;
+string STRATEGYFILENAME;    /// Input blast search option file
 
 /// Misc.
 const int MAXSTR = 256;
-const int MAXSTR2 = 1000000;
+char MPI_procName[MAXSTR];
+const int MAXSTR2 = 256;    /// only for our simulated query sequence
+const int SUBIDMAX = 20;    /// For subject ID of blast hits. possible KMV overflow
+
 const int QUERY = 0;        /// To retireve query info from CSeq_align
 const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
 int MYID;                   /// MPI rank
@@ -158,7 +166,7 @@ int NQUERYPERWORKITEM;      /// block size
 /// subject id, % identity, alignment length, mismatches, gap opens, 
 /// q. start, q. end, s. start, s. end, evalue, bit score
 typedef struct blastres {
-    char subjectid[MAXSTR];
+    char subjectid[SUBIDMAX];
     double identity;
     uint32_t alignlen; 
     int mismatches;
@@ -362,9 +370,25 @@ int main(int argc, char **argv)
     }
     
     ///
+    /// Creat memory-mapped file for feature vectors
+    ///
+    unsigned long int realFileSize = boost::filesystem::file_size(QUERYFILENAME);
+    boost::iostreams::mapped_file_params params;
+    params.path = QUERYFILENAME;
+    params.length = realFileSize;
+    /// mapped_file_source is actually read-only
+    params.mode = std::ios_base::in;
+    MMAPFILE.open(params);
+
+    if (!MMAPFILE.is_open()) {
+        cerr << "ERROR: failed to create mmap file\n";
+        MPI_Finalize();
+        exit(1);
+    }
+    
+    ///
     /// MPI setup
     ///
-    char MPI_procName[MAXSTR];
     int MPI_nProcs, MPI_length;
     
     MPI_Init(&argc, &argv);    
@@ -406,6 +430,7 @@ int main(int argc, char **argv)
             << ","
             << totalStart_s_Time.tv_sec*1000000 + totalStart_s_Time.tv_usec 
             << endl;
+        LOG.flush();
     }
     
     /// 
@@ -429,8 +454,9 @@ int main(int argc, char **argv)
     mr2->verbosity = VERBOSITY;
     mr2->timer = TIMER;
     mr2->memsize = MEMSIZE;
-    mr2->keyalign = sizeof(uint32_t);  /// key value is the begin offset 
-    mr2->mapstyle = MAPSTYLE;  /// master/slave mode=2, custom scheduler=3
+    mr2->keyalign = sizeof(uint32_t); /// The key is a begin offset 
+    mr2->mapstyle = MAPSTYLE;         /// master/slave mode=2, custom scheduler=3
+    mr2->outofcore = -1;              /// disable out-of-core
     MPI_Barrier(MPI_COMM_WORLD);
         
     ///
@@ -624,7 +650,29 @@ int main(int argc, char **argv)
         }
         
         ////////////////////////////////////////////////////
-        nvecRes = mr2->map((char*)subMasterFileName.c_str(), 
+        ///
+        /// For mrmpi 26AUG2010 version
+        ///
+        //nvecRes = mr2->map((char*)subMasterFileName.c_str(), 
+                           //&mr_run_blast, (void*)NULL);
+                           
+        ///
+        /// For mrmpi 11FEB2011 version
+        ///
+        //uint64_t MapReduce::map(
+            //int nstr,         = 1
+            //char **strings,   = subMasterFileName.c_str()
+            //int self,         = 0
+            //int recurse,      = 0
+            //int readfile,     = 1 for using master file(s)
+            //void (*mymap)(int, char *, KeyValue *, void *), void *ptr)
+        char **masterFileLists;
+        int nFiles = 1;
+        masterFileLists = (char **) malloc(nFiles);
+        masterFileLists[0] = (char *) malloc(subMasterFileName.length() + 1);
+        strcpy(masterFileLists[0], subMasterFileName.c_str());
+
+        nvecRes = mr2->map(1, masterFileLists, 0, 0, 1,
                            &mr_run_blast, (void*)NULL);
         ////////////////////////////////////////////////////
         
@@ -681,10 +729,7 @@ int main(int argc, char **argv)
         }            
         MPI_Barrier(MPI_COMM_WORLD);           
     }
-     
-    delete mr2;
-    delete pTargetDb;      
-    
+         
     if (TIMING) {
         /// Wall-clock time
         gettimeofday(&totalEndTime, NULL);
@@ -723,14 +768,17 @@ int main(int argc, char **argv)
         LOG << "Total total process time (user+sys)," 
             << (tE_user - tS_user) + (tE_sys - tS_sys) << ","
             << ((tE_user - tS_user) + (tE_sys - tS_sys)) / 1000000 << endl;
+        LOG.flush();
     }
     
     if (LOGORNOT || TIMING) LOGFILE.close();    
     
-    if (MYID == 0) cout << "[INFO] done!" << endl;   
-    MPI_Finalize();
+    if (MYID == 0) cout << "Done!" << endl;   
     
-           
+    delete mr2;
+    delete pTargetDb;
+    MMAPFILE.close();
+    MPI_Finalize();
             
             
     return 0;
@@ -823,11 +871,10 @@ void mr_run_blast(int itask,
     uint32_t beginOffset = boost::lexical_cast<uint32_t>(vWorkItemTokens[0]);
     uint32_t endOffset   = boost::lexical_cast<uint32_t>(vWorkItemTokens[1]);
     
-    
-    
     /// query building timing
     double query_build_time;
     if (TIMING) {
+        CNT++;
         query_build_time = MPI_Wtime();
         /// Wall-clock time
         gettimeofday(&qBuildStartTime, NULL);
@@ -843,37 +890,61 @@ void mr_run_blast(int itask,
                 + qBuildStart_u_Time.tv_usec << ","
             << qBuildStart_s_Time.tv_sec*1000000 
                 + qBuildStart_s_Time.tv_usec << ","
-            << dbChunkName << endl;
+            << dbChunkName << "," << CNT << "," << MPI_procName << endl;
+        LOG.flush();
     }
     
     
-    
-    /// Max num of characters per line = 1000000
-    char buff2[MAXSTR2];
-    FILE *qf = fopen((char*)QUERYFILENAME.c_str(), "r");
+    //FILE *qf = fopen((char*)QUERYFILENAME.c_str(), "r");
     
     ///
     /// Read a block of sequeces from beginOffset
     ///
-    fseek(qf, beginOffset, SEEK_SET);    
-    string query;
-    vector<string> vHeaders;
-    vector<uint32_t> vBeginOffsets;
+    const char* mmapQueryFile = (char*)MMAPFILE.data();
+    string query(mmapQueryFile + beginOffset, endOffset - beginOffset);
+    //cout << query << endl;
+
+    //fseek(qf, beginOffset, SEEK_SET);    
+    //string query;
+    //vector<string> vHeaders;
+    //vector<uint32_t> vBeginOffsets;
+    //uint32_t nQuery = 0;
+   
+    //while ((uint32_t)ftell(qf) < endOffset) {
+        //vBeginOffsets.push_back((uint32_t)ftell(qf));
+        //fgets(buff2, MAXSTR2, qf);
+        //if (buff2[0] == '>') {
+            ///// Here I collect headers of fasta input seqs
+            ///// for retrieving query sequence info.
+            //if (EXCLUSIONORNOT) vHeaders.push_back(string(buff2));            
+            //nQuery++;
+        //}
+        ///// Concatenate query sequces for Blast call
+        //query += string(buff2);
+    //}    
+    //fclose(qf);       
+ 
+    vector<string> vHeaders;        /// For collecting def lines of queries
+    vector<uint32_t> vBeginOffsets; /// Fpr collecting beginoffsets of queries
     uint32_t nQuery = 0;
-    
-    while ((uint32_t)ftell(qf) < endOffset) {
-        vBeginOffsets.push_back((uint32_t)ftell(qf));
-        fgets(buff2, MAXSTR2, qf);
-        if (buff2[0] == '>') {
-            /// Here I collect headers of fasta input seqs
-            /// for retrieving query sequence info.
-            if (EXCLUSIONORNOT) vHeaders.push_back(string(buff2));            
+    char* c = (char*)(mmapQueryFile + beginOffset);
+    uint32_t loc = beginOffset;
+    char buff2[MAXSTR2];
+    size_t buffIdx = 0;
+    while (loc < endOffset) {
+        if ((*c) == '>') {
             nQuery++;
+            vBeginOffsets.push_back(loc);
+            buffIdx = 0;
         }
-        /// Concatenate query sequces for Blast call
-        query += string(buff2);
-    }    
-    fclose(qf);
+        if (EXCLUSIONORNOT && (*c) != '\n') {
+            if (buffIdx < MAXSTR2) buff2[buffIdx++] = (*c);
+        }
+        else if (EXCLUSIONORNOT && (*c) == '\n') 
+            vHeaders.push_back(string(buff2));  
+        c++;
+        loc++;
+    }
     if (LOGORNOT) LOG << LOGMSG 
         << "Number of queries for a Blast call = " << nQuery << endl;
  
@@ -908,7 +979,8 @@ void mr_run_blast(int itask,
                 + blastcallStart_u_Time.tv_usec << ","
             << blastcallStart_s_Time.tv_sec*1000000 
                 + blastcallStart_s_Time.tv_usec << ","
-            << dbChunkName << endl;
+            << dbChunkName << "," << CNT << "," << MPI_procName << endl;
+        LOG.flush();
     }
         
     //////////////////////////////////////////
@@ -926,7 +998,7 @@ void mr_run_blast(int itask,
         blastcallEnd_u_Time = ru_blastcall.ru_utime;
         blastcallEnd_s_Time = ru_blastcall.ru_stime;
                         
-        LOG << LOGMSG << "blastcall ends,"
+        LOG << LOGMSG << "blast call ends,"
             << blast_call_etime << ","
             << blastcallEndTime.tv_sec*1000000 
                 + blastcallEndTime.tv_usec << ","
@@ -934,11 +1006,8 @@ void mr_run_blast(int itask,
                 + blastcallEnd_u_Time.tv_usec << ","
             << blastcallEnd_s_Time.tv_sec*1000000 
                 + blastcallEnd_s_Time.tv_usec << "," 
-            << dbChunkName << endl;
-        //LOG << LOGMSG << "throughput,"
-            //<< "byte/sec = " 
-            //<< (endOffset - beginOffset) / (blast_call_etime - blast_call_time)
-            //<< endl;
+            << dbChunkName << "," << CNT << "," << MPI_procName << endl;
+        LOG.flush();
     }    
     
     ///

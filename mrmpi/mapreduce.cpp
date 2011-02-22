@@ -19,7 +19,10 @@
 #include "stdint.h"
 #include "sys/types.h"
 #include "sys/stat.h"
+#include "dirent.h"
 #include "mapreduce.h"
+#include "version.h"
+#include "mrtype.h"
 #include "keyvalue.h"
 #include "keymultivalue.h"
 #include "spool.h"
@@ -36,6 +39,8 @@ MapReduce *MapReduce::mrptr;
 int MapReduce::instances_now = 0;
 int MapReduce::instances_ever = 0;
 int MapReduce::mpi_finalize_flag = 0;
+uint64_t MapReduce::msize = 0;
+uint64_t MapReduce::msizemax = 0;
 uint64_t MapReduce::rsize = 0;
 uint64_t MapReduce::wsize = 0;
 uint64_t MapReduce::cssize = 0;
@@ -46,7 +51,21 @@ double MapReduce::commtime = 0.0;
 
 void map_file_standalone(int, KeyValue *, void *);
 int compare_standalone(const void *, const void *);
-                    
+
+int compare_int(char *, int, char *, int);
+int compare_uint64(char *, int, char *, int);
+int compare_float(char *, int, char *, int);
+int compare_double(char *, int, char *, int);
+int compare_str(char *, int, char *, int);
+int compare_strn(char *, int, char *, int);
+
+int compare_int_reverse(char *, int, char *, int);
+int compare_uint64_reverse(char *, int, char *, int);
+int compare_float_reverse(char *, int, char *, int);
+int compare_double_reverse(char *, int, char *, int);
+int compare_str_reverse(char *, int, char *, int);
+int compare_strn_reverse(char *, int, char *, int);
+
 #define MIN(A,B) ((A) < (B)) ? (A) : (B)
 #define MAX(A,B) ((A) > (B)) ? (A) : (B)
 
@@ -61,40 +80,6 @@ int compare_standalone(const void *, const void *);
 #define INTMAX 0x7FFFFFFF
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
-
-
-///
-/// Added by ssul
-///
-/// for ceil
-#include <math.h>
-
-/// for string and map
-#include <iostream>
-#include <string>
-#include <map>
-using namespace std;
-
-/// For core assign
-#include <algorithm>
-#include <queue>
-#include <iterator>
-#include <cassert>
-
-/// For str -> int, int -> str
-#include <boost/lexical_cast.hpp>
-#include <vector>
- 
-extern int NTOTALDBCHUNKS;
-const int NMAXTRIAL = 20;
-const int NALLOCTABLEUNIT = 4;
-        
-/// For tokenizer
-#include <boost/algorithm/string.hpp>
-
- 
-
-int assign_proc_num(char*, multimap<string,int> &, vector< vector<bool> > &, vector<int> &);
 
 /* ----------------------------------------------------------------------
    construct using caller's MPI communicator
@@ -180,16 +165,19 @@ MapReduce::~MapReduce()
 {
     delete [] fpath;
 
-    for (int i = 0; i < npage; i++)
-        if (memcount[i]) memory->sfree(memptr[i]);
-    memory->sfree(memptr);
-    memory->sfree(memused);
-    memory->sfree(memcount);
-
-    delete memory;
-    delete error;
     delete kv;
     delete kmv;
+    delete memory;
+    delete error;
+
+    for (int i = 0; i < npage; i++)
+        if (memcount[i]) {
+            memory->sfree(memptr[i]);
+            msize -= memcount[i] * pagesize;
+        }
+    memory->sfree(memptr);
+    memory->sfree(memusage);
+    memory->sfree(memcount);
 
     instances_now--;
     if (verbosity) mr_stats(verbosity);
@@ -219,6 +207,9 @@ void MapReduce::defaults()
 
     minpage = 0;
     maxpage = 0;
+    freepage = 1;
+    outofcore = 0;
+    zeropage = 0;
     keyalign = valuealign = ALIGNKV;
 
 #ifdef MRMPI_FPATH
@@ -242,9 +233,11 @@ void MapReduce::defaults()
 
     allocated = 0;
     memptr = NULL;
-    memused = NULL;
+    memusage = NULL;
     memcount = NULL;
     npage = 0;
+    npagemax = 0;
+    tagmax = 0;
     fsize = 0;
     fsizemax = 0;
 
@@ -255,9 +248,9 @@ void MapReduce::defaults()
         error->all("Not compiled for 8-byte integers and pointers");
 
     int mpisize;
-    MPI_Type_size(MPI_UNSIGNED_LONG, &mpisize);
+    MPI_Type_size(MRMPI_BIGINT, &mpisize);
     if (mpisize != 8)
-        error->all("MPI_UNSIGNED_LONG is not 8-byte data type");
+        error->all("MRMPI_BIGINT is not 8-byte data type: edit mrtype.h");
 }
 
 /* ----------------------------------------------------------------------
@@ -279,6 +272,9 @@ MapReduce *MapReduce::copy()
     mrnew->memsize = memsize;
     mrnew->minpage = minpage;
     mrnew->maxpage = maxpage;
+    mrnew->freepage = freepage;
+    mrnew->outofcore = outofcore;
+    mrnew->zeropage = zeropage;
 
     if (allocated) {
         mrnew->keyalign = kalign;
@@ -294,8 +290,17 @@ MapReduce *MapReduce::copy()
     mrnew->fpath = new char[n];
     strcpy(mrnew->fpath, fpath);
 
-    if (kv) mrnew->copy_kv(kv);
-    if (kmv) mrnew->copy_kmv(kmv);
+    if (kv) {
+        kv->allocate();
+        mrnew->copy_kv(kv);
+        kv->deallocate(0);
+    }
+    if (kmv) {
+        kmv->allocate();
+        mrnew->copy_kmv(kmv);
+        kmv->deallocate(0);
+    }
+    if (freepage) mem_cleanup();
 
     if (kv) stats("Copy", 0);
     if (kmv) stats("Copy", 1);
@@ -312,21 +317,21 @@ void MapReduce::copy_kv(KeyValue *kv_src)
 {
     if (!allocated) allocate();
     kv = new KeyValue(this, kalign, valign, memory, error, comm);
-    kv->set_page();
     kv->copy(kv_src);
+    kv->complete();
 }
 
 /* ----------------------------------------------------------------------
    create my KMV as copy of kmvsrc
-   called by other MR's copy(), so my KMV will not yet exist
+   called by other MR's copy()
 ------------------------------------------------------------------------- */
 
 void MapReduce::copy_kmv(KeyMultiValue *kmv_src)
 {
     if (!allocated) allocate();
     kmv = new KeyMultiValue(this, kalign, valign, memory, error, comm);
-    kmv->set_page();
     kmv->copy(kmv_src);
+    kmv->complete();
 }
 
 /* ----------------------------------------------------------------------
@@ -342,25 +347,22 @@ uint64_t MapReduce::add(MapReduce *mr)
     if (verbosity) file_stats(0);
 
     if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
 
-    if (kv == NULL) {
-        kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
-    }
-    else {
-        kv->append();
-    }
+    if (kv == NULL) kv = new KeyValue(this, kalign, valign, memory, error, comm);
+    else kv->append();
 
+    mr->kv->allocate();
     kv->add(mr->kv);
+    mr->kv->deallocate(0);
     kv->complete();
+    if (freepage) mem_cleanup();
 
     stats("Add", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -393,10 +395,11 @@ uint64_t MapReduce::aggregate(int (*hash)(char *, int))
         return kv->nkv;
     }
 
+    kv->allocate();
+
     // new KV that will be created
 
     KeyValue *kvnew = new KeyValue(this, kalign, valign, memory, error, comm);
-    kvnew->set_page();
 
     // irregular communicator
 
@@ -405,10 +408,10 @@ uint64_t MapReduce::aggregate(int (*hash)(char *, int))
     // pages of workspace memory, including extra allocated pages
 
     uint64_t twopage;
-    char *cdpage = mymalloc(2, twopage, memtag_cdpage);
-    char *epage = mymalloc(1, dummy, memtag_epage);
-    char *fpage = mymalloc(1, dummy, memtag_fpage);
-    char *gpage = mymalloc(1, dummy, memtag_gpage);
+    char *cdpage = mem_request(2, twopage, memtag_cdpage);
+    char *epage = mem_request(1, dummy, memtag_epage);
+    char *fpage = mem_request(1, dummy, memtag_fpage);
+    char *gpage = mem_request(1, dummy, memtag_gpage);
 
     // maxpage = max # of pages in any proc's KV
 
@@ -511,20 +514,20 @@ uint64_t MapReduce::aggregate(int (*hash)(char *, int))
     }
 
     delete irregular;
-    myfree(memtag_cdpage);
-    myfree(memtag_epage);
-    myfree(memtag_fpage);
-    myfree(memtag_gpage);
+    mem_unmark(memtag_cdpage);
+    mem_unmark(memtag_epage);
+    mem_unmark(memtag_fpage);
+    mem_unmark(memtag_gpage);
 
-    myfree(kv->memtag);
     delete kv;
     kv = kvnew;
     kv->complete();
+    if (freepage) mem_cleanup();
 
     stats("Aggregate", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -534,7 +537,7 @@ uint64_t MapReduce::aggregate(int (*hash)(char *, int))
 
 uint64_t MapReduce::broadcast(int root)
 {
-    int npage_kv, memtag;
+    int npage_kv;
     char *buf;
     uint64_t dummy, sizes[4];
 
@@ -546,7 +549,7 @@ uint64_t MapReduce::broadcast(int root)
     if (nprocs == 1) {
         stats("Broadcast", 0);
         uint64_t nkeyall;
-        MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+        MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
         return nkeyall;
     }
 
@@ -555,14 +558,12 @@ uint64_t MapReduce::broadcast(int root)
     double timestart = MPI_Wtime();
 
     if (me != root) {
-        myfree(kv->memtag);
         delete kv;
         kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
-        buf = mymalloc(1, dummy, memtag);
     }
-    else npage_kv = kv->request_info(&buf);
+    else kv->allocate();
 
+    npage_kv = kv->request_info(&buf);
     MPI_Bcast(&npage_kv, 1, MPI_INT, root, comm);
 
     // broadcast KV data, one page at a time, non-root procs add to their KV
@@ -570,7 +571,7 @@ uint64_t MapReduce::broadcast(int root)
     for (int ipage = 0; ipage < npage_kv; ipage++) {
         if (me == root)
             sizes[0] = kv->request_page(ipage, sizes[1], sizes[2], sizes[3]);
-        MPI_Bcast(sizes, 4, MPI_UNSIGNED_LONG, root, comm);
+        MPI_Bcast(sizes, 4, MRMPI_BIGINT, root, comm);
         MPI_Bcast(buf, sizes[3], MPI_BYTE, root, comm);
         if (me == root) cssize += sizes[3];
         else {
@@ -579,16 +580,15 @@ uint64_t MapReduce::broadcast(int root)
         }
     }
 
-    if (me != root) myfree(memtag);
-
     commtime += MPI_Wtime() - timestart;
     if (me != root) kv->complete();
     else kv->complete_dummy();
+    if (freepage) mem_cleanup();
 
     stats("Broadcast", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -605,19 +605,19 @@ uint64_t MapReduce::clone()
     if (verbosity) file_stats(0);
 
     kmv = new KeyMultiValue(this, kalign, valign, memory, error, comm);
-    kmv->set_page();
+    kv->allocate();
 
     kmv->clone(kv);
     kmv->complete();
 
-    myfree(kv->memtag);
     delete kv;
     kv = NULL;
+    if (freepage) mem_cleanup();
 
     stats("Clone", 1);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -632,11 +632,12 @@ uint64_t MapReduce::close()
     if (verbosity) file_stats(0);
 
     kv->complete();
+    if (freepage) mem_cleanup();
 
-    stats("Complete", 0);
+    stats("Close", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -654,19 +655,19 @@ uint64_t MapReduce::collapse(char *key, int keybytes)
     if (verbosity) file_stats(0);
 
     kmv = new KeyMultiValue(this, kalign, valign, memory, error, comm);
-    kmv->set_page();
+    kv->allocate();
 
     kmv->collapse(key, keybytes, kv);
     kmv->complete();
 
-    myfree(kv->memtag);
     delete kv;
     kv = NULL;
+    if (freepage) mem_cleanup();
 
     stats("Collapse", 1);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -697,7 +698,7 @@ uint64_t MapReduce::collate(int (*hash)(char *, int))
     fcounter_part = fcounter_set = 0;
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -719,19 +720,24 @@ uint64_t MapReduce::compress(void (*appcompress)(char *, int, char *, int,
     if (verbosity) file_stats(0);
 
     kmv = new KeyMultiValue(this, kalign, valign, memory, error, comm);
-    kmv->set_page();
+    kv->allocate();
 
-    // KMV will delete kv and free its memory
+    // convert KV into KMV
+    // KMV convert will delete kv
 
     kmv->convert(kv);
     kmv->complete();
+    if (freepage) mem_cleanup();
+
+    // create new KV
 
     kv = new KeyValue(this, kalign, valign, memory, error, comm);
-    kv->set_page();
+    kmv->allocate();
 
     uint64_t dummy;
-    int memtag;
-    char *mvpage = mymalloc(1, dummy, memtag);
+    int memtag1, memtag2;
+    char *mvpage1 = mem_request(1, dummy, memtag1);
+    char *mvpage2 = mem_request(1, dummy, memtag2);
 
     int nkey_kmv, nvalues, keybytes, mvaluebytes;
     uint64_t dummy1, dummy2, dummy3;
@@ -775,13 +781,15 @@ uint64_t MapReduce::compress(void (*appcompress)(char *, int, char *, int,
                 ptr = ROUNDUP(ptr, kalignm1);
                 key = ptr;
 
-                // set KMV page to mvpage so key will not be overwritten
+                // set KMV page to mvpage1 so key will not be overwritten
                 // when multivalue_block() loads new pages of values
 
-                kmv->page = mvpage;
                 kmv_block_valid = 1;
                 kmv_key_page = ipage;
+                kmv_mvpage1 = mvpage1;
+                kmv_mvpage2 = mvpage2;
                 kmv_nvalue_total = kmv->multivalue_blocks(ipage, kmv_nblock);
+                kmv->page = mvpage1;
                 appcompress(key, keybytes, NULL, 0, (int *) this, kv, appptr);
                 kmv_block_valid = 0;
                 ipage += kmv_nblock;
@@ -791,22 +799,20 @@ uint64_t MapReduce::compress(void (*appcompress)(char *, int, char *, int,
     }
 
     kv->complete();
-    myfree(memtag);
+    mem_unmark(memtag1);
+    mem_unmark(memtag2);
 
     // delete KMV
-    // close is necessary b/c KMV files do not close themselves
-    // since users may use request_page() via multivalue_block()
 
-    kmv->close_file();
-    myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
+    if (freepage) mem_cleanup();
 
     stats("Compress", 0);
     fcounter_part = fcounter_set = 0;
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -825,20 +831,20 @@ uint64_t MapReduce::convert()
     if (verbosity) file_stats(0);
 
     kmv = new KeyMultiValue(this, kalign, valign, memory, error, comm);
-    kmv->set_page();
+    kv->allocate();
 
     // KMV will delete kv and free its memory
 
     kmv->convert(kv);
     kmv->complete();
-
     kv = NULL;
+    if (freepage) mem_cleanup();
 
     stats("Convert", 1);
     if (!collateflag) fcounter_part = fcounter_set = 0;
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -850,8 +856,13 @@ uint64_t MapReduce::convert()
 uint64_t MapReduce::gather(int numprocs)
 {
     int flag, npage_kv, memtag;
-    char *buf;
-    uint64_t dummy, sizes[4];
+    int nkey, rkey, skey, keybytes, valuebytes;
+    int sizes[4];
+    uint64_t dummy;
+    uint64_t keysize, valuesize, alignsize;
+    uint64_t rkeysize, rvaluesize, ralignsize;
+    uint64_t skeysize, svaluesize, salignsize;
+    char *buf, *rbuf, *sbuf, *ptr, *ptrprev;
     MPI_Status status;
     MPI_Request request;
 
@@ -864,7 +875,7 @@ uint64_t MapReduce::gather(int numprocs)
     if (nprocs == 1 || numprocs == nprocs) {
         stats("Gather", 0);
         uint64_t nkeyall;
-        MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+        MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
         return nkeyall;
     }
 
@@ -876,60 +887,121 @@ uint64_t MapReduce::gather(int numprocs)
 
     if (me < numprocs) {
         kv->append();
-        buf = mymalloc(1, dummy, memtag);
+        buf = mem_request(1, dummy, memtag);
 
         for (int iproc = me + numprocs; iproc < nprocs; iproc += numprocs) {
             MPI_Send(&flag, 0, MPI_INT, iproc, 0, comm);
             MPI_Recv(&npage_kv, 1, MPI_INT, iproc, 0, comm, &status);
 
             for (int ipage = 0; ipage < npage_kv; ipage++) {
-                MPI_Irecv(buf, pagesize, MPI_BYTE, iproc, 1, comm, &request);
                 MPI_Send(&flag, 0, MPI_INT, iproc, 0, comm);
-                MPI_Recv(sizes, 4, MPI_UNSIGNED_LONG, iproc, 0, comm, &status);
-                crsize += sizes[3];
-                MPI_Wait(&request, &status);
-                kv->add(sizes[0], buf, sizes[1], sizes[2], sizes[3]);
+                MPI_Recv(&nkey, 1, MPI_INT, iproc, 0, comm, &status);
+                rkey = 0;
+                rkeysize = svaluesize = salignsize = 0;
+                rbuf = buf;
+
+                // recv sections of pages that fit in INTMAX as required by MPI_Irecv
+
+                while (rkey < nkey) {
+                    MPI_Irecv(rbuf, INTMAX, MPI_BYTE, iproc, 1, comm, &request);
+                    MPI_Send(&flag, 0, MPI_INT, iproc, 0, comm);
+                    MPI_Recv(sizes, 4, MPI_INT, iproc, 0, comm, &status);
+                    MPI_Wait(&request, &status);
+                    crsize += sizes[3];
+                    rkey += sizes[0];
+                    rkeysize += sizes[1];
+                    rvaluesize += sizes[2];
+                    ralignsize += sizes[3];
+                    kv->add(sizes[0], rbuf,
+                            (uint64_t) sizes[1], (uint64_t) sizes[2], (uint64_t) sizes[3]);
+                    rbuf += sizes[3];
+                }
             }
         }
 
-        myfree(memtag);
+        mem_unmark(memtag);
 
     }
     else {
-        int iproc = me % numprocs;
+        kv->allocate();
         npage_kv = kv->request_info(&buf);
 
+        int iproc = me % numprocs;
         MPI_Recv(&flag, 0, MPI_INT, iproc, 0, comm, &status);
         MPI_Send(&npage_kv, 1, MPI_INT, iproc, 0, comm);
 
         for (int ipage = 0; ipage < npage_kv; ipage++) {
-            sizes[0] = kv->request_page(ipage, sizes[1], sizes[2], sizes[3]);
+            nkey = kv->request_page(ipage, keysize, valuesize, alignsize);
             MPI_Recv(&flag, 0, MPI_INT, iproc, 0, comm, &status);
-            MPI_Send(sizes, 4, MPI_UNSIGNED_LONG, iproc, 0, comm);
-            MPI_Send(buf, sizes[3], MPI_BYTE, iproc, 1, comm);
-            cssize += sizes[3];
+            MPI_Send(&nkey, 1, MPI_INT, iproc, 0, comm);
+            skey = 0;
+            skeysize = svaluesize = salignsize = 0;
+            sbuf = buf;
+
+            // send sections of pages that fit in INTMAX as required by MPI_Send
+
+            while (skey < nkey) {
+                if (alignsize - salignsize <= INTMAX) {
+                    sizes[0] = nkey - skey;
+                    sizes[1] = keysize - skeysize;
+                    sizes[2] = valuesize - svaluesize;
+                    sizes[3] = alignsize - salignsize;
+
+                }
+                else {
+                    sizes[0] = sizes[1] = sizes[2] = 0;
+                    ptr = sbuf;
+                    while (ptr - sbuf <= INTMAX) {
+                        ptrprev = ptr;
+                        keybytes = *((int *) ptr);
+                        valuebytes = *((int *)(ptr + sizeof(int)));;
+                        ptr += twolenbytes;
+                        ptr = ROUNDUP(ptr, kalignm1);
+                        ptr += keybytes;
+                        ptr = ROUNDUP(ptr, valignm1);
+                        ptr += valuebytes;
+                        ptr = ROUNDUP(ptr, talignm1);
+                        sizes[0]++;
+                        sizes[1] += keybytes;
+                        sizes[2] += valuebytes;
+                    }
+                    sizes[0]--;
+                    sizes[1] -= keybytes;
+                    sizes[2] -= valuebytes;
+                    sizes[3] = ptrprev - sbuf;;
+                }
+
+                MPI_Recv(&flag, 0, MPI_INT, iproc, 0, comm, &status);
+                MPI_Send(sizes, 4, MPI_INT, iproc, 0, comm);
+                MPI_Send(sbuf, sizes[3], MPI_BYTE, iproc, 1, comm);
+                cssize += sizes[3];
+                skey += sizes[0];
+                skeysize += sizes[1];
+                svaluesize += sizes[2];
+                salignsize += sizes[3];
+                sbuf += sizes[3];
+            }
         }
 
         // leave empty KV on vacated procs
 
-        myfree(kv->memtag);
         delete kv;
         kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
     }
 
     commtime += MPI_Wtime() - timestart;
     kv->complete();
+    if (freepage) mem_cleanup();
 
     stats("Gather", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
 /* ----------------------------------------------------------------------
-   create a KV via a parallel map operation for nmap tasks
+   user call: create a KV via a parallel map operation for nmap tasks
    make one call to appmap() for each task
    mapstyle determines how tasks are partitioned to processors
 ------------------------------------------------------------------------- */
@@ -937,268 +1009,98 @@ uint64_t MapReduce::gather(int numprocs)
 uint64_t MapReduce::map(int nmap, void (*appmap)(int, KeyValue *, void *),
                         void *appptr, int addflag)
 {
-    MPI_Status status;
-
-    if (timer) start_timer();
-    if (verbosity) file_stats(0);
-
-    if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
-    delete kmv;
-    kmv = NULL;
-
-    if (addflag == 0) {
-        if (kv) myfree(kv->memtag);
-        delete kv;
-        kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
-    }
-    else if (kv == NULL) {
-        kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
-    }
-    else {
-        kv->append();
-    }
-
-    // nprocs = 1 = all tasks to single processor
-    // mapstyle 0 = chunk of tasks to each proc
-    // mapstyle 1 = strided tasks to each proc
-    // mapstyle 2 = master/slave assignment of tasks
-
-    if (nprocs == 1) {
-        for (int itask = 0; itask < nmap; itask++)
-            appmap(itask, kv, appptr);
-
-    }
-    else if (mapstyle == 0) {
-        uint64_t nmap64 = nmap;
-        int lo = me * nmap64 / nprocs;
-        int hi = (me + 1) * nmap64 / nprocs;
-        for (int itask = lo; itask < hi; itask++)
-            appmap(itask, kv, appptr);
-
-    }
-    else if (mapstyle == 1) {
-        for (int itask = me; itask < nmap; itask += nprocs)
-            appmap(itask, kv, appptr);
-
-    }
-    else if (mapstyle == 2) { /// master/slave
-        if (me == 0) {
-            int doneflag = -1;
-            int ndone = 0;
-            int itask = 0;
-            for (int iproc = 1; iproc < nprocs; iproc++) {
-                if (itask < nmap) {
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
-                }
-                else {
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
-            }
-            while (ndone < nprocs - 1) {
-                int iproc, tmp;
-                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
-                iproc = status.MPI_SOURCE;
-
-                if (itask < nmap) {
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
-                }
-                else {
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
-                }
-            }
-
-        }
-        else {
-            while (1) {
-                int itask;
-                MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
-                if (itask < 0) break;
-                appmap(itask, kv, appptr);
-                MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
-            }
-        }
-
-    }
-    else error->all("Invalid mapstyle setting");
-
-    kv->complete();
-
-    stats("Map", 0);
-
-    uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    return nkeyall;
+    return map_tasks(nmap, NULL, appmap, NULL, appptr, addflag, 0);
 }
 
-
-int assign_proc_num(string workItem, multimap<string, int> &mmDbCoreNum, 
-                    vector< vector<bool> > &vvTaskTable, vector<int> &nodeNum,
-                    int NALLOCTABLEUNIT) 
-{
-    vector<string> vWorkItemTokens;
-    boost::split(vWorkItemTokens, workItem, boost::is_any_of(","));
-    
-    pair<multimap<string, int>::iterator, multimap<string, int>::iterator> ii;
-    multimap<string, int>::iterator it; 
-    
-    ///
-    /// Decide node num to use 
-    ///
-    ii = mmDbCoreNum.equal_range(vWorkItemTokens[2]); 
-    int selectedNodeNum = 0;
-    
-    ///
-    /// If two or more nodes are assigned to a db chunk name.
-    /// randomly select one of them. 
-    ///
-    for (it = ii.first; it != ii.second; ++it) {
-        nodeNum.push_back((int) it->second);
-    }
-    if (nodeNum.size() > 1)
-        random_shuffle(nodeNum.begin(), nodeNum.end());
-    selectedNodeNum = nodeNum[0];
-                
-    ///
-    /// Using the selected node num, decide proc num and
-    /// update task assign table
-    ///
-    int selectedProcNum = 0;
-    size_t i = 0;
-    if (selectedNodeNum == 0) {
-        vvTaskTable[selectedNodeNum][i] = true;
-        i++; /// master                     
-    }
-    
-    bool bFound = false; 
-    for (; i < (unsigned)NALLOCTABLEUNIT; ++i) {
-        if (!vvTaskTable[selectedNodeNum][i]) {
-            vvTaskTable[selectedNodeNum][i] = true;
-            selectedProcNum = i;
-            bFound = true;
-            break;
-        }
-    }          
-        
-    ///
-    /// if decided, return selected proc num or return -1
-    ///
-    if (bFound)
-        return (selectedProcNum + selectedNodeNum * NALLOCTABLEUNIT);
-    else 
-        return -1;
-}
-           
-                        
 /* ----------------------------------------------------------------------
-   create a KV via a parallel map operation for list of files in file
-   make one call to appmap() for each file in file
-   mapstyle determines how tasks are partitioned to processors
+   user call: create a KV via a parallel map operation on nstr file/dir names
+   input nstr/strings are used to generate list of filenames
+   selfflag = 0, just proc 0 generates file list and bcasts it
+   selfflag = 1, each proc generates its own file list
 ------------------------------------------------------------------------- */
 
-uint64_t MapReduce::map(char *file,
+uint64_t MapReduce::map(int nstr, char **strings,
+                        int selfflag, int recurse, int readflag,
                         void (*appmap)(int, char *, KeyValue *, void *),
                         void *appptr, int addflag)
 {
-    int n;
-    char line[MAXLINE];
+    int nfile = 0;
+    int maxfile = 0;
+    char **files = NULL;
+
+    if (selfflag || me == 0)
+        for (int i = 0; i < nstr; i++)
+            findfiles(strings[i], recurse, readflag, nfile, maxfile, files);
+
+    if (selfflag == 0) bcastfiles(nfile, files);
+    if (selfflag) MPI_Allreduce(&nfile, &mapfilecount, 1, MPI_INT, MPI_SUM, comm);
+    else mapfilecount = nfile;
+
+    uint64_t nkeyall = map_tasks(nfile, files, NULL, appmap, appptr, addflag, selfflag);
+    for (int i = 0; i < nfile; i++) delete [] files[i];
+    memory->sfree(files);
+    return nkeyall;
+}
+
+/* ----------------------------------------------------------------------
+   called by 2 user map methods above (task count, list of files)
+   assign out and process the tasks
+   ntasks can be generic (files = NULL), or number of files
+   make one call to two different flavors of appmap() for each task
+   mapstyle and selfflag determine how tasks are partitioned to processors
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::map_tasks(int ntask, char **files,
+                              void (*appmaptask)(int, KeyValue *, void *),
+                              void (*appmapfile)(int, char *,
+                                      KeyValue *, void *),
+                              void *appptr, int addflag, int selfflag)
+{
     MPI_Status status;
 
     if (timer) start_timer();
     if (verbosity) file_stats(0);
 
     if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
 
     if (addflag == 0) {
-        if (kv) myfree(kv->memtag);
         delete kv;
         kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
     }
     else if (kv == NULL) {
         kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
     }
     else {
         kv->append();
     }
 
-    // open file and extract filenames
-    // bcast each filename to all procs
-    // trim whitespace from beginning and end of filename
-
-    int nmap = 0;
-    int maxfiles = 0;
-    char **files = NULL;
-    FILE *fp;
-
-    if (me == 0) {
-        fp = fopen(file, "r");
-        if (fp == NULL) error->one("Could not open file of file names");
-    }
-
-    while (1) {
-        if (me == 0) {
-            if (fgets(line, MAXLINE, fp) == NULL) n = 0;
-            else n = strlen(line) + 1;
-        }
-        MPI_Bcast(&n, 1, MPI_INT, 0, comm);
-        if (n == 0) {
-            if (me == 0) fclose(fp);
-            break;
-        }
-
-        MPI_Bcast(line, n, MPI_CHAR, 0, comm);
-
-        char *ptr = line;
-        while (isspace(*ptr)) ptr++;
-        if (strlen(ptr) == 0) error->all("Blank line in file of file names");
-        char *ptr2 = ptr + strlen(ptr) - 1;
-        while (isspace(*ptr2)) ptr2--;
-        ptr2++;
-        *ptr2 = '\0';
-
-        if (nmap == maxfiles) {
-            maxfiles += FILECHUNK;
-            files = (char **)
-            memory->srealloc(files, maxfiles * sizeof(char *), "MR:files");
-        }
-        n = strlen(ptr) + 1;
-        files[nmap] = new char[n];
-        strcpy(files[nmap], ptr);
-        nmap++;
-    }
-
+    // selfflag = 1 = each processor performs own tasks
     // nprocs = 1 = all tasks to single processor
     // mapstyle 0 = chunk of tasks to each proc
     // mapstyle 1 = strided tasks to each proc
     // mapstyle 2 = master/slave assignment of tasks
 
-    if (nprocs == 1) {
-        for (int itask = 0; itask < nmap; itask++)
-            appmap(itask, files[itask], kv, appptr);
+    if (selfflag == 1 || nprocs == 1) {
+        for (int itask = 0; itask < ntask; itask++)
+            if (files) appmapfile(itask, files[itask], kv, appptr);
+            else appmaptask(itask, kv, appptr);
 
     }
     else if (mapstyle == 0) {
-        uint64_t nmap64 = nmap;
+        uint64_t nmap64 = ntask;
         int lo = me * nmap64 / nprocs;
         int hi = (me + 1) * nmap64 / nprocs;
         for (int itask = lo; itask < hi; itask++)
-            appmap(itask, files[itask], kv, appptr);
+            if (files) appmapfile(itask, files[itask], kv, appptr);
+            else appmaptask(itask, kv, appptr);
 
     }
     else if (mapstyle == 1) {
-        for (int itask = me; itask < nmap; itask += nprocs)
-            appmap(itask, files[itask], kv, appptr);
+        for (int itask = me; itask < ntask; itask += nprocs)
+            if (files) appmapfile(itask, files[itask], kv, appptr);
+            else appmaptask(itask, kv, appptr);
 
     }
     else if (mapstyle == 2) {
@@ -1206,9 +1108,8 @@ uint64_t MapReduce::map(char *file,
             int doneflag = -1;
             int ndone = 0;
             int itask = 0;
-            
             for (int iproc = 1; iproc < nprocs; iproc++) {
-                if (itask < nmap) {
+                if (itask < ntask) {
                     MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
                     itask++;
                 }
@@ -1217,13 +1118,12 @@ uint64_t MapReduce::map(char *file,
                     ndone++;
                 }
             }
-            
             while (ndone < nprocs - 1) {
                 int iproc, tmp;
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
 
-                if (itask < nmap) {
+                if (itask < ntask) {
                     MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
                     itask++;
                 }
@@ -1232,343 +1132,196 @@ uint64_t MapReduce::map(char *file,
                     ndone++;
                 }
             }
+
         }
         else {
             while (1) {
                 int itask;
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
                 if (itask < 0) break;
-                appmap(itask, files[itask], kv, appptr);
+                if (files) appmapfile(itask, files[itask], kv, appptr);
+                else appmaptask(itask, kv, appptr);
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
+
     }
     ///
-    /// Here I add my mapstyle (mapstyle=3) to assign work items to nproc-1 
-    /// workers considering the name of DB chunks.
-    /// Main goal is to assign work items which have the same DB chunk names
-    /// to workers running on the same node physically.
+    /// Here I add my mapstyle (mapstyle=3) to implement location-aware
+    /// scheduler. Main goal is to assign work items which have the same DB 
+    /// chunk names to workers running on the same node physically.
     /// 
-    else if (mapstyle == 3) {       
-                                                    
+    /// If you have 256 ranks; 40 query blocks; 109 DB files.
+    /// You start at rank 1, and initially distribute work items like this 
+    /// (assuming ranks fill nodes one-by-one, but more about it a little later):
+    ///     --------------------------
+    ///     node,rank,q_block,db_file
+    ///     1,1,1,1
+    ///     1,2,2,1
+    ///     1,3,3,1
+    ///     ...
+    ///     i,40,40,1
+    ///     i,41,1,2
+    ///     i,42,2,2
+    ///     ....
+    ///     --------------------------
+    /// In other words, you cycle through all query blocks against DB file 
+    /// one first, then again through all query blocks against DB file two, 
+    /// and so on. On the initial fill of the empty ranks at startup, this 
+    /// procedure will distribute 256 work items out of 40x108 ~= 4000. It will 
+    /// cause a load of 256/40 = only 7 DB files total. Moreover, once all 
+    /// these initial work items are processed, 6 out of these 7 DB files will 
+    /// never have to be loaded again (because each was scanned against all 
+    /// 40 work items).
+    ///
+    else if (mapstyle == 3) {
         if (me == 0) {
             int doneflag = -1;
             int ndone = 0;
-            int itask = 0;             
-            
-            int nNodes = nprocs / NALLOCTABLEUNIT;
-            int nDBPerNode = int(ceil(NTOTALDBCHUNKS / nNodes));
-                         
-            /// 
-            /// Assgin each node with one or more DB chunks
-            /// A work item = <start, end, db>
-            ///
-            multimap<string, int> mmDbCoreNum;
-        
-            if (NTOTALDBCHUNKS >= nNodes) { /// ex) 109 > 64 nodes (=1024cores)
-                int nodeIdx = 0;
-                for (size_t i = 0; i < (unsigned)NTOTALDBCHUNKS; ++i) {
-                    string workItem(files[i]);
-                    vector<string> vWorkItemTokens;
-                    boost::split(vWorkItemTokens, workItem, 
-                                 boost::is_any_of(","));                    
-                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[2], 
-                                       nodeIdx)); 
-                    nodeIdx++;
-                    if (nodeIdx == nNodes) nodeIdx = 0;
-                }
-            }
-            else { /// ex) 109 < 128 nodes (=2048cores)
-                int nodeIdx = 0;
-                for (size_t i = 0; i < (unsigned)NTOTALDBCHUNKS; ++i) {
-                    string workItem(files[i]);
-                    vector<string> vWorkItemTokens;
-                    boost::split(vWorkItemTokens, workItem, 
-                                 boost::is_any_of(","));
-                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[2], 
-                                       nodeIdx)); 
-                    nodeIdx++;
-                }
-                for (size_t i = 0; i < (unsigned)(nNodes - NTOTALDBCHUNKS); ++i) {
-                    string workItem(files[i]);
-                    vector<string> vWorkItemTokens;
-                    boost::split(vWorkItemTokens, workItem, 
-                                 boost::is_any_of(","));
-                    mmDbCoreNum.insert(pair <string, int> (vWorkItemTokens[2], 
-                                       nodeIdx)); 
-                    nodeIdx++;
-                }          
-            }                  
-            
-            ///
-            /// V3: Make a queue with task number
-            /// Assing jobs to workders using the queue and files[itask]
-            ///
-            queue<int> qWorkItems;
-            for (size_t i = 0; i < nmap; ++i)  
-                qWorkItems.push(i);
-            
-            ///
-            /// Prepare a proc/node task assign table
-            ///
-            vector< vector<bool> > vvTaskTable;
-            for (size_t i = 0; i < nNodes; ++i) {
-                vector<bool> vBoolTemp(NALLOCTABLEUNIT, false);
-                vvTaskTable.push_back(vBoolTemp);
-            }
-            
-            ///
-            /// Check work item queue and db chunk assign table
-            /// 1. Get a work item, get db name, check node num to assign
-            ///
-            int numProcUsed = 1; /// except master
-            vector<bool> vUsedProcNum(nprocs, false);
-            
-            while (numProcUsed < nprocs) {
-                /// If curr. task index < # total work
-                if (itask < nmap && !qWorkItems.empty()) { 
-                    /// Get the front item from the queue
-                    int& taskNum = qWorkItems.front();
-                        
-                    vector<int> vSelectedNodeNum;
-                    string workItem(files[taskNum]);
-
-                    int selectedProcNum = 
-                        assign_proc_num(workItem, mmDbCoreNum, vvTaskTable, 
-                                        vSelectedNodeNum, NALLOCTABLEUNIT);
-                    ///
-                    /// This is the case when all procs in a node assigned with 
-                    /// a set of DB chunk name are used. Thus, put the work item 
-                    /// back to the queue and get another one.
-                    /// This routine should be repeated until we find a free 
-                    /// slot.
-                    ///
-                    if (selectedProcNum == -1) {                        
-                        qWorkItems.pop();
-                        qWorkItems.push(taskNum);
-                        continue;
-                    }
-                       
-                    assert(vUsedProcNum[selectedProcNum] == false);
-                    vUsedProcNum[selectedProcNum] = true;
-                    
-                    MPI_Send(&itask, 1, MPI_INT, selectedProcNum, 0, comm);
-                    
-                    /////////////////
-                    qWorkItems.pop();
-                    /////////////////
-
-                    numProcUsed++;
+            int itask = 0;
+            for (int iproc = 1; iproc < nprocs; iproc++) {
+                if (itask < ntask) {
+                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
                     itask++;
                 }
-                else {      /// If there is ranks which have no assignment due
-                            /// to # work item < # ranks.
-
-                    /// No need to send done flag to master node.
-                    for (size_t i = 1; i < vUsedProcNum.size(); i++) {
-                        if (!vUsedProcNum[i]) {
-                            MPI_Send(&doneflag, 1, MPI_INT, i, 0, comm);
-                            ndone++;
-                            numProcUsed++; 
-                        }
-                    }
-                }
-            } /// while
-
-            while (ndone < nprocs - 1) {
-                int iproc, tmp;
-                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
-                iproc = status.MPI_SOURCE;
-                           
-                ///
-                /// Check the iproc returned from worker and decide work items 
-                /// to assign
-                ///
-                int iprocNode = (int)iproc / NALLOCTABLEUNIT;
-                
-                /// 
-                /// Update vvTaskTable
-                ///
-                int procNumInTable = iproc % NALLOCTABLEUNIT;
-                assert(vvTaskTable[iprocNode][procNumInTable] == true);
-               
-                /// if not the master,
-                if (!(iprocNode == 0 && procNumInTable == 0))    
-                    vvTaskTable[iprocNode][procNumInTable] = false;
-                                        
-                /// 
-                /// Get the front of the queue and check the db chunk name
-                /// If iproc's node has one of the db chunk names, just pop the 
-                /// task out of the queue and aassign the task to worker.
-                /// If not, pop and push back the task number at the back of the 
-                /// queue, and examine the next front item from the queue.
-                ///
-                int selectedProcNum = 0;
-                int selectedNodeNum = 0;
-                int tempf = 0;
-                int &f = tempf;
-                int nTrial = 0;
-
-                while (1) {
-
-                    if (qWorkItems.empty()) break;      
-
-                    f = qWorkItems.front();                    
-                    string workItem(files[f]);
-                    vector<string> vWorkItemTokens;
-                    boost::split(vWorkItemTokens, workItem, 
-                                 boost::is_any_of(","));
-                    pair<multimap<string, int>::iterator, 
-                    multimap<string, int>::iterator> ii;
-                    multimap<string, int>::iterator it; 
-                    
-                    ///
-                    /// Decide node num for the new db chunk name
-                    ///
-                    ii = mmDbCoreNum.equal_range(vWorkItemTokens[2]); 
-                    vector<int> vSelectedNodeNum;
-                    for(it = ii.first; it != ii.second; ++it) {
-                        vSelectedNodeNum.push_back((int) it->second);
-                    }
-
-                    ///
-                    /// Compare the returned node num with new db chunk's node num
-                    ///
-                    bool bFound = false;
-                    for (size_t i = 0; i < vSelectedNodeNum.size(); ++i) {
-                        if (iprocNode == vSelectedNodeNum[i]) {
-                            bFound = true;
-                            break;
-                        }
-                    }
-                    
-                    ///
-                    /// 
-                    ///
-                    if (bFound || nTrial > NMAXTRIAL) {                        
-                        assert(vvTaskTable[iprocNode][procNumInTable] == false);
-                        vvTaskTable[iprocNode][procNumInTable] = true;
-                        
-                        selectedNodeNum = iprocNode;
-                        selectedProcNum = iproc;
-                        
-                        /////////////////
-                        qWorkItems.pop();
-                        /////////////////
-                                               
-                        break;  /// to escape from while(1)            
-                    }
-                    else {
-                        nTrial++;
-                        ///////////////////
-                        qWorkItems.pop();
-                        qWorkItems.push(f);
-                        ////////////////////                        
-                    }                   
-                } /// while
-                
-                /// if current task index < # total work items
-                if (itask < nmap) {
-                    assert(selectedProcNum != 0);
-                    MPI_Send(&f, 1, MPI_INT, selectedProcNum, 0, comm);
-                    numProcUsed++;
-                    itask++;
-                }
-                else { /// itask == nmap, i.e. # work done == # total work items
+                else {
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
             }
-        } /// master
+            while (ndone < nprocs - 1) {
+                int iproc, tmp;
+                MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
+                iproc = status.MPI_SOURCE;
+
+                if (itask < ntask) {
+                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
+                    itask++;
+                }
+                else {
+                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                    ndone++;
+                }
+            }
+
+        }
         else {
             while (1) {
                 int itask;
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
                 if (itask < 0) break;
-                appmap(itask, files[itask], kv, appptr); 
+                if (files) appmapfile(itask, files[itask], kv, appptr);
+                else appmaptask(itask, kv, appptr);
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
-        } /// worker         
-    } 
+        }
+
+    }
     else error->all("Invalid mapstyle setting");
 
-    // clean up file list
-
-    for (size_t i = 0; i < nmap; i++) delete [] files[i];
-    memory->sfree(files);
-
     kv->complete();
+    if (freepage) mem_cleanup();
 
     stats("Map", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
 /* ----------------------------------------------------------------------
-   create a KV via a parallel map operation for nmap tasks
-   nfiles filenames are split into nmap pieces based on separator char
+   user call: create a KV via a parallel map operation on file splitting
+   nfile filenames are split into nmap pieces based on separator character
 ------------------------------------------------------------------------- */
 
-uint64_t MapReduce::map(int nmap, int nfiles, char **files,
+uint64_t MapReduce::map(int nmap, int nstr, char **strings,
+                        int recurse, int readflag,
                         char sepchar, int delta,
                         void (*appmap)(int, char *, int, KeyValue *, void *),
                         void *appptr, int addflag)
 {
+    int nfile = 0;
+    int maxfile = 0;
+    char **files = NULL;
+
+    if (me == 0)
+        for (int i = 0; i < nstr; i++)
+            findfiles(strings[i], recurse, readflag, nfile, maxfile, files);
+
+    bcastfiles(nfile, files);
+
     filemap.sepwhich = 1;
     filemap.sepchar = sepchar;
     filemap.delta = delta;
 
-    return map_file(nmap, nfiles, files, appmap, appptr, addflag);
+    uint64_t nkeyall = map_chunks(nmap, nfile, files, appmap, appptr, addflag);
+    for (int i = 0; i < nfile; i++) delete [] files[i];
+    memory->sfree(files);
+    return nkeyall;
 }
 
 /* ----------------------------------------------------------------------
-   create a KV via a parallel map operation for nmap tasks
-   nfiles filenames are split into nmap pieces based on separator string
+   user call: create a KV via a parallel map operation on file splitting
+   nfile filenames are split into nmap pieces based on separator string
 ------------------------------------------------------------------------- */
 
-uint64_t MapReduce::map(int nmap, int nfiles, char **files,
+uint64_t MapReduce::map(int nmap, int nstr, char **strings,
+                        int recurse, int readflag,
                         char *sepstr, int delta,
                         void (*appmap)(int, char *, int, KeyValue *, void *),
                         void *appptr, int addflag)
 {
+    int nfile = 0;
+    int maxfile = 0;
+    char **files = NULL;
+
+    if (me == 0)
+        for (int i = 0; i < nstr; i++)
+            findfiles(strings[i], recurse, readflag, nfile, maxfile, files);
+
+    bcastfiles(nfile, files);
+
     filemap.sepwhich = 0;
     int n = strlen(sepstr) + 1;
     filemap.sepstr = new char[n];
     strcpy(filemap.sepstr, sepstr);
     filemap.delta = delta;
 
-    return map_file(nmap, nfiles, files, appmap, appptr, addflag);
+    uint64_t nkeyall = map_chunks(nmap, nfile, files, appmap, appptr, addflag);
+    for (int i = 0; i < nfile; i++) delete [] files[i];
+    memory->sfree(files);
+    return nkeyall;
 }
 
 /* ----------------------------------------------------------------------
-   called by 2 map methods that take files and a separator
-   create a KV via a parallel map operation for nmap tasks
-   nfiles filenames are split into nmap pieces based on separator
+   called by 2 user map methods above (char/str separator for splitting files)
+   nfile filenames are split into nmap pieces based on separator
    FileMap struct stores info on how to split files
    calls non-file map() to partition tasks to processors
      with callback to non-class map_file_standalone()
    map_file_standalone() reads chunk of file and passes it to user appmap()
 ------------------------------------------------------------------------- */
 
-uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
-                             void (*appmap)(int, char *, int, KeyValue *, void *),
-                             void *appptr, int addflag)
+uint64_t MapReduce::map_chunks(int nmap, int nfile, char **files,
+                               void (*appmap)(int, char *,
+                                       int, KeyValue *, void *),
+                               void *appptr, int addflag)
 {
-    if (nfiles > nmap) error->all("Cannot map with more files than tasks");
     if (timer) start_timer();
     if (verbosity) file_stats(0);
 
     if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
 
+    // must have at least as many chunks as files
+
+    if (nfile > nmap) nmap = nfile;
+
     // copy filenames into FileMap
 
-    filemap.filename = new char*[nfiles];
-    for (int i = 0; i < nfiles; i++) {
+    filemap.filename = new char*[nfile];
+    for (int i = 0; i < nfile; i++) {
         int n = strlen(files[i]) + 1;
         filemap.filename[i] = new char[n];
         strcpy(filemap.filename[i], files[i]);
@@ -1577,24 +1330,24 @@ uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
     // get filesize of each file via stat()
     // proc 0 queries files, bcasts results to all procs
 
-    filemap.filesize = new uint64_t[nfiles];
+    filemap.filesize = new uint64_t[nfile];
     struct stat stbuf;
 
     if (me == 0) {
-        for (int i = 0; i < nfiles; i++) {
+        for (int i = 0; i < nfile; i++) {
             int flag = stat(files[i], &stbuf);
             if (flag < 0) error->one("Could not query file size");
             filemap.filesize[i] = stbuf.st_size;
         }
     }
 
-    MPI_Bcast(filemap.filesize, nfiles * sizeof(uint64_t), MPI_BYTE, 0, comm);
+    MPI_Bcast(filemap.filesize, nfile * sizeof(uint64_t), MPI_BYTE, 0, comm);
 
     // ntotal = total size of all files
     // nideal = ideal # of bytes per task
 
     uint64_t ntotal = 0;
-    for (int i = 0; i < nfiles; i++) ntotal += filemap.filesize[i];
+    for (int i = 0; i < nfile; i++) ntotal += filemap.filesize[i];
     uint64_t nideal = MAX(1, ntotal / nmap);
 
     // tasksperfile[i] = # of tasks for Ith file
@@ -1602,23 +1355,23 @@ uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
     // increment/decrement tasksperfile until reach target # of tasks
     // even small files must have 1 task
 
-    filemap.tasksperfile = new int[nfiles];
+    filemap.tasksperfile = new int[nfile];
 
     int ntasks = 0;
-    for (int i = 0; i < nfiles; i++) {
+    for (int i = 0; i < nfile; i++) {
         filemap.tasksperfile[i] = MAX(1, filemap.filesize[i] / nideal);
         ntasks += filemap.tasksperfile[i];
     }
 
     while (ntasks < nmap)
-        for (int i = 0; i < nfiles; i++)
+        for (int i = 0; i < nfile; i++)
             if (filemap.filesize[i] > nideal) {
                 filemap.tasksperfile[i]++;
                 ntasks++;
                 if (ntasks == nmap) break;
             }
     while (ntasks > nmap)
-        for (int i = 0; i < nfiles; i++)
+        for (int i = 0; i < nfile; i++)
             if (filemap.tasksperfile[i] > 1) {
                 filemap.tasksperfile[i]--;
                 ntasks--;
@@ -1629,7 +1382,7 @@ uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
     // if so, reduce number of tasks for that file and issue warning
 
     int flag = 0;
-    for (int i = 0; i < nfiles; i++) {
+    for (int i = 0; i < nfile; i++) {
         if (filemap.filesize[i] / filemap.tasksperfile[i] > filemap.delta)
             continue;
         flag = 1;
@@ -1654,7 +1407,7 @@ uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
     filemap.whichtask = new int[nmap];
 
     int itask = 0;
-    for (int i = 0; i < nfiles; i++)
+    for (int i = 0; i < nfile; i++)
         for (int j = 0; j < filemap.tasksperfile[i]; j++) {
             filemap.whichfile[itask] = i;
             filemap.whichtask[itask++] = j;
@@ -1678,7 +1431,7 @@ uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
     // destroy FileMap
 
     if (filemap.sepwhich == 0) delete [] filemap.sepstr;
-    for (int i = 0; i < nfiles; i++) delete [] filemap.filename[i];
+    for (int i = 0; i < nfile; i++) delete [] filemap.filename[i];
     delete [] filemap.filename;
     delete [] filemap.filesize;
     delete [] filemap.tasksperfile;
@@ -1686,7 +1439,7 @@ uint64_t MapReduce::map_file(int nmap, int nfiles, char **files,
     delete [] filemap.whichtask;
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -1774,7 +1527,7 @@ void MapReduce::map_file_wrapper(int imap, KeyValue *kv)
 }
 
 /* ----------------------------------------------------------------------
-   create a KV via a parallel map operation from an existing MR's KV
+   user call: create a KV via a parallel map operation on an existing MR's KV
    make one call to appmap() for each key/value pair in the input MR's KV
    each proc operates on key/value pairs it owns
 ------------------------------------------------------------------------- */
@@ -1790,39 +1543,36 @@ uint64_t MapReduce::map(MapReduce *mr,
     if (verbosity) file_stats(0);
 
     if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
 
     // kv_src = KeyValue object which sends KV pairs to appmap()
     // kv_dest = KeyValue object which stores new KV pairs
-    // if mr = this and addflag, then 2 KVs are the same, copy KV first
+    // if mr = this, then 2 KVs are the same:
+    //   if addflag, make copy so can add to it, delete kv_src at end
+    //   if not addflag, add to new KV, delete kv_src at end
 
     KeyValue *kv_src = mr->kv;
+    kv_src->allocate();
     KeyValue *kv_dest;
 
     if (mr == this) {
         if (addflag) {
             kv_dest = new KeyValue(this, kalign, valign, memory, error, comm);
-            kv_dest->set_page();
             kv_dest->copy(kv_src);
             kv_dest->append();
         }
         else {
             kv_dest = new KeyValue(this, kalign, valign, memory, error, comm);
-            kv_dest->set_page();
         }
     }
     else {
         if (addflag == 0) {
-            if (kv) myfree(kv->memtag);
             delete kv;
             kv_dest = new KeyValue(this, kalign, valign, memory, error, comm);
-            kv_dest->set_page();
         }
         else if (kv == NULL) {
             kv_dest = new KeyValue(this, kalign, valign, memory, error, comm);
-            kv_dest->set_page();
         }
         else {
             kv->append();
@@ -1857,17 +1607,16 @@ uint64_t MapReduce::map(MapReduce *mr,
         }
     }
 
-    if (mr == this) {
-        myfree(kv_src->memtag);
-        delete kv_src;
-    }
+    if (mr == this) delete kv_src;
+    else kv_src->deallocate(0);
     kv = kv_dest;
     kv->complete();
+    if (freepage) mem_cleanup();
 
     stats("Map", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -1878,27 +1627,25 @@ uint64_t MapReduce::map(MapReduce *mr,
 void MapReduce::open(int addflag)
 {
     if (!allocated) allocate();
-    if (kmv) myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
 
     if (addflag == 0) {
-        if (kv) myfree(kv->memtag);
         delete kv;
         kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
     }
     else if (kv == NULL) {
         kv = new KeyValue(this, kalign, valign, memory, error, comm);
-        kv->set_page();
     }
     else {
         kv->append();
     }
+
+    if (freepage) mem_cleanup();
 }
 
 /* ----------------------------------------------------------------------
-   debug print of KV or KMV pairs
+   print of KV or KMV pairs to screen
    if all procs are printing, pass print token from proc to proc
 ------------------------------------------------------------------------- */
 
@@ -1912,8 +1659,16 @@ void MapReduce::print(int proc, int nstride, int kflag, int vflag)
     if (kflag > 7 || vflag > 7) error->all("Invalid print args");
 
     if (proc == me) {
-        if (kv) kv->print(nstride, kflag, vflag);
-        if (kmv) kmv->print(nstride, kflag, vflag);
+        if (kv) {
+            kv->allocate();
+            kv->print(stdout, nstride, kflag, vflag);
+            kv->deallocate(0);
+        }
+        if (kmv) {
+            kmv->allocate();
+            kmv->print(stdout, nstride, kflag, vflag);
+            kmv->deallocate(0);
+        }
     }
 
     if (proc >= 0) return;
@@ -1921,10 +1676,70 @@ void MapReduce::print(int proc, int nstride, int kflag, int vflag)
     int token;
     MPI_Barrier(comm);
     if (me > 0) MPI_Recv(&token, 0, MPI_INT, me - 1, 0, comm, &status);
-    if (kv) kv->print(nstride, kflag, vflag);
-    if (kmv) kmv->print(nstride, kflag, vflag);
+    if (kv) {
+        kv->allocate();
+        kv->print(stdout, nstride, kflag, vflag);
+        kv->deallocate(0);
+    }
+    if (kmv) {
+        kmv->allocate();
+        kmv->print(stdout, nstride, kflag, vflag);
+        kmv->deallocate(0);
+    }
     if (me < nprocs - 1) MPI_Send(&token, 0, MPI_INT, me + 1, 0, comm);
     MPI_Barrier(comm);
+}
+
+/* ----------------------------------------------------------------------
+   print of KV or KMV pairs to file(s)
+   if one proc is printing, write to filename
+   if all procs are printing and fflag = 0, all write to one file
+   if all procs are printing and fflag = 1, each proc writes to own file
+------------------------------------------------------------------------- */
+
+void MapReduce::print(char *file, int fflag,
+                      int proc, int nstride, int kflag, int vflag)
+{
+    MPI_Status status;
+
+    if (kv == NULL && kmv == NULL)
+        error->all("Cannot print without KeyValue or KeyMultiValue");
+    if (kflag < 0 || vflag < 0) error->all("Invalid print args");
+    if (kflag > 7 || vflag > 7) error->all("Invalid print args");
+
+    if (proc == me) {
+        FILE *fp = fopen(file, "w");
+        if (fp == NULL) error->one("Could not open print file");
+        if (kv) kv->print(fp, nstride, kflag, vflag);
+        if (kmv) kmv->print(fp, nstride, kflag, vflag);
+        fclose(fp);
+    }
+
+    if (proc >= 0) return;
+
+    if (fflag == 1) {
+        int n = strlen(file) + 8;
+        char *procfile = new char[n];
+        sprintf(procfile, "%s.%d", file, me);
+        FILE *fp = fopen(procfile, "w");
+        if (fp == NULL) error->one("Could not open print file");
+        if (kv) kv->print(fp, nstride, kflag, vflag);
+        if (kmv) kmv->print(fp, nstride, kflag, vflag);
+        fclose(fp);
+
+    }
+    else {
+        int token;
+        MPI_Barrier(comm);
+        if (me > 0) MPI_Recv(&token, 0, MPI_INT, me - 1, 0, comm, &status);
+        FILE *fp = fopen(file, "a");
+        if (fp == NULL) error->one("Could not open print file");
+        if (kv) kv->print(fp, nstride, kflag, vflag);
+        if (kmv) kmv->print(fp, nstride, kflag, vflag);
+        fclose(fp);
+        if (me < nprocs - 1) MPI_Send(&token, 0, MPI_INT, me + 1, 0, comm);
+        MPI_Barrier(comm);
+    }
 }
 
 /* ----------------------------------------------------------------------
@@ -1942,11 +1757,12 @@ uint64_t MapReduce::reduce(void (*appreduce)(char *, int, char *, int,
     if (verbosity) file_stats(0);
 
     kv = new KeyValue(this, kalign, valign, memory, error, comm);
-    kv->set_page();
+    kmv->allocate();
 
     uint64_t dummy;
-    int memtag;
-    char *mvpage = mymalloc(1, dummy, memtag);
+    int memtag1, memtag2;
+    char *mvpage1 = mem_request(1, dummy, memtag1);
+    char *mvpage2 = mem_request(1, dummy, memtag2);
 
     int nkey_kmv, nvalues, keybytes, mvaluebytes;
     uint64_t dummy1, dummy2, dummy3;
@@ -1990,13 +1806,15 @@ uint64_t MapReduce::reduce(void (*appreduce)(char *, int, char *, int,
                 ptr = ROUNDUP(ptr, kalignm1);
                 key = ptr;
 
-                // set KMV page to mvpage so key will not be overwritten
+                // set KMV page to mvpage1 so key will not be overwritten
                 // when multivalue_block() loads new pages of values
 
-                kmv->page = mvpage;
                 kmv_block_valid = 1;
                 kmv_key_page = ipage;
+                kmv_mvpage1 = mvpage1;
+                kmv_mvpage2 = mvpage2;
                 kmv_nvalue_total = kmv->multivalue_blocks(ipage, kmv_nblock);
+                kmv->page = mvpage1;
                 appreduce(key, keybytes, NULL, 0, (int *) this, kv, appptr);
                 kmv_block_valid = 0;
                 ipage += kmv_nblock;
@@ -2006,51 +1824,19 @@ uint64_t MapReduce::reduce(void (*appreduce)(char *, int, char *, int,
     }
 
     kv->complete();
-    myfree(memtag);
+    mem_unmark(memtag1);
+    mem_unmark(memtag2);
 
     // delete KMV
-    // close is necessary b/c KMV files do not close themselves
-    // since users may use request_page() via multivalue_block()
 
-    kmv->close_file();
-    myfree(kmv->memtag);
     delete kmv;
     kmv = NULL;
+    if (freepage) mem_cleanup();
 
     stats("Reduce", 0);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    return nkeyall;
-}
-
-/* ----------------------------------------------------------------------
-   scrunch KV to create a KMV on fewer processors, each with a single pair
-   gather followed by a collapse
-   numprocs = # of procs new KMV resides on (0 to numprocs-1)
-   new key = provided key name (same on every proc)
-   new value = list of old key,value,key,value,etc
-------------------------------------------------------------------------- */
-
-uint64_t MapReduce::scrunch(int numprocs, char *key, int keybytes)
-{
-    if (kv == NULL) error->all("Cannot scrunch without KeyValue");
-    if (timer) start_timer();
-    if (verbosity) file_stats(0);
-
-    int verbosity_hold = verbosity;
-    int timer_hold = timer;
-    verbosity = timer = 0;
-
-    gather(numprocs);
-    collapse(key, keybytes);
-
-    verbosity = verbosity_hold;
-    timer = timer_hold;
-    stats("Scrunch", 1);
-
-    uint64_t nkeyall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -2064,6 +1850,19 @@ uint64_t MapReduce::multivalue_blocks(int &nblock)
     if (!kmv_block_valid) error->one("Invalid call to multivalue_blocks()");
     nblock = kmv_nblock;
     return kmv_nvalue_total;
+}
+
+/* ----------------------------------------------------------------------
+   query total # of values and # of value blocks in a single multi-page KMV
+   called from user myreduce() or mycompress() function
+------------------------------------------------------------------------- */
+
+void MapReduce::multivalue_block_select(int which)
+{
+    if (!kmv_block_valid) error->one("Invalid call to multivalue_block_select()");
+    if (which == 1) kmv->page = kmv_mvpage1;
+    else if (which == 2) kmv->page = kmv_mvpage2;
+    else error->one("Invalid arg to multivalue_block_select()");
 }
 
 /* ----------------------------------------------------------------------
@@ -2095,6 +1894,213 @@ int MapReduce::multivalue_block(int iblock,
 }
 
 /* ----------------------------------------------------------------------
+   scan KV pairs without altering them
+   make one call to appscan() for each KV pair
+   each proc processes its owned KV pairs
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::scan(void (*appscan)(char *, int, char *, int,
+                         void *), void *appptr)
+{
+    if (kv == NULL) error->all("Cannot scan without KeyValue");
+    if (timer) start_timer();
+    if (verbosity) file_stats(0);
+
+    kv->allocate();
+
+    int nkey_kv, keybytes, valuebytes;
+    uint64_t dummy1, dummy2, dummy3;
+    char *page_kv, *ptr, *key, *value;
+    int npage_kv = kv->request_info(&page_kv);
+
+    for (int ipage = 0; ipage < npage_kv; ipage++) {
+        nkey_kv = kv->request_page(ipage, dummy1, dummy2, dummy3);
+        ptr = page_kv;
+
+        for (int i = 0; i < nkey_kv; i++) {
+            keybytes = *((int *) ptr);
+            valuebytes = *((int *)(ptr + sizeof(int)));;
+
+            ptr += twolenbytes;
+            ptr = ROUNDUP(ptr, kalignm1);
+            key = ptr;
+            ptr += keybytes;
+            ptr = ROUNDUP(ptr, valignm1);
+            value = ptr;
+            ptr += valuebytes;
+            ptr = ROUNDUP(ptr, talignm1);
+
+            appscan(key, keybytes, value, valuebytes, appptr);
+        }
+    }
+
+    kv->deallocate(0);
+    if (freepage) mem_cleanup();
+
+    stats("Scan", 0);
+
+    uint64_t nkeyall;
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    return nkeyall;
+}
+
+/* ----------------------------------------------------------------------
+   scan KMV pairs without altering them
+   make one call to appscan() for each KMV pair
+   each proc processes its owned KMV pairs
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::scan(void (*appscan)(char *, int,
+                         char *, int, int *,
+                         void *), void *appptr)
+{
+    if (kmv == NULL) error->all("Cannot scan without KeyMultiValue");
+    if (timer) start_timer();
+    if (verbosity) file_stats(0);
+
+    kmv->allocate();
+
+    uint64_t dummy;
+    int memtag1, memtag2;
+    char *mvpage1 = mem_request(1, dummy, memtag1);
+    char *mvpage2 = mem_request(1, dummy, memtag2);
+
+    int nkey_kmv, nvalues, keybytes, mvaluebytes;
+    uint64_t dummy1, dummy2, dummy3;
+    int *valuesizes;
+    char *ptr, *key, *multivalue;
+
+    char *page_kmv;
+    int npage_kmv = kmv->request_info(&page_kmv);
+    char *page_hold = page_kmv;
+
+    for (int ipage = 0; ipage < npage_kmv; ipage++) {
+        nkey_kmv = kmv->request_page(ipage, 0, dummy1, dummy2, dummy3);
+        ptr = page_kmv;
+
+        for (int i = 0; i < nkey_kmv; i++) {
+            nvalues = *((int *) ptr);
+            ptr += sizeof(int);
+
+            if (nvalues > 0) {
+                keybytes = *((int *) ptr);
+                ptr += sizeof(int);
+                mvaluebytes = *((int *) ptr);
+                ptr += sizeof(int);
+                valuesizes = (int *) ptr;
+                ptr += ((uint64_t) nvalues) * sizeof(int);
+
+                ptr = ROUNDUP(ptr, kalignm1);
+                key = ptr;
+                ptr += keybytes;
+                ptr = ROUNDUP(ptr, valignm1);
+                multivalue = ptr;
+                ptr += mvaluebytes;
+                ptr = ROUNDUP(ptr, talignm1);
+
+                appscan(key, keybytes, multivalue, nvalues, valuesizes, appptr);
+
+            }
+            else {
+                keybytes = *((int *) ptr);
+                ptr += sizeof(int);
+                ptr = ROUNDUP(ptr, kalignm1);
+                key = ptr;
+
+                // set KMV page to mvpage1 so key will not be overwritten
+                // when multivalue_block() loads new pages of values
+
+                kmv_block_valid = 1;
+                kmv_key_page = ipage;
+                kmv_mvpage1 = mvpage1;
+                kmv_mvpage2 = mvpage2;
+                kmv_nvalue_total = kmv->multivalue_blocks(ipage, kmv_nblock);
+                kmv->page = mvpage1;
+                appscan(key, keybytes, NULL, 0, (int *) this, appptr);
+                kmv_block_valid = 0;
+                ipage += kmv_nblock;
+                kmv->page = page_hold;
+            }
+        }
+    }
+
+    kmv->deallocate(0);
+    if (freepage) mem_cleanup();
+
+    stats("Scan", 0);
+
+    uint64_t nkeyall;
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    return nkeyall;
+}
+
+/* ----------------------------------------------------------------------
+   scrunch KV to create a KMV on fewer processors, each with a single pair
+   gather followed by a collapse
+   numprocs = # of procs new KMV resides on (0 to numprocs-1)
+   new key = provided key name (same on every proc)
+   new value = list of old key,value,key,value,etc
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::scrunch(int numprocs, char *key, int keybytes)
+{
+    if (kv == NULL) error->all("Cannot scrunch without KeyValue");
+    if (timer) start_timer();
+    if (verbosity) file_stats(0);
+
+    int verbosity_hold = verbosity;
+    int timer_hold = timer;
+    verbosity = timer = 0;
+
+    gather(numprocs);
+    collapse(key, keybytes);
+
+    verbosity = verbosity_hold;
+    timer = timer_hold;
+    stats("Scrunch", 1);
+
+    uint64_t nkeyall;
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    return nkeyall;
+}
+
+/* ----------------------------------------------------------------------
+   sort keys in a KV to create a new KV
+   call sort_keys(appcompare) with pre-defined compare method
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::sort_keys(int flag)
+{
+    int absflag = flag;
+    if (flag < 0) absflag = -flag;
+    if (absflag == 1) {
+        if (flag > 0) return sort_keys(compare_int);
+        else return sort_keys(compare_int_reverse);
+    }
+    else if (absflag == 2) {
+        if (flag > 0) return sort_keys(compare_uint64);
+        else return sort_keys(compare_uint64_reverse);
+    }
+    else if (absflag == 3) {
+        if (flag > 0) return sort_keys(compare_float);
+        else return sort_keys(compare_float_reverse);
+    }
+    else if (absflag == 4) {
+        if (flag > 0) return sort_keys(compare_double);
+        else return sort_keys(compare_double_reverse);
+    }
+    else if (absflag == 5) {
+        if (flag > 0) return sort_keys(compare_str);
+        else return sort_keys(compare_str_reverse);
+    }
+    else if (absflag == 6) {
+        if (flag > 0) return sort_keys(compare_strn);
+        else return sort_keys(compare_strn_reverse);
+    }
+    error->all("Invalid compare method for sort keys");
+}
+
+/* ----------------------------------------------------------------------
    sort keys in a KV to create a new KV
    use appcompare() to compare 2 keys
    each proc sorts only its data
@@ -2113,8 +2119,44 @@ uint64_t MapReduce::sort_keys(int (*appcompare)(char *, int, char *, int))
     fcounter_sort = 0;
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
+}
+
+/* ----------------------------------------------------------------------
+   sort values in a KV to create a new KV
+   call sort_values(appcompare) with pre-defined compare method
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::sort_values(int flag)
+{
+    int absflag = flag;
+    if (flag < 0) absflag = -flag;
+    if (absflag == 1) {
+        if (flag > 0) return sort_values(compare_int);
+        else return sort_values(compare_int_reverse);
+    }
+    else if (absflag == 2) {
+        if (flag > 0) return sort_values(compare_uint64);
+        else return sort_values(compare_uint64_reverse);
+    }
+    else if (absflag == 3) {
+        if (flag > 0) return sort_values(compare_float);
+        else return sort_values(compare_float_reverse);
+    }
+    else if (absflag == 4) {
+        if (flag > 0) return sort_values(compare_double);
+        else return sort_values(compare_double_reverse);
+    }
+    else if (absflag == 5) {
+        if (flag > 0) return sort_values(compare_str);
+        else return sort_values(compare_str_reverse);
+    }
+    else if (absflag == 6) {
+        if (flag > 0) return sort_values(compare_strn);
+        else return sort_values(compare_strn_reverse);
+    }
+    error->all("Invalid compare method for sort values");
 }
 
 /* ----------------------------------------------------------------------
@@ -2136,8 +2178,44 @@ uint64_t MapReduce::sort_values(int (*appcompare)(char *, int, char *, int))
     fcounter_sort = 0;
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
+}
+
+/* ----------------------------------------------------------------------
+   sort values within each multivalue in a KMV
+   call sort_multivalues(appcompare) with pre-defined compare method
+------------------------------------------------------------------------- */
+
+uint64_t MapReduce::sort_multivalues(int flag)
+{
+    int absflag = flag;
+    if (flag < 0) absflag = -flag;
+    if (absflag == 1) {
+        if (flag > 0) return sort_multivalues(compare_int);
+        else return sort_multivalues(compare_int_reverse);
+    }
+    else if (absflag == 2) {
+        if (flag > 0) return sort_multivalues(compare_uint64);
+        else return sort_multivalues(compare_uint64_reverse);
+    }
+    else if (absflag == 3) {
+        if (flag > 0) return sort_multivalues(compare_float);
+        else return sort_multivalues(compare_float_reverse);
+    }
+    else if (absflag == 4) {
+        if (flag > 0) return sort_multivalues(compare_double);
+        else return sort_multivalues(compare_double_reverse);
+    }
+    else if (absflag == 5) {
+        if (flag > 0) return sort_multivalues(compare_str);
+        else return sort_multivalues(compare_str_reverse);
+    }
+    else if (absflag == 6) {
+        if (flag > 0) return sort_multivalues(compare_strn);
+        else return sort_multivalues(compare_strn_reverse);
+    }
+    error->all("Invalid compare method for sort multivalues");
 }
 
 /* ----------------------------------------------------------------------
@@ -2153,12 +2231,13 @@ uint64_t MapReduce::sort_multivalues(int (*appcompare)(char *, int,
     int i, j, k;
     int *order;
     uint64_t offset;
+    char *page_kmv;
 
     if (kmv == NULL) error->all("Cannot sort_multivalues without KeyMultiValue");
     if (timer) start_timer();
     if (verbosity) file_stats(0);
 
-    char *page_kmv;
+    kmv->allocate();
     int npage_kmv = kmv->request_info(&page_kmv);
 
     compare = appcompare;
@@ -2166,8 +2245,8 @@ uint64_t MapReduce::sort_multivalues(int (*appcompare)(char *, int,
 
     uint64_t dummy;
     int memtag1, memtag2;
-    char *scratch = mymalloc(1, dummy, memtag1);
-    char *twopage = mymalloc(2, dummy, memtag2);
+    char *twopage = mem_request(2, dummy, memtag2);
+    char *scratch = mem_request(1, dummy, memtag1);
 
     int nkey_kmv, nvalues, keybytes, mvaluebytes;
     uint64_t dummy1, dummy2, dummy3;
@@ -2234,24 +2313,26 @@ uint64_t MapReduce::sort_multivalues(int (*appcompare)(char *, int,
             memcpy(multivalue, scratch, mvaluebytes);
         }
 
-        // overwrite the changed KMV page
+        // overwrite the changed KMV page to disk
 
         kmv->overwrite_page(ipage);
     }
 
-    // close is necessary b/c KMV files do not close themselves
+    // close KMV file if necessary
 
     kmv->close_file();
 
     // free memory pages
 
-    myfree(memtag1);
-    myfree(memtag2);
+    kmv->deallocate(0);
+    mem_unmark(memtag1);
+    mem_unmark(memtag2);
+    if (freepage) mem_cleanup();
 
-    stats("Sort_multivalues", 0);
+    stats("Sort_multivalues", 1);
 
     uint64_t nkeyall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     return nkeyall;
 }
 
@@ -2262,26 +2343,31 @@ uint64_t MapReduce::sort_multivalues(int (*appcompare)(char *, int,
 
 void MapReduce::sort_kv(int flag)
 {
-    int nkey_kv, memtag, memtag1, memtag2, memtag_twopage, src1, src2;
+    int nkey_kv, memtag_kv, memtag1, memtag2, memtag_twopage, src1, src2;
     uint64_t dummy, dummy1, dummy2, dummy3;
     char *page_kv;
     void *src1ptr, *src2ptr, *destptr;
 
+    kv->allocate();
     mrptr = this;
     int npage_kv = kv->request_info(&page_kv);
-    memtag = kv->memtag;
+    memtag_kv = kv->memtag;
 
     // KV has single page
     // sort into newpage, assign newpage to KV, and return
 
     if (npage_kv == 1) {
-        char *twopage = mymalloc(2, dummy, memtag_twopage);
-        char *newpage = mymalloc(1, dummy, memtag1);
+        char *twopage = mem_request(2, dummy, memtag_twopage);
+        char *newpage = mem_request(1, dummy, memtag1);
         nkey_kv = kv->request_page(0, dummy1, dummy2, dummy3);
         sort_onepage(flag, nkey_kv, page_kv, newpage, twopage);
-        myfree(memtag_twopage);
-        myfree(memtag);
+        mem_unmark(memtag_twopage);
+        mem_unmark(memtag_kv);
         kv->set_page(pagesize, newpage, memtag1);
+        kv->overwrite_page(0);
+        kv->close_file();
+        kv->deallocate(0);
+        if (freepage) mem_cleanup();
         return;
     }
 
@@ -2291,9 +2377,9 @@ void MapReduce::sort_kv(int flag)
     // sources can be sorted page or Spool file
     // destination can be Spool file or final sorted KV
 
-    char *twopage = mymalloc(2, dummy, memtag_twopage);
-    char *page1 = mymalloc(1, dummy, memtag1);
-    char *page2 = mymalloc(1, dummy, memtag2);
+    char *twopage = mem_request(2, dummy, memtag_twopage);
+    char *page1 = mem_request(1, dummy, memtag1);
+    char *page2 = mem_request(1, dummy, memtag2);
 
     Spool **spools = new Spool*[2*npage_kv];
     int n = npage_kv;
@@ -2301,7 +2387,7 @@ void MapReduce::sort_kv(int flag)
 
     while (i < n) {
         if (i < npage_kv) {
-            kv->set_page(pagesize, page_kv, memtag);
+            kv->set_page(pagesize, page_kv, memtag_kv);
             nkey_kv = kv->request_page(i++, dummy1, dummy2, dummy3);
             sort_onepage(flag, nkey_kv, page_kv, page1, twopage);
             src1ptr = (void *) page1;
@@ -2313,7 +2399,7 @@ void MapReduce::sort_kv(int flag)
             src1 = 0;
         }
         if (i < npage_kv) {
-            kv->set_page(pagesize, page_kv, memtag);
+            kv->set_page(pagesize, page_kv, memtag_kv);
             nkey_kv = kv->request_page(i++, dummy1, dummy2, dummy3);
             sort_onepage(flag, nkey_kv, page_kv, page2, twopage);
             src2ptr = (void *) page2;
@@ -2337,7 +2423,7 @@ void MapReduce::sort_kv(int flag)
         else {
             delete kv;
             kv = new KeyValue(this, kalign, valign, memory, error, comm);
-            kv->set_page(pagesize, page_kv, memtag);
+            kv->set_page(pagesize, page_kv, memtag_kv);
             destptr = (void *) kv;
             merge(flag, src1, src1ptr, src2, src2ptr, 1, destptr);
             if (!src1) delete spools[i-2];
@@ -2348,9 +2434,10 @@ void MapReduce::sort_kv(int flag)
 
     delete [] spools;
 
-    myfree(memtag_twopage);
-    myfree(memtag1);
-    myfree(memtag2);
+    mem_unmark(memtag_twopage);
+    mem_unmark(memtag1);
+    mem_unmark(memtag2);
+    if (freepage) mem_cleanup();
 }
 
 /* ----------------------------------------------------------------------
@@ -2595,10 +2682,251 @@ int MapReduce::compare_wrapper(int i, int j)
 }
 
 /* ----------------------------------------------------------------------
+   compare 2 integers
+------------------------------------------------------------------------- */
+
+int compare_int(char *str1, int len1, char *str2, int len2)
+{
+    int *i1 = (int *) str1;
+    int *i2 = (int *) str2;
+    if (*i1 < *i2) return -1;
+    if (*i1 > *i2) return 1;
+    return 0;
+}
+
+int compare_int_reverse(char *str1, int len1, char *str2, int len2)
+{
+    int *i1 = (int *) str1;
+    int *i2 = (int *) str2;
+    if (*i1 < *i2) return 1;
+    if (*i1 > *i2) return -1;
+    return 0;
+}
+
+/* ----------------------------------------------------------------------
+   compare 2 64-bit unsigned integers
+------------------------------------------------------------------------- */
+
+int compare_uint64(char *str1, int len1, char *str2, int len2)
+{
+    uint64_t *i1 = (uint64_t *) str1;
+    uint64_t *i2 = (uint64_t *) str2;
+    if (*i1 < *i2) return -1;
+    if (*i1 > *i2) return 1;
+    return 0;
+}
+
+int compare_uint64_reverse(char *str1, int len1, char *str2, int len2)
+{
+    uint64_t *i1 = (uint64_t *) str1;
+    uint64_t *i2 = (uint64_t *) str2;
+    if (*i1 < *i2) return 1;
+    if (*i1 > *i2) return -1;
+    return 0;
+}
+
+/* ----------------------------------------------------------------------
+   compare 2 floats
+------------------------------------------------------------------------- */
+
+int compare_float(char *str1, int len1, char *str2, int len2)
+{
+    float *i1 = (float *) str1;
+    float *i2 = (float *) str2;
+    if (*i1 < *i2) return -1;
+    if (*i1 > *i2) return 1;
+    return 0;
+}
+
+int compare_float_reverse(char *str1, int len1, char *str2, int len2)
+{
+    float *i1 = (float *) str1;
+    float *i2 = (float *) str2;
+    if (*i1 < *i2) return 1;
+    if (*i1 > *i2) return -1;
+    return 0;
+}
+
+/* ----------------------------------------------------------------------
+   compare 2 doubles
+------------------------------------------------------------------------- */
+
+int compare_double(char *str1, int len1, char *str2, int len2)
+{
+    double *i1 = (double *) str1;
+    double *i2 = (double *) str2;
+    if (*i1 < *i2) return -1;
+    if (*i1 > *i2) return 1;
+    return 0;
+}
+
+int compare_double_reverse(char *str1, int len1, char *str2, int len2)
+{
+    double *i1 = (double *) str1;
+    double *i2 = (double *) str2;
+    if (*i1 < *i2) return 1;
+    if (*i1 > *i2) return -1;
+    return 0;
+}
+
+/* ----------------------------------------------------------------------
+   compare 2 NULL-terminated strings
+------------------------------------------------------------------------- */
+
+int compare_str(char *str1, int len1, char *str2, int len2)
+{
+    return strcmp(str1, str2);
+}
+
+int compare_str_reverse(char *str1, int len1, char *str2, int len2)
+{
+    return -strcmp(str1, str2);
+}
+
+/* ----------------------------------------------------------------------
+   compare 2 non-NULL terminated strings via strncmp on shorter length
+------------------------------------------------------------------------- */
+
+int compare_strn(char *str1, int len1, char *str2, int len2)
+{
+    return strncmp(str1, str2, MIN(len1, len2));
+}
+
+int compare_strn_reverse(char *str1, int len1, char *str2, int len2)
+{
+    return -strncmp(str1, str2, MIN(len1, len2));
+}
+
+/* ----------------------------------------------------------------------
+   use str to find files to add to list of filenames
+   if str is a file, add it to list
+   if str is a directory, add all files in directory to list
+   if recurse = 1, call findfiles() on any directory found within directory
+   return updated list of files
+------------------------------------------------------------------------- */
+
+void MapReduce::findfiles(char *str, int recurse, int readflag,
+                          int &nfile, int &maxfile, char **&files)
+{
+    int err, n;
+    struct stat buf;
+    char newstr[MAXLINE];
+
+    err = stat(str, &buf);
+    if (err) {
+        char msg[256];
+        sprintf(msg, "Could not query status of file %s in map", str);
+        error->one(msg);
+    }
+    else if (S_ISREG(buf.st_mode)) addfiles(str, readflag, nfile, maxfile, files);
+    else if (S_ISDIR(buf.st_mode)) {
+        struct dirent *ep;
+        DIR *dp = opendir(str);
+        if (dp == NULL) {
+            char msg[256];
+            sprintf(msg, "Cannot open directory %s to search for files in map", str);
+            error->one(msg);
+        }
+        while (ep = readdir(dp)) {
+            if (ep->d_name[0] == '.') continue;
+            sprintf(newstr, "%s/%s", str, ep->d_name);
+            err = stat(newstr, &buf);
+            if (S_ISREG(buf.st_mode)) addfiles(newstr, readflag, nfile, maxfile, files);
+            else if (S_ISDIR(buf.st_mode) && recurse)
+                findfiles(newstr, recurse, readflag, nfile, maxfile, files);
+        }
+        closedir(dp);
+    }
+    else {
+        char msg[256];
+        sprintf(msg, "Invalid filename %s in map", str);
+        error->one(msg);
+    }
+}
+
+/* ----------------------------------------------------------------------
+   add a str to list of filenames
+   if readflag = 0, just add str as filename
+   if readflag = 1, open the file, read filenames out of it and add each to list
+   return updated list of files
+------------------------------------------------------------------------- */
+
+void MapReduce::addfiles(char *str, int readflag,
+                         int &nfile, int &maxfile, char **&files)
+{
+    if (!readflag) {
+        if (nfile == maxfile) {
+            maxfile += FILECHUNK;
+            files = (char **) realloc(files, maxfile * sizeof(char *));
+        }
+        int n = strlen(str) + 1;
+        files[nfile] = new char[n];
+        strcpy(files[nfile], str);
+        nfile++;
+        return;
+    }
+
+    FILE *fp = fopen(str, "r");
+    if (fp == NULL) {
+        char msg[256];
+        sprintf(msg, "Could not open file %s of filenames in map", str);
+        error->one(msg);
+    }
+
+    char line[MAXLINE];
+
+    while (fgets(line, MAXLINE, fp)) {
+        char *ptr = line;
+        while (isspace(*ptr)) ptr++;
+        if (strlen(ptr) == 0) {
+            char msg[256];
+            sprintf(msg, "Blank line in file %s of filenames in map", str);
+            error->one(msg);
+        }
+        char *ptr2 = ptr + strlen(ptr) - 1;
+        while (isspace(*ptr2)) ptr2--;
+        ptr2++;
+        *ptr2 = '\0';
+
+        if (nfile == maxfile) {
+            maxfile += FILECHUNK;
+            files = (char **) realloc(files, maxfile * sizeof(char *));
+        }
+
+        int n = strlen(ptr) + 1;
+        files[nfile] = new char[n];
+        strcpy(files[nfile], ptr);
+        nfile++;
+    }
+
+    fclose(fp);
+}
+
+/* ----------------------------------------------------------------------
+   bcast list of files from proc 0
+------------------------------------------------------------------------- */
+
+void MapReduce::bcastfiles(int &nfile, char **&files)
+{
+    MPI_Bcast(&nfile, 1, MPI_INT, 0, comm);
+
+    if (me > 0)
+        files = (char **) memory->srealloc(files, nfile * sizeof(char *), "MR:files");
+
+    int n;
+    for (int i = 0; i < nfile; i++) {
+        if (me == 0) n = strlen(files[i]) + 1;
+        MPI_Bcast(&n, 1, MPI_INT, 0, comm);
+        if (me > 0) files[i] = new char[n];
+        MPI_Bcast(files[i], n, MPI_CHAR, 0, comm);
+    }
+}
+
+/* ----------------------------------------------------------------------
    print stats for KV
 ------------------------------------------------------------------------- */
 
-void MapReduce::kv_stats(int level)
+uint64_t MapReduce::kv_stats(int level)
 {
     if (kv == NULL) error->all("Cannot print stats without KeyValue");
 
@@ -2606,29 +2934,34 @@ void MapReduce::kv_stats(int level)
 
     int npages;
     uint64_t nkeyall, ksizeall, vsizeall, esizeall;
-    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&kv->ksize, &ksizeall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&kv->vsize, &vsizeall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&kv->esize, &esizeall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&kv->ksize, &ksizeall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&kv->vsize, &vsizeall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&kv->esize, &esizeall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     MPI_Allreduce(&kv->npage, &npages, 1, MPI_INT, MPI_SUM, comm);
 
-    if (me == 0)
-        printf("%lu pairs, %.3g Mb keys, %.3g Mb values, %.3g Mb, "
-               "%d pages\n",
-               nkeyall, ksizeall / mbyte, vsizeall / mbyte, esizeall / mbyte, npages);
+    if (level == 0) return nkeyall;
+
+    if (level == 1)
+        if (me == 0)
+            printf("%lu pairs, %.3g Mb keys, %.3g Mb values, %.3g Mb, "
+                   "%d pages\n",
+                   nkeyall, ksizeall / mbyte, vsizeall / mbyte, esizeall / mbyte, npages);
 
     if (level == 2) {
         write_histo((double) kv->nkv, "  KV pairs:");
         write_histo(kv->ksize / mbyte, "  Kdata (Mb):");
         write_histo(kv->vsize / mbyte, "  Vdata (Mb):");
     }
+
+    return nkeyall;
 }
 
 /* ----------------------------------------------------------------------
    print stats for KMV
 ------------------------------------------------------------------------- */
 
-void MapReduce::kmv_stats(int level)
+uint64_t MapReduce::kmv_stats(int level)
 {
     if (kmv == NULL) error->all("Cannot print stats without KeyMultiValue");
 
@@ -2636,47 +2969,66 @@ void MapReduce::kmv_stats(int level)
 
     int npages;
     uint64_t nkeyall, ksizeall, vsizeall, esizeall;
-    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&kmv->ksize, &ksizeall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&kmv->vsize, &vsizeall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&kmv->esize, &esizeall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->nkmv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->ksize, &ksizeall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->vsize, &vsizeall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&kmv->esize, &esizeall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     MPI_Allreduce(&kmv->npage, &npages, 1, MPI_INT, MPI_SUM, comm);
 
-    if (me == 0)
-        printf("%lu pairs, %.3g Mb keys, %.3g Mb values, %.3g Mb, "
-               "%d pages\n",
-               nkeyall, ksizeall / mbyte, vsizeall / mbyte, esizeall / mbyte, npages);
+    if (level == 0) return nkeyall;
+
+    if (level == 1)
+        if (me == 0)
+            printf("%lu pairs, %.3g Mb keys, %.3g Mb values, %.3g Mb, "
+                   "%d pages\n",
+                   nkeyall, ksizeall / mbyte, vsizeall / mbyte, esizeall / mbyte, npages);
 
     if (level == 2) {
         write_histo((double) kmv->nkmv, "  KMV pairs:");
         write_histo(kmv->ksize / mbyte, "  Kdata (Mb):");
         write_histo(kmv->vsize / mbyte, "  Vdata (Mb):");
     }
+
+    return nkeyall;
 }
 
 /* ----------------------------------------------------------------------
-   print cummulative comm and file read/write stats
+   print cummulative memory, comm, and file read/write stats for all MR objects
 ------------------------------------------------------------------------- */
 
 void MapReduce::cummulative_stats(int level, int reset)
 {
     double mbyte = 1024.0 * 1024.0;
+    double gbyte = 1024.0 * 1024.0 * 1024.0;
+
+    // version info
+
+    if (me == 0) printf("MapReduce-MPI (%s)\n", MRMPI_VERSION);
+
+    // memory
+
+    uint64_t allmsizemax, allmsize;
+    MPI_Allreduce(&msizemax, &allmsizemax, 1, MRMPI_BIGINT, MPI_MAX, comm);
+    MPI_Allreduce(&msizemax, &allmsize, 1, MRMPI_BIGINT, MPI_SUM, comm);
+
+    if (me == 0) printf("Cummulative hi-water mem = "
+                            "%.3g Mb any proc, %.3g Gb all procs\n",
+                            allmsizemax / mbyte, allmsize / gbyte);
 
     // communication
 
     uint64_t csize[2] = {cssize, crsize};
     uint64_t allcsize[2];
-    MPI_Allreduce(csize, allcsize, 2, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(csize, allcsize, 2, MRMPI_BIGINT, MPI_SUM, comm);
 
-    double ctime[1] = {commtime};
-    double allctime[1];
-    MPI_Allreduce(ctime, allctime, 1, MPI_DOUBLE, MPI_SUM, comm);
+    double allctime;
+    MPI_Allreduce(&commtime, &allctime, 1, MPI_DOUBLE, MPI_SUM, comm);
 
     if (allcsize[0] || allcsize[1]) {
         if (me == 0) printf("Cummulative comm = "
                                 "%.3g Mb send, %.3g Mb recv, %.3g secs\n",
                                 allcsize[0] / mbyte, allcsize[1] / mbyte,
-                                allctime[0] / nprocs);
+                                allctime / nprocs);
         if (level == 2) {
             write_histo(csize[0] / mbyte, "  Send (Mb):");
             write_histo(csize[1] / mbyte, "  Recv (Mb):");
@@ -2687,7 +3039,7 @@ void MapReduce::cummulative_stats(int level, int reset)
 
     uint64_t size[2] = {rsize, wsize};
     uint64_t allsize[2];
-    MPI_Allreduce(size, allsize, 2, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(size, allsize, 2, MRMPI_BIGINT, MPI_SUM, comm);
 
     if (allsize[0] || allsize[1]) {
         if (me == 0) printf("Cummulative I/O = %.3g Mb read, %.3g Mb write\n",
@@ -2720,26 +3072,26 @@ void MapReduce::set_fpath(const char *str)
 }
 
 /* ----------------------------------------------------------------------
-   print memory page and disk file stats for MR
+   print hi-water memory page and disk file stats for MR
 ------------------------------------------------------------------------- */
 
 void MapReduce::mr_stats(int level)
 {
     double mbyte = 1024.0 * 1024.0;
 
-    int npages;
-    MPI_Allreduce(&npage, &npages, 1, MPI_INT, MPI_SUM, comm);
+    int npagemaxall;
+    MPI_Allreduce(&npagemax, &npagemaxall, 1, MPI_INT, MPI_MAX, comm);
     uint64_t fsizemaxall;
-    MPI_Allreduce(&fsizemax, &fsizemaxall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&fsizemax, &fsizemaxall, 1, MRMPI_BIGINT, MPI_SUM, comm);
 
     if (me == 0)
-        printf("MapReduce stats = %d pages, %.3g Mb mem, "
-               "%.3g Mb hi-water for files\n",
-               npages, npages * pagesize / mbyte, fsizemaxall / mbyte);
+        printf("MR stats = %d max pages any proc, %.3g Mb, "
+               "%.3g Mb max file size all procs\n",
+               npagemaxall, npagemaxall * pagesize / mbyte, fsizemaxall / mbyte);
 
     if (level == 2) {
-        if (npages) write_histo((double) npage, "  Pages:");
-        if (fsizemaxall) write_histo(fsizemax / mbyte, "  HiWater:");
+        if (npagemaxall) write_histo((double) npagemax, "  Pages:");
+        if (fsizemaxall) write_histo(fsizemax / mbyte, "  Files:");
     }
 }
 
@@ -2779,8 +3131,8 @@ void MapReduce::stats(const char *heading, int which)
     uint64_t rall, sall, wall;
     double mbyte = 1024.0 * 1024.0;
 
-    MPI_Allreduce(&cssize_one, &sall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&crsize_one, &rall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&cssize_one, &sall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&crsize_one, &rall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     if (sall || rall) {
         if (me == 0) printf("%s Comm = %.3g Mb send, %.3g Mb recv\n", heading,
                                 sall / mbyte, rall / mbyte);
@@ -2790,8 +3142,8 @@ void MapReduce::stats(const char *heading, int which)
         }
     }
 
-    MPI_Allreduce(&rsize_one, &rall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
-    MPI_Allreduce(&wsize_one, &wall, 1, MPI_UNSIGNED_LONG, MPI_SUM, comm);
+    MPI_Allreduce(&rsize_one, &rall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    MPI_Allreduce(&wsize_one, &wall, 1, MRMPI_BIGINT, MPI_SUM, comm);
     if (rall || wall) {
         if (me == 0) printf("%s I/O = %.3g Mb read, %.3g Mb write\n", heading,
                                 rall / mbyte, wall / mbyte);
@@ -2941,8 +3293,8 @@ void MapReduce::histogram(int n, double *data,
 }
 
 /* ----------------------------------------------------------------------
-   setup memory alignment params
-   setup memory page data structures and do initial allocation
+   setup memory alignment params and pagesize
+   perform initial allocation if minpage > 0
 ------------------------------------------------------------------------- */
 
 void MapReduce::allocate()
@@ -2970,114 +3322,189 @@ void MapReduce::allocate()
     valignm1 = valign - 1;
     talignm1 = talign - 1;
 
-    // memory initialization
+    // error checks
 
     if (memsize == 0) error->all("Invalid memsize setting");
     if (minpage < 0) error->all("Invalid minpage setting");
     if (maxpage && maxpage < minpage) error->all("Invalid maxpage setting");
 
+    // memory initialization
+
     if (memsize > 0)
         pagesize = ((uint64_t) memsize) * 1024 * 1024;
-    else
+    else if (memsize < 0)
         pagesize = (uint64_t)(-memsize);
-
     if (pagesize < ALIGNFILE) error->all("Page size smaller than ALIGNFILE");
-
     if (minpage) allocate_page(minpage);
 }
 
 /* ----------------------------------------------------------------------
-   allocate a contiguous set of N pages
+   allocate a new set of N contiguous pages
 ------------------------------------------------------------------------- */
 
 void MapReduce::allocate_page(int n)
 {
     int nnew = npage + n;
     memptr = (char **) memory->srealloc(memptr, nnew * sizeof(char *), "MR:memptr");
-    memused = (int *) memory->srealloc(memused, nnew * sizeof(int), "MR:memused");
+    memusage = (int *) memory->srealloc(memusage, nnew * sizeof(int), "MR:memusage");
     memcount = (int *) memory->srealloc(memcount, nnew * sizeof(int), "MR:memcount");
 
     char *ptr = (char *) memory->smalloc_align(n * pagesize, ALIGNFILE, "MR:page");
-    memset(ptr, 0, n * pagesize);
+    if (zeropage) memset(ptr, 0, n * pagesize);
 
     for (int i = 0; i < n; i++) {
         memptr[npage+i] = ptr + i * pagesize;
-        memused[npage+i] = 0;
+        memusage[npage+i] = 0;
         memcount[npage+i] = 0;
     }
     memcount[npage] = n;
     npage = nnew;
+    npagemax = MAX(npagemax, npage);
+    msize += n * pagesize;
+    msizemax = MAX(msizemax, msize);
 }
 
 /* ----------------------------------------------------------------------
-   request for numpages of contiguous memory
-   satisfy request out of 1st available unused page(s)
-   else allocate new page(s) if maxpage allows
-   else throw error
-   return ptr to memory and size of memory
-   return tag for caller to use when releasing page(s) via myfree()
+   request for N pages of contiguous memory
+   return tag for caller for use when releasing page(s) via mem_unmark()
+   return size of memory and ptr to memory
 ------------------------------------------------------------------------- */
 
-char *MapReduce::mymalloc(int numpage, uint64_t &size, int &tag)
+char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
 {
-    int ipage, ok;
+    int i, j, ok;
 
-    for (tag = 0; tag < npage; tag++) {
-        if (memused[tag]) continue;
-        ok = 1;
-        for (ipage = tag + 1; ipage < tag + numpage; ipage++)
-            if (ipage >= npage || memused[ipage] || memcount[ipage]) ok = 0;
-        if (ok) break;
+    // satisfy request out of first unused chunk of exactly size N
+
+    for (i = 0; i < npage; i++) {
+        if (memusage[i]) continue;
+        if (memcount[i] == 0) continue;
+        if (memcount[i] == n) {
+            ok = 1;
+            for (j = i + 1; j < i + n; j++)
+                if (memusage[j]) ok = 0;
+            if (ok) break;
+        }
     }
 
-    if (tag == npage) {
-        if (maxpage && npage + numpage > maxpage)
+    // else first unused chunk of size N (even if within larger chunk)
+
+    if (i == npage) {
+        for (i = 0; i < npage; i++) {
+            if (memusage[i]) continue;
+            ok = 1;
+            for (j = i + 1; j < i + n; j++)
+                if (j >= npage || memusage[j] || memcount[j]) ok = 0;
+            if (ok) break;
+        }
+    }
+
+    // else allocate new page(s) if maxpage allows
+    // else throw error
+
+    if (i == npage) {
+        if (maxpage && npage + n > maxpage)
             error->one("Cannot allocate requested memory page(s)");
-        allocate_page(numpage);
+        allocate_page(n);
     }
 
-    for (ipage = 0; ipage < numpage; ipage++) memused[tag+ipage] = numpage;
-    size = numpage * pagesize;
-
-    return memptr[tag];
+    tagmax++;
+    for (j = 0; j < n; j++) memusage[i+j] = tagmax;
+    tag = tagmax;
+    size = n * pagesize;
+    return memptr[i];
 }
 
 /* ----------------------------------------------------------------------
-   free one or more pages of memory starting at tag
+   mark pages with tag as unused, could be one or more contiguous pages
 ------------------------------------------------------------------------- */
 
-void MapReduce::myfree(int tag)
+void MapReduce::mem_unmark(int tag)
 {
-    int n = memused[tag];
-    for (int i = 0; i < n; i++) memused[tag++] = 0;
+    for (int i = 0; i < npage; i++)
+        if (memusage[i] == tag) {
+            for (int j = 0; j < memcount[i]; j++) memusage[i+j] = 0;
+            break;
+        }
 }
 
 /* ----------------------------------------------------------------------
-   query status of memory pages
-   return # of free 1-pagers
-   return ncontig = largest # of contiguous free pages available
+   free unused pages and compact page lists
+------------------------------------------------------------------------- */
+
+void MapReduce::mem_cleanup()
+{
+    int i, j, n, ok;
+
+    for (i = 0; i < npage; i++) {
+
+        // do not free if in use
+
+        if (memusage[i]) continue;
+
+        // ok = 1 if no page in contiguous chunk is in use
+        // if not ok, do not free
+        // else free and compact remaining pages
+
+        ok = 1;
+        n = memcount[i];
+        for (j = i + 1; j < i + n; j++)
+            if (memusage[j]) ok = 0;
+        if (!ok) i += n - 1;
+        else {
+            memory->sfree(memptr[i]);
+            msize -= n * pagesize;
+            for (j = i + n; j < npage; j++) {
+                memptr[j-n] = memptr[j];
+                memusage[j-n] = memusage[j];
+                memcount[j-n] = memcount[j];
+            }
+            npage -= n;
+            i--;
+        }
+    }
+}
+
+/* ----------------------------------------------------------------------
+   query status of currently allocated memory pages
+   return # of unused pages
+   return maxcontig = largest # of contiguous unused pages available
    return max = # of pages that can still be allocated, -1 if infinite
 ------------------------------------------------------------------------- */
 
-int MapReduce::memquery(int &maxcontig, int &max)
+int MapReduce::mem_query(int &maxcontig, int &max)
 {
     int i, j;
 
     int n = 0;
     for (i = 0; i < npage; i++)
-        if (memused[i] == 0) n++;
+        if (memusage[i] == 0) n++;
 
     maxcontig = 0;
     for (i = 0; i < npage; i++) {
-        if (memused[i]) continue;
+        if (memusage[i]) continue;
         for (j = i + 1; j < npage; j++)
-            if (memused[j] || memcount[j]) break;
+            if (memusage[j] || memcount[j]) break;
         maxcontig = MAX(maxcontig, j - i);
     }
 
     if (maxpage == 0) max = -1;
     else max = maxpage - npage;
     return n;
+}
+
+/* ----------------------------------------------------------------------
+   debug print-out of memory page data structures
+   iproc = -1, print for all procs
+   else only iproc prints
+------------------------------------------------------------------------- */
+
+void MapReduce::mem_debug(int iproc)
+{
+    if (iproc >= 0 && iproc != me) return;
+    printf("MEMORY PAGES: %d on proc %d\n", npage, me);
+    for (int i = 0; i < npage; i++)
+        printf("  %d usage, %d count, %p ptr\n", memusage[i], memcount[i], memptr[i]);
 }
 
 /* ----------------------------------------------------------------------

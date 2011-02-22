@@ -138,27 +138,30 @@ uint64_t MR_map_add(void *MRptr, int nmap,
   return mr->map(nmap,appmap,APPptr,addflag);
 }
 
-uint64_t MR_map_file_list(void *MRptr, char *file,
-			  void (*mymap)(int, char *, void *, void *),
-			  void *APPptr)
+uint64_t MR_map_file(void *MRptr, int nstr, char **strings,
+		     int self, int recurse, int readfile,
+		     void (*mymap)(int, char *, void *, void *),
+		     void *APPptr)
 {
   typedef void (MapFunc)(int, char *, KeyValue *, void *);
   MapReduce *mr = (MapReduce *) MRptr;
   MapFunc *appmap = (MapFunc *) mymap;
-  return mr->map(file,appmap,APPptr);
+  return mr->map(nstr,strings,self,recurse,readfile,appmap,APPptr);
 }
 
-uint64_t MR_map_file_list_add(void *MRptr, char *file,
-			      void (*mymap)(int, char *, void *, void *),
-			      void *APPptr, int addflag)
+uint64_t MR_map_file_add(void *MRptr, int nstr, char **strings,
+			 int self, int recurse, int readfile,
+			 void (*mymap)(int, char *, void *, void *),
+			 void *APPptr, int addflag)
 {
   typedef void (MapFunc)(int, char *, KeyValue *, void *);
   MapReduce *mr = (MapReduce *) MRptr;
   MapFunc *appmap = (MapFunc *) mymap;
-  return mr->map(file,appmap,APPptr,addflag);
+  return mr->map(nstr,strings,self,recurse,readfile,appmap,APPptr,addflag);
 }
 
-uint64_t MR_map_file_char(void *MRptr, int nmap, int nfiles, char **files,
+uint64_t MR_map_file_char(void *MRptr, int nmap, int nstr, char **strings,
+			  int recurse, int readflag,
 			  char sepchar, int delta,
 			  void (*mymap)(int, char *, int, void *, void *),
 			  void *APPptr)
@@ -166,10 +169,12 @@ uint64_t MR_map_file_char(void *MRptr, int nmap, int nfiles, char **files,
   typedef void (MapFunc)(int, char *, int, KeyValue *, void *);
   MapReduce *mr = (MapReduce *) MRptr;
   MapFunc *appmap = (MapFunc *) mymap;
-  return mr->map(nmap,nfiles,files,sepchar,delta,appmap,APPptr);
+  return mr->map(nmap,nstr,strings,recurse,readflag,
+		 sepchar,delta,appmap,APPptr);
 }
 
-uint64_t MR_map_file_char_add(void *MRptr, int nmap, int nfiles, char **files,
+uint64_t MR_map_file_char_add(void *MRptr, int nmap, int nstr, char **strings,
+			      int recurse, int readflag,
 			      char sepchar, int delta,
 			      void (*mymap)(int, char *, int, void *, void *),
 			      void *APPptr, int addflag)
@@ -177,10 +182,12 @@ uint64_t MR_map_file_char_add(void *MRptr, int nmap, int nfiles, char **files,
   typedef void (MapFunc)(int, char *, int, KeyValue *, void *);
   MapReduce *mr = (MapReduce *) MRptr;
   MapFunc *appmap = (MapFunc *) mymap;
-  return mr->map(nmap,nfiles,files,sepchar,delta,appmap,APPptr,addflag);
+  return mr->map(nmap,nstr,strings,recurse,readflag,
+		 sepchar,delta,appmap,APPptr,addflag);
 }
 
-uint64_t MR_map_file_str(void *MRptr, int nmap, int nfiles, char **files,
+uint64_t MR_map_file_str(void *MRptr, int nmap, int nstr, char **strings,
+			 int recurse, int readflag,
 			 char *sepstr, int delta,
 			 void (*mymap)(int, char *, int, void *, void *),
 			 void *APPptr)
@@ -188,10 +195,12 @@ uint64_t MR_map_file_str(void *MRptr, int nmap, int nfiles, char **files,
   typedef void (MapFunc)(int, char *, int, KeyValue *, void *);
   MapReduce *mr = (MapReduce *) MRptr;
   MapFunc *appmap = (MapFunc *) mymap;
-  return mr->map(nmap,nfiles,files,sepstr,delta,appmap,APPptr);
+  return mr->map(nmap,nstr,strings,recurse,readflag,
+		 sepstr,delta,appmap,APPptr);
 }
 
-uint64_t MR_map_file_str_add(void *MRptr, int nmap, int nfiles, char **files,
+uint64_t MR_map_file_str_add(void *MRptr, int nmap, int nstr, char **strings,
+			 int recurse, int readflag,
 			     char *sepstr, int delta,
 			     void (*mymap)(int, char *, int, void *, void *),
 			     void *APPptr, int addflag)
@@ -199,7 +208,8 @@ uint64_t MR_map_file_str_add(void *MRptr, int nmap, int nfiles, char **files,
   typedef void (MapFunc)(int, char *, int, KeyValue *, void *);
   MapReduce *mr = (MapReduce *) MRptr;
   MapFunc *appmap = (MapFunc *) mymap;
-  return mr->map(nmap,nfiles,files,sepstr,delta,appmap,APPptr,addflag);
+  return mr->map(nmap,nstr,strings,recurse,readflag,
+		 sepstr,delta,appmap,APPptr,addflag);
 }
 
 uint64_t MR_map_mr(void *MRptr, void *MRptr2,
@@ -246,6 +256,13 @@ void MR_print(void *MRptr, int proc, int nstride, int kflag, int vflag)
   mr->print(proc,nstride,kflag,vflag);
 }
 
+void MR_print_file(void *MRptr, char *file, int fflag,
+		   int proc, int nstride, int kflag, int vflag)
+{
+  MapReduce *mr = (MapReduce *) MRptr;
+  mr->print(file,fflag,proc,nstride,kflag,vflag);
+}
+
 uint64_t MR_reduce(void *MRptr,
 		   void (*myreduce)(char *, int, char *,
 				    int, int *, void *, void *),
@@ -258,12 +275,6 @@ uint64_t MR_reduce(void *MRptr,
   return mr->reduce(appreduce,APPptr);
 }
 
-uint64_t MR_scrunch(void *MRptr, int numprocs, char *key, int keybytes)
-{
-  MapReduce *mr = (MapReduce *) MRptr;
-  return mr->scrunch(numprocs,key,keybytes);
-}
-
 uint64_t MR_multivalue_blocks(void *MRptr, int *pnblock)
 {
   MapReduce *mr = (MapReduce *) MRptr;
@@ -273,6 +284,12 @@ uint64_t MR_multivalue_blocks(void *MRptr, int *pnblock)
   return nvalue_total;
 }
 
+void MR_multivalue_block_select(void *MRptr, int which)
+{
+  MapReduce *mr = (MapReduce *) MRptr;
+  return mr->multivalue_block_select(which);
+}
+
 int MR_multivalue_block(void *MRptr, int iblock,
 			char **ptr_multivalue, int **ptr_valuesizes)
 {
@@ -280,10 +297,41 @@ int MR_multivalue_block(void *MRptr, int iblock,
   return mr->multivalue_block(iblock,ptr_multivalue,ptr_valuesizes);
 }
 
+uint64_t MR_scan_kv(void *MRptr,
+		    void (*myscan)(char *, int, char *, int, void *),
+		    void *APPptr)
+{
+  typedef void (ScanFunc)(char *, int, char *, int, void *);
+  MapReduce *mr = (MapReduce *) MRptr;
+  ScanFunc *appscan = (ScanFunc *) myscan;
+  return mr->scan(appscan,APPptr);
+}
+
+uint64_t MR_scan_kmv(void *MRptr,
+		     void (*myscan)(char *, int, char *, int, int *, void *),
+		     void *APPptr)
+{
+  typedef void (ScanFunc)(char *, int, char *, int, int *, void *);
+  MapReduce *mr = (MapReduce *) MRptr;
+  ScanFunc *appscan = (ScanFunc *) myscan;
+  return mr->scan(appscan,APPptr);
+}
+
+uint64_t MR_scrunch(void *MRptr, int numprocs, char *key, int keybytes)
+{
+  MapReduce *mr = (MapReduce *) MRptr;
+  return mr->scrunch(numprocs,key,keybytes);
+}
 uint64_t MR_sort_keys(void *MRptr, int (*mycompare)(char *, int, char *, int))
 {
   MapReduce *mr = (MapReduce *) MRptr;
   return mr->sort_keys(mycompare);
+}
+
+uint64_t MR_sort_keys_flag(void *MRptr, int flag)
+{
+  MapReduce *mr = (MapReduce *) MRptr;
+  return mr->sort_keys(flag);
 }
 
 uint64_t MR_sort_values(void *MRptr, 
@@ -293,6 +341,12 @@ uint64_t MR_sort_values(void *MRptr,
   return mr->sort_values(mycompare);
 }
 
+uint64_t MR_sort_values_flag(void *MRptr, int flag)
+{
+  MapReduce *mr = (MapReduce *) MRptr;
+  return mr->sort_values(flag);
+}
+
 uint64_t MR_sort_multivalues(void *MRptr, int (*mycompare)(char *, int, 
 							   char *, int))
 {
@@ -300,16 +354,22 @@ uint64_t MR_sort_multivalues(void *MRptr, int (*mycompare)(char *, int,
   return mr->sort_multivalues(mycompare);
 }
 
-void MR_kv_stats(void *MRptr, int level)
+uint64_t MR_sort_multivalues_flag(void *MRptr, int flag)
 {
   MapReduce *mr = (MapReduce *) MRptr;
-  mr->kv_stats(level);
+  return mr->sort_multivalues(flag);
 }
 
-void MR_kmv_stats(void *MRptr, int level)
+uint64_t MR_kv_stats(void *MRptr, int level)
 {
   MapReduce *mr = (MapReduce *) MRptr;
-  mr->kmv_stats(level);
+  return mr->kv_stats(level);
+}
+
+uint64_t MR_kmv_stats(void *MRptr, int level)
+{
+  MapReduce *mr = (MapReduce *) MRptr;
+  return mr->kmv_stats(level);
 }
 
 void MR_cummulative_stats(void *MRptr, int level, int reset)

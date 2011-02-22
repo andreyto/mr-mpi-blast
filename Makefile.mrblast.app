@@ -20,18 +20,34 @@ MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 ### MR-MPI Lib
 #MRMPI_USRLIB = -lmrmpi
-MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
+#MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
+
+### For Ranger
+#MRMPI_USRLIB = -L/work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/#mr-mpi-blast/mrmpi -lmrmpi
+
+MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi_mpicc
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 
 
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 ### Boost Lib
-#BOOST_USRLIB = -lboost_program_options
+
+### For Ranger
+#BOOST_USRLIB = -L/opt/apps/gcc4_4/boost/1.39.0/lib -lboost_program_options-gcc44-mt
+#BOOST_INCLUDE = -I/work/01471/ssul/work/packages3/include
+
+
 #BOOST_USRLIB = -L/home/ssul/work/packages2/x86_64-rhel5/lib -lboost_program_options-gcc41-mt
 ### boost_1_45_0
 BOOST_INCLUDE = -I/home/ssul/work/packages2/include
+
+### Boost program options
+#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options 
+#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options 
+### Boost mmap
+BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_iostreams -lboost_filesystem
+### Boost.Log
 #BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_log -lboost_log_setup
-BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 
 

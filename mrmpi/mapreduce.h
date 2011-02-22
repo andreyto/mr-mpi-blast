@@ -17,12 +17,6 @@
 #include "mpi.h"
 #include "stdint.h"
 
-/// For split
-#include <string>
-#include <vector>
-using namespace std;
-
-
 namespace MAPREDUCE_NS {
 
 class MapReduce {
@@ -38,9 +32,13 @@ public:
     int memsize;        // # of Mbytes per page
     int minpage;        // # of pages that will be pre-allocated per proc >= 0
     int maxpage;        // max # of pages that can be allocated per proc, 0 = inf
+    int freepage;       // 1 to free unused pages after every operation, 0 if keep
+    int outofcore;      // 1 to force data out-of-core, 0 = only if exceeds 1 pg
+    int zeropage;       // 1 to init allocated pages to 0, 0 if don't bother
     int keyalign;       // align keys to this byte count
     int valuealign;     // align values to this byte count
     char *fpath;        // prefix path added to intermediate out-of-core files
+    int mapfilecount;   // number of files processed by map file variants
 
     class KeyValue *kv;              // single KV stored by MR
     class KeyMultiValue *kmv;        // single KMV stored by MR
@@ -53,6 +51,7 @@ public:
     static int instances_ever;       // total # of MRs ever instantiated
     // grows as created, never shrinks
     static int mpi_finalize_flag;    // 1 if MR library should finalize MPI
+    static uint64_t msize, msizemax; // current and hi-water memory allocation
     static uint64_t rsize, wsize;    // total read/write bytes for all I/O
     static uint64_t cssize, crsize;  // total send/recv bytes for all comm
     static double commtime;          // total time for all comm
@@ -81,34 +80,41 @@ public:
 
     uint64_t map(int, void (*)(int, class KeyValue *, void *),
                  void *, int addflag = 0);
-    uint64_t map(char *, void (*)(int, char *, class KeyValue *, void *),
+    uint64_t map(int, char **, int, int, int,
+                 void (*)(int, char *, class KeyValue *, void *),
                  void *, int addflag = 0);
-    uint64_t map(int, int, char **, char, int,
+    uint64_t map(int, int, char **, int, int, char, int,
                  void (*)(int, char *, int, class KeyValue *, void *),
                  void *, int addflag = 0);
-    uint64_t map(int, int, char **, char *, int,
+    uint64_t map(int, int, char **, int, int, char *, int,
                  void (*)(int, char *, int, class KeyValue *, void *),
                  void *, int addflag = 0);
     uint64_t map(MapReduce *, void (*)(uint64_t, char *, int, char *, int,
                                        class KeyValue *, void *),
                  void *, int addflag = 0);
-        
+
     void open(int addflag = 0);
     void print(int, int, int, int);
+    void print(char *, int, int, int, int, int);
     uint64_t reduce(void (*)(char *, int, char *,
-                             int, int *, class KeyValue *, void *),
-                    void *);
+                             int, int *, class KeyValue *, void *), void *);
+    uint64_t scan(void (*)(char *, int, char *, int, void *), void *);
+    uint64_t scan(void (*)(char *, int, char *, int, int *, void *), void *);
     uint64_t scrunch(int, char *, int);
 
     uint64_t multivalue_blocks(int &);
+    void multivalue_block_select(int);
     int multivalue_block(int, char **, int **);
 
+    uint64_t sort_keys(int);
     uint64_t sort_keys(int (*)(char *, int, char *, int));
+    uint64_t sort_values(int);
     uint64_t sort_values(int (*)(char *, int, char *, int));
+    uint64_t sort_multivalues(int);
     uint64_t sort_multivalues(int (*)(char *, int, char *, int));
 
-    void kv_stats(int);
-    void kmv_stats(int);
+    uint64_t kv_stats(int);
+    uint64_t kmv_stats(int);
     void cummulative_stats(int, int);
 
     void set_fpath(const char *);
@@ -148,11 +154,12 @@ private:
 
     uint64_t pagesize;        // pagesize for KVs and KMVs
     char **memptr;            // ptrs to each page of memory
-    int *memused;             // flag for each page
-    // 0 = unused, 1/2 = in use as 1 or 2-page
+    int *memusage;            // 0 if unused, else tag returned to requestor
     int *memcount;            // # of pages alloced starting with this page
-    // 0 if in the middle of a contiguous alloc
+    // 0 if in middle of a contiguous alloc
     int npage;                // total # of pages currently allocated
+    int npagemax;             // hi-water mark for # of pages allocated
+    int tagmax;               // highest tag used thus far
 
     // alignment info
 
@@ -187,6 +194,8 @@ private:
     int kmv_key_page;           // which page the key info is on
     int kmv_nblock;             // # of value pages in multi-block KMV
     uint64_t kmv_nvalue_total;  // total # of values in multi-block KMV
+    char *kmv_mvpage1;          // page ptrs for 2 multi-block blocks of values
+    char *kmv_mvpage2;
 
     // file map()
 
@@ -213,9 +222,16 @@ private:
     void copy_kv(KeyValue *);
     void copy_kmv(KeyMultiValue *);
 
-    uint64_t map_file(int, int, char **,
-                      void (*)(int, char *, int, class KeyValue *, void *),
-                      void *, int addflag);
+    uint64_t map_tasks(int, char **,
+                       void (*)(int, KeyValue *, void *),
+                       void (*)(int, char *, KeyValue *, void *),
+                       void *, int, int);
+    uint64_t map_chunks(int, int, char **,
+                        void (*)(int, char *, int, class KeyValue *, void *),
+                        void *, int);
+    void findfiles(char *, int, int, int &, int &, char **&);
+    void addfiles(char *, int, int &, int &, char **&);
+    void bcastfiles(int &, char **&);
 
     void sort_kv(int);
     void sort_onepage(int, int, char *, char *, char *);
@@ -234,9 +250,11 @@ private:
     void mr_stats(int);
     void allocate();
     void allocate_page(int);
-    char *mymalloc(int, uint64_t &, int &);
-    void myfree(int);
-    int memquery(int &, int &);
+    char *mem_request(int, uint64_t &, int &);
+    void mem_unmark(int);
+    void mem_cleanup();
+    int mem_query(int &, int &);
+    void mem_debug(int);
     void hiwater(int, uint64_t);
 };
 

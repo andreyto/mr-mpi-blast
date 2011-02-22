@@ -87,12 +87,26 @@ KeyMultiValue::KeyMultiValue(MapReduce *mr_caller,
 
   nkmv = ksize = vsize = esize = fsize = 0;
   init_page();
+
+  page = NULL;
+  memtag = -1;
+  allocate();
 }
 
 /* ---------------------------------------------------------------------- */
 
 KeyMultiValue::~KeyMultiValue()
 {
+  // file may be open, if KMV was being read by MR::compress or MR::reduce
+  // users may use request_page() via multivalue_block() multiple times,
+  // so cannot close file on last page in request_page()
+
+  if (fp) {
+    fclose(fp);
+    fp = NULL;
+  }
+
+  deallocate(1);
   memory->sfree(pages);
   if (fileflag) {
     remove(filename);
@@ -102,12 +116,31 @@ KeyMultiValue::~KeyMultiValue()
 }
 
 /* ----------------------------------------------------------------------
-   trigger KMV to request an available page of memory
+   if need one, request an in-memory page
 ------------------------------------------------------------------------- */
 
-void KeyMultiValue::set_page()
+void KeyMultiValue::allocate()
 {
-  page = mr->mymalloc(1,pagesize,memtag);
+  if (page == NULL) page = mr->mem_request(1,pagesize,memtag);
+}
+
+/* ----------------------------------------------------------------------
+   if allocated, mark in-memory page as unused
+   if forceflag == 1, always do this
+   else:
+     only do this if MR outofcore flag is set or
+     npage > 1 (since values currently in page are now useless)
+------------------------------------------------------------------------- */
+
+void KeyMultiValue::deallocate(int forceflag)
+{
+  if (forceflag || mr->outofcore > 0 || npage > 1) {
+    if (page) {
+      mr->mem_unmark(memtag);
+      page = NULL;
+      memtag = -1;
+    }
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -122,7 +155,8 @@ void KeyMultiValue::copy(KeyMultiValue *kmv)
   if (kmv == this) error->all("Cannot perform KeyMultiValue copy on self");
 
   // pages will be loaded into memory assigned to other KMV
-  // write_page() will write them from that page to my file
+  // temporarily set my in-memory page to that of other KMV
+  // write_page() will then write from that page to my file
 
   char *page_hold = page;
   int npage_other = kmv->request_info(&page);
@@ -134,12 +168,10 @@ void KeyMultiValue::copy(KeyMultiValue *kmv)
     npage++;
   }
 
-  // last page needs to be copied to my memory before calling complete()
-  // reset my page to my memory
+  // copy last page to my memory, then reset my page to my memory
 
   nkey = kmv->request_page(npage_other-1,0,keysize,valuesize,alignsize);
   memcpy(page_hold,page,alignsize);
-  complete();
   page = page_hold;
 }
 
@@ -152,9 +184,10 @@ void KeyMultiValue::complete()
 {
   create_page();
 
-  // if disk file exists, write last page, close file
+  // if disk file exists or MR outofcore flag set:
+  // write current in-memory page to disk, close file
 
-  if (fileflag) {
+  if (fileflag || mr->outofcore > 0) {
     write_page();
     fclose(fp);
     fp = NULL;
@@ -162,6 +195,10 @@ void KeyMultiValue::complete()
 
   npage++;
   init_page();
+
+  // give up in-memory page if possible
+
+  deallocate(0);
 
   // set sizes for entire KMV
 
@@ -224,19 +261,23 @@ uint64_t KeyMultiValue::multivalue_blocks(int ipage, int &nblock)
 }
 
 /* ----------------------------------------------------------------------
-   write out a changed page of KMV data
+   overwrite a reorganized page of KMV data onto disk
+   reset npage to ipage so write_page() will work
+   page properties stay the same so no call to create_page()
    called by MR::sort_multivalues()
 ------------------------------------------------------------------------- */
 
 void KeyMultiValue::overwrite_page(int ipage)
 {
-  if (!fileflag) return;
-  write_page();
+  int npage_save = npage;
+  npage = ipage;
+  if (fileflag || mr->outofcore > 0) write_page();
+  npage = npage_save;
 }
 
 /* ----------------------------------------------------------------------
    close disk file if open
-   called by MR::compress() and MR::reduce()
+   called by MR::sort_multivalues()
 ------------------------------------------------------------------------- */
 
 void KeyMultiValue::close_file()
@@ -464,7 +505,7 @@ void KeyMultiValue::convert(KeyValue *kv)
 
   uint64_t uniquesize;
   int uniquetag;
-  char *memunique = mr->mymalloc(2,uniquesize,uniquetag);
+  char *memunique = mr->mem_request(2,uniquesize,uniquetag);
 
   uint64_t n = MAX(kv->nkv,1);
   double keyave = 1.0*kv->ksize/n;
@@ -592,8 +633,8 @@ void KeyMultiValue::convert(KeyValue *kv)
   memory->sfree(partitions);
   memory->sfree(sets);
   spool_free();
-  mr->myfree(uniquetag);
-  mr->myfree(kv_memtag);
+  mr->mem_unmark(uniquetag);
+  mr->mem_unmark(kv_memtag);
 }
 
 /* ----------------------------------------------------------------------
@@ -1437,17 +1478,35 @@ void KeyMultiValue::create_page()
 
 void KeyMultiValue::write_page()
 {
+  if (mr->outofcore < 0)
+    error->one("Cannot create KeyMultiValue file due to outofcore setting");
+
   if (fp == NULL) {
     fp = fopen(filename,"wb");
-    if (fp == NULL) 
-      error->one("Could not open KeyMultiValue file for writing");
+    if (fp == NULL) {
+      char msg[1023];
+      sprintf(msg,"Cannot open KeyMultiValue file %s for writing",filename);
+      error->one(msg);
+    }
     fileflag = 1;
   }
 
   uint64_t fileoffset = pages[npage].fileoffset;
-  fseek(fp,fileoffset,SEEK_SET);
-  fwrite(page,pages[npage].filesize,1,fp);
+  int seekflag = fseek(fp,fileoffset,SEEK_SET);
+  int nwrite = fwrite(page,pages[npage].filesize,1,fp);
   mr->wsize += pages[npage].filesize;
+
+  if (seekflag) {
+    char str[128];
+    sprintf(str,"Bad KMV fwrite/fseek on proc %d: %u",me,fileoffset);
+    error->warning(str);
+  }
+  if (nwrite != 1 && pages[npage].filesize) {
+    char str[128];
+    sprintf(str,"Bad KMV fwrite on proc %d: %d %u",
+	    me,nwrite,pages[npage].filesize);
+    error->warning(str);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -1465,9 +1524,22 @@ void KeyMultiValue::read_page(int ipage, int writeflag)
   }
 
   uint64_t fileoffset = pages[ipage].fileoffset;
-  fseek(fp,fileoffset,SEEK_SET);
-  fread(page,pages[ipage].filesize,1,fp);
+  int seekflag = fseek(fp,fileoffset,SEEK_SET);
+  int nread = fread(page,pages[ipage].filesize,1,fp);
   mr->rsize += pages[ipage].filesize;
+
+  if (seekflag) {
+    char str[128];
+    sprintf(str,"Bad KMV fread/fseek on proc %d: %u",me,fileoffset);
+    error->warning(str);
+  }
+  if ((nread != 1 || ferror(fp)) && pages[ipage].filesize) {
+    char str[128];
+    sprintf(str,"Bad KMV fread on proc %d: %d %u",
+	    me,nread,pages[ipage].filesize);
+    error->warning(str);
+    clearerr(fp);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -1498,11 +1570,11 @@ void KeyMultiValue::spool_memory(KeyValue *kv)
 
   // query how many MR pages are available and request all of them
 
-  npages_mr = mr->memquery(dummy1,dummy2);
+  npages_mr = mr->mem_query(dummy1,dummy2);
   tag_mr = (int *) memory->smalloc(npages_mr*sizeof(int),"KMV:tag_mr");
   page_mr = (char **) memory->smalloc(npages_mr*sizeof(char *),"KMV:page_mr");
   for (int i = 0; i < npages_mr; i++)
-    page_mr[i] = mr->mymalloc(1,dummy,tag_mr[i]);
+    page_mr[i] = mr->mem_request(1,dummy,tag_mr[i]);
 }
 
 /* ----------------------------------------------------------------------
@@ -1532,7 +1604,7 @@ void KeyMultiValue::spool_request(int n, int extra)
 				      "KMV:tag_mr");
     page_mr = (char **) memory->srealloc(page_mr,(npages_mr+1)*sizeof(char *),
 					 "KMV:page_mr");
-    page_mr[npages_mr] = mr->mymalloc(1,dummy,tag_mr[npages_mr]);
+    page_mr[npages_mr] = mr->mem_request(1,dummy,tag_mr[npages_mr]);
     npages_mr++;
 
     spoolperpage = nquery / npages_mr;
@@ -1562,7 +1634,7 @@ char *KeyMultiValue::spool_malloc(int i, uint64_t &size)
 
 void KeyMultiValue::spool_free()
 {
-  for (int i = 0; i < npages_mr; i++) mr->myfree(tag_mr[i]);
+  for (int i = 0; i < npages_mr; i++) mr->mem_unmark(tag_mr[i]);
   memory->sfree(tag_mr);
   memory->sfree(page_mr);
 }
@@ -1571,7 +1643,7 @@ void KeyMultiValue::spool_free()
    debug print of each KMV pair with nstride
 ------------------------------------------------------------------------- */
 
-void KeyMultiValue::print(int nstride, int kflag, int vflag)
+void KeyMultiValue::print(FILE *fp, int nstride, int kflag, int vflag)
 {
   int nvalues,keybytes,mvaluebytes;
   uint64_t dummy1,dummy2,dummy3;
@@ -1608,67 +1680,68 @@ void KeyMultiValue::print(int nstride, int kflag, int vflag)
 	if (istride != nstride) continue;
 	istride = 0;
 	
-	printf("KMV pair: proc %d, nvalues %d, sizes %d %d",
-	       me,nvalues,keybytes,mvaluebytes);
+	fprintf(fp,"KMV pair: proc %d, nvalues %d, sizes %d %d",
+		me,nvalues,keybytes,mvaluebytes);
 
-	printf(", key ");
-	if (kflag == 0) printf("NULL");
-	else if (kflag == 1) printf("%d",*(int *) key);
-	else if (kflag == 2) printf("%lu",*(uint64_t *) key);
-	else if (kflag == 3) printf("%g",*(float *) key);
-	else if (kflag == 4) printf("%g",*(double *) key);
-	else if (kflag == 5) printf("%s",key);
-	else if (kflag == 6) printf("%d %d",
-				    *(int *) key,
-				    *(int *) (key+sizeof(int)));
-	else if (kflag == 7) printf("%lu %lu",
-				    *(uint64_t *) key,
-				    *(uint64_t *) (key+sizeof(uint64_t)));
+	fprintf(fp,", key ");
+	if (kflag == 0) fprintf(fp,"NULL");
+	else if (kflag == 1) fprintf(fp,"%d",*(int *) key);
+	else if (kflag == 2) fprintf(fp,"%lu",*(uint64_t *) key);
+	else if (kflag == 3) fprintf(fp,"%g",*(float *) key);
+	else if (kflag == 4) fprintf(fp,"%g",*(double *) key);
+	else if (kflag == 5) fprintf(fp,"%s",key);
+	else if (kflag == 6) fprintf(fp,"%d %d",
+				     *(int *) key,
+				     *(int *) (key+sizeof(int)));
+	else if (kflag == 7) fprintf(fp,"%lu %lu",
+				     *(uint64_t *) key,
+				     *(uint64_t *) (key+sizeof(uint64_t)));
 
-	printf(", values ");
+	fprintf(fp,", values ");
 	if (vflag == 0) {
-	  for (int j = 0; j < nvalues; j++) printf("NULL ");
+	  for (int j = 0; j < nvalues; j++) fprintf(fp,"NULL ");
+
 	} else if (vflag == 1) {
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%d ",*(int *) multivalue);
+	    fprintf(fp,"%d ",*(int *) multivalue);
 	    multivalue += valuesizes[j];
 	  }
 	} else if (vflag == 2) {
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%lu ",*(uint64_t *) multivalue);
+	    fprintf(fp,"%lu ",*(uint64_t *) multivalue);
 	    multivalue += valuesizes[j];
 	  }
 	} else if (vflag == 3) {
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%g ",*(float *) multivalue);
+	    fprintf(fp,"%g ",*(float *) multivalue);
 	    multivalue += valuesizes[j];
 	  }
 	} else if (vflag == 4) {
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%g ",*(double *) multivalue);
+	    fprintf(fp,"%g ",*(double *) multivalue);
 	    multivalue += valuesizes[j];
 	  }
 	} else if (vflag == 5) {
 	  char *value = multivalue;
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%s ",multivalue);
+	    fprintf(fp,"%s ",multivalue);
 	    multivalue += valuesizes[j];
 	  }
 	} else if (vflag == 6) {
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%d %d ",*(int *) multivalue,
-		   *(int *) (multivalue+sizeof(int)));
+	    fprintf(fp,"%d %d ",*(int *) multivalue,
+		    *(int *) (multivalue+sizeof(int)));
 	    multivalue += valuesizes[j];
 	  }
 	} else if (vflag == 7) {
 	  for (int j = 0; j < nvalues; j++) {
-	    printf("%lu %lu ",*(uint64_t *) multivalue,
-		   *(uint64_t *) (multivalue+sizeof(uint64_t)));
+	    fprintf(fp,"%lu %lu ",*(uint64_t *) multivalue,
+		    *(uint64_t *) (multivalue+sizeof(uint64_t)));
 	    multivalue += valuesizes[j];
 	  }
 	}
 	
-	printf("\n");
+	fprintf(fp,"\n");
 
       } else {
 	keybytes = *((int *) ptr);
@@ -1676,25 +1749,25 @@ void KeyMultiValue::print(int nstride, int kflag, int vflag)
 	ptr = ROUNDUP(ptr,kalignm1);
 	key = ptr;
 
-	printf("KMV pair: proc %d, nvalues %lu, size %d",
+	fprintf(fp,"KMV pair: proc %d, nvalues %lu, size %d",
 	       me,pages[ipage].nvalue_total,keybytes);
 
-	printf(", key ");
-	if (kflag == 0) printf("NULL");
-	else if (kflag == 1) printf("%d",*(int *) key);
-	else if (kflag == 2) printf("%u",*(uint64_t *) key);
-	else if (kflag == 3) printf("%g",*(float *) key);
-	else if (kflag == 4) printf("%g",*(double *) key);
-	else if (kflag == 5) printf("%s",key);
-	else if (kflag == 6) printf("%d %d",
-				    *(int *) key,
-				    *(int *) (key+sizeof(int)));
-	else if (kflag == 7) printf("%lu %lu",
-				    *(uint64_t *) key,
-				    *(uint64_t *) (key+sizeof(uint64_t)));
+	fprintf(fp,", key ");
+	if (kflag == 0) fprintf(fp,"NULL");
+	else if (kflag == 1) fprintf(fp,"%d",*(int *) key);
+	else if (kflag == 2) fprintf(fp,"%u",*(uint64_t *) key);
+	else if (kflag == 3) fprintf(fp,"%g",*(float *) key);
+	else if (kflag == 4) fprintf(fp,"%g",*(double *) key);
+	else if (kflag == 5) fprintf(fp,"%s",key);
+	else if (kflag == 6) fprintf(fp,"%d %d",
+				     *(int *) key,
+				     *(int *) (key+sizeof(int)));
+	else if (kflag == 7) fprintf(fp,"%lu %lu",
+				     *(uint64_t *) key,
+				     *(uint64_t *) (key+sizeof(uint64_t)));
 
-	printf(", too many values to print");
-	printf("\n");
+	fprintf(fp,", too many values to print");
+	fprintf(fp,"\n");
       }
     }
   }

@@ -217,14 +217,27 @@ void Spool::create_page()
 
 void Spool::write_page()
 {
+  if (mr->outofcore < 0)
+    error->one("Cannot create Spool file due to outofcore setting");
+
   if (fp == NULL) {
     fp = fopen(filename,"wb");
-    if (fp == NULL) error->one("Could not open Spool file for writing");
+    if (fp == NULL) {
+      char msg[1023];
+      sprintf(msg,"Cannot open Spool file %s for writing",filename);
+      error->one(msg);
+    }
     fileflag = 1;
   }
 
-  fwrite(page,pages[npage].filesize,1,fp);
+  int nwrite = fwrite(page,pages[npage].filesize,1,fp);
   mr->wsize += pages[npage].filesize;
+
+  if (nwrite != 1 && pages[npage].filesize) {
+    char str[128];
+    sprintf(str,"Bad SP fwrite: %d %u",nwrite,pages[npage].filesize);
+    error->warning(str);
+  }
 }
 
 /* ----------------------------------------------------------------------
@@ -238,8 +251,15 @@ void Spool::read_page(int ipage)
     if (fp == NULL) error->one("Could not open Spool file for reading");
   }
 
-  fread(page,pages[ipage].filesize,1,fp);
+  int nread = fread(page,pages[ipage].filesize,1,fp);
   mr->rsize += pages[ipage].filesize;
+
+  if ((nread != 1 && pages[ipage].filesize) || ferror(fp)) {
+    char str[128];
+    sprintf(str,"Bad SP fread: %d %u",nread,pages[ipage].filesize);
+    error->warning(str);
+    clearerr(fp);
+  }
 }
 
 /* ----------------------------------------------------------------------

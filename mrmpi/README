@@ -1,0 +1,15 @@
+To see help
+
+make help
+
+To compile with Open MPI
+
+make mpicc
+
+To compile with mvapicj 
+
+make 
+
+mpicxx
+
+

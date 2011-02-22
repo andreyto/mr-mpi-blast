@@ -15,6 +15,7 @@
 #include "stdlib.h"
 #include "string.h"
 #include "irregular.h"
+#include "mrtype.h"
 #include "memory.h"
 #include "error.h"
 
@@ -38,6 +39,7 @@ Irregular::Irregular(int all2all_caller, Memory *memory_caller,
   MPI_Comm_rank(comm,&me);
   MPI_Comm_size(comm,&nprocs);
 
+  bigsendbytes = new uint64_t[nprocs];
   sendbytes = new int[nprocs];
   sdispls = new int[nprocs];
   recvbytes = new int[nprocs];
@@ -56,6 +58,7 @@ Irregular::Irregular(int all2all_caller, Memory *memory_caller,
 
 Irregular::~Irregular()
 {
+  delete [] bigsendbytes;
   delete [] sendbytes;
   delete [] sdispls;
   delete [] recvbytes;
@@ -90,12 +93,25 @@ Irregular::~Irregular()
 int Irregular::setup(int n, int *proclist, int *sizes, int *reorder,
 		     uint64_t recvlimit, double &fraction)
 {
-  recvlimit = MIN(recvlimit,INTMAX);
-
   // compute sendbytes and sdispls
 
-  for (int i = 0; i < nprocs; i++) sendbytes[i] = 0;
-  for (int i = 0; i < n; i++) sendbytes[proclist[i]] += sizes[i];
+  for (int i = 0; i < nprocs; i++) bigsendbytes[i] = 0;
+  for (int i = 0; i < n; i++) bigsendbytes[proclist[i]] += sizes[i];
+
+  // error return if any proc sending > INTMAX to a single proc
+
+  uint64_t maxsend = 0;
+  for (int i = 0; i < nprocs; i++) maxsend = MAX(maxsend,bigsendbytes[i]);
+  uint64_t maxsendall;
+  MPI_Allreduce(&maxsend,&maxsendall,1,MRMPI_BIGINT,MPI_MAX,comm);
+  if (maxsendall > INTMAX) {
+    fraction = ((double) INTMAX) / maxsendall;
+    return 0;
+  }
+
+  for (int i = 0; i < nprocs; i++) sendbytes[i] = bigsendbytes[i];
+
+  // compute sdispls
 
   sdispls[0] = 0;
   uint64_t sendtotal = sendbytes[0];
@@ -107,7 +123,7 @@ int Irregular::setup(int n, int *proclist, int *sizes, int *reorder,
   // error return if any proc's send total > INTMAX
 
   uint64_t sendtotalmax;
-  MPI_Allreduce(&sendtotal,&sendtotalmax,1,MPI_UNSIGNED_LONG,MPI_MAX,comm);
+  MPI_Allreduce(&sendtotal,&sendtotalmax,1,MRMPI_BIGINT,MPI_MAX,comm);
   if (sendtotalmax > INTMAX) {
     fraction = ((double) INTMAX) / sendtotal;
     return 0;
@@ -125,9 +141,11 @@ int Irregular::setup(int n, int *proclist, int *sizes, int *reorder,
   }
 
   // error return if any proc's recv total > min(recvlimit,INTMAX)
+
+  recvlimit = MIN(recvlimit,INTMAX);
   
   uint64_t recvtotalmax;
-  MPI_Allreduce(&recvtotal,&recvtotalmax,1,MPI_UNSIGNED_LONG,MPI_MAX,comm);
+  MPI_Allreduce(&recvtotal,&recvtotalmax,1,MRMPI_BIGINT,MPI_MAX,comm);
   if (recvtotalmax > recvlimit) {
     fraction = ((double) recvlimit) / recvtotal;
     return 0;

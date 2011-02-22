@@ -76,6 +76,10 @@
     02.14.2011
         - Add TIMING option for comparing elapsed times. 
         
-        
-        
+    02.22.2011
+        - Add -l option for setting db name list file
+        - Add -c option for setting configuration file
+        - Change subject id type from uint_32t to char[256]
+        - Add Boost mmap query file
+        - Upgrade mr-mpi to 11FEB2011 version
     

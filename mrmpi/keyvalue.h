@@ -31,16 +31,17 @@ class KeyValue {
   uint64_t fsize;                 // size of KV file
   int msize;                      // size of largest KV pair across all procs
 
-  char *page;                     // memory page
-  int memtag;                     // page ID
+  char *page;                     // in-memory page
+  int memtag;                     // memory page ID
   int npage;                      // # of pages in entire KV
 
   KeyValue(class MapReduce *, int, int, 
-       class Memory *, class Error *, MPI_Comm);
+	   class Memory *, class Error *, MPI_Comm);
   ~KeyValue();
 
-  void set_page();
+  void allocate();
   void set_page(uint64_t, char *, int);
+  void deallocate(int);
   void truncate(int, int, uint64_t);
   void copy(KeyValue *);
   void append();
@@ -48,17 +49,15 @@ class KeyValue {
   void complete_dummy();
   int request_info(char **);
   int request_page(int, uint64_t &, uint64_t &, uint64_t &);
+  void overwrite_page(int);
+  void close_file();
 
   void add(char *, int, char *, int);
   void add(int, char *, int, char *, int);
   void add(int, char *, int *, char *, int *);
 
-  void print(int, int, int);
-  /// SSJ
-  //void print2file(int, int, int, FILE *);
-  //void print2file2(int, int, int, FILE *);
-  
-      
+  void print(FILE *, int, int, int);
+
  private:
   MapReduce *mr;
   MPI_Comm comm;
