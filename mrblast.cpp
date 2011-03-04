@@ -113,7 +113,7 @@ string EXCLUSIONHISTFNAME;
 string DBFNAME;
 string CONFFNAME;
 int nDBFILES;
-const int MAXSTR = 80;
+const int MAXSTR = 80;      /// For MPI_procname and def. line collection 
 /// ----------------------------------------------------------------------------
 
 /// ----------------------------------------------------------------------------
@@ -128,8 +128,7 @@ int CNT = 0;
 char MPIPROCNAME[MAXSTR];
 string LOGFNAME;
 string LOGMSG;
-//#define NDEBUG 1
-
+#define NDEBUG 1
 ofstream LOGFILE;
 ostream* LOGSTREAM = NULL;
 #define LOG (*LOGSTREAM)
@@ -194,18 +193,18 @@ typedef struct structWorkItem {
 } STRUCTWORKITEM;
 vector<string> vDBFILE;
 vector<uint32_t> vQSTART;
-vector<STRUCTINDEX> vINDEX;
+vector<STRUCTINDEX> vINDEX; 
 vector<STRUCTWORKITEM> vWORKITEM;
 uint32_t nQUERIES;
-uint32_t nQBLOCKS; /// num blocks
+uint32_t nQBLOCKS;  
 uint32_t nWORKITEMS;
-int QSIZE; /// block size
+int QSIZE; /// block size in base-pair
 /// ----------------------------------------------------------------------------
 
 /// ----------------------------------------------------------------------------
 /// MR-MPI CALLS
 /// ----------------------------------------------------------------------------
-void mr_run_blast(int itask, KeyValue* kv, void* ptr);                   
+void mr_run_blast(int itask, KeyValue* kv, void* ptr);             
 void mr_sort_multivalues_by_evalue(char* key, int keybytes, char* multivalue, 
                                    int nvalues, int* valuebytes, KeyValue* kv, 
                                    void* ptr);                         
@@ -412,29 +411,6 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &MYRANK);
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
     MPI_Get_processor_name(MPIPROCNAME, &MPI_lenProcName);
-
-    ///
-    /// Create MPI group (rank0 vs others)
-    ///
-    //MPI_Group origgroup, newgroup;
-    //MPI_Comm newcomm;
-    //int rankGroup1[1] = {0};
-    //int rankGroup2[MPI_nProcs - 1];
-    //for (size_t i = 0; i < MPI_nProcs - 1; i++)
-        //rankGroup2[i] = i + 1;
-    
-    //int sendbuf, recvbuf, newrank;
-    //MPI_Comm_group(MPI_COMM_WORLD, &origgroup);
-    //if (MYRANK == 0)
-        //MPI_Group_incl(origgroup, 1, rankGroup1, &newgroup);
-    //else
-        //MPI_Group_incl(origgroup, MPI_nProcs - 1, rankGroup2, &newgroup);
-    
-    //MPI_Comm_create(MPI_COMM_WORLD, newgroup, &newcomm);
-    //MPI_Allreduce(&sendbuf , &recvbuf, 1, MPI_INT, MPI_SUM, newcomm);
-    //MPI_Group_rank(newgroup, &newrank);
-    //printf("rank= %d newrank= %d recvbuf= %d\n", MYRANK, newrank, recvbuf);
-    
     
     /// Log file init
     if (LOGORNOT || TIMING) {
@@ -496,7 +472,7 @@ int main(int argc, char** argv)
     mr->memsize = MEMSIZE;
     mr->keyalign = sizeof(uint32_t); /// The key is a begin offset 
     mr->mapstyle = MAPSTYLE;         /// master/slave mode=2, custom scheduler=3
-    mr->outofcore = -1;              /// disable out-of-core
+    mr->outofcore = -1;              /// disable out-of-core 
     MPI_Barrier(MPI_COMM_WORLD);
         
     ///
@@ -522,152 +498,111 @@ int main(int argc, char** argv)
     dbListFile.close();        
     nDBFILES = vDBFILE.size();
     
-    //if (MYRANK == 0) {
-        ///
-        /// Load index file
-        ///
-        ifstream indexFile(INDEXFNAME.c_str(), ios::in);
-        if (!indexFile.is_open()) {
-            cerr << "ERROR: index file open error.\n";
-            MPI_Abort(MPI_COMM_WORLD, 1);
+    ///
+    /// Load index file
+    ///
+    ifstream indexFile(INDEXFNAME.c_str(), ios::in);
+    if (!indexFile.is_open()) {
+        cerr << "ERROR: index file open error.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    while (!getline(indexFile, line).eof() && line.length() > 0) {
+        vector<string> vInd;
+        boost::split(vInd, line, boost::is_any_of(","));
+        STRUCTINDEX si;
+        si.qStart  = boost::lexical_cast<uint32_t>(vInd[0]);
+        si.qLength = boost::lexical_cast<uint32_t>(vInd[1]);
+        vINDEX.push_back(si);
+    }
+    indexFile.close();        
+    nQUERIES = vINDEX.size();
+    
+    ///
+    /// Fill vQStarts vector from the index file using QSIZE
+    ///        
+    uint32_t qsize_curr = QSIZE;
+    for (size_t i = 0; i < nQUERIES; i++) {
+        if (qsize_curr >= QSIZE) {
+            vQSTART.push_back(vINDEX[i].qStart);
+            qsize_curr = 0;
         }
-        while (!getline(indexFile, line).eof() && line.length() > 0) {
-            vector<string> vInd;
-            boost::split(vInd, line, boost::is_any_of(","));
-            STRUCTINDEX si;
-            si.qStart  = boost::lexical_cast<uint32_t>(vInd[0]);
-            si.qLength = boost::lexical_cast<uint32_t>(vInd[1]);
-            vINDEX.push_back(si);
-        }
-        indexFile.close();        
-        nQUERIES = vINDEX.size();
-        
-        ///
-        /// Fill vQStarts vector from the index file using QSIZE
-        ///        
-        uint32_t qsize_curr = QSIZE;
-        for (size_t i = 0; i < nQUERIES; i++) {
-            if (qsize_curr >= QSIZE) {
-                vQSTART.push_back(vINDEX[i].qStart);
-                qsize_curr = 0;
-            }
-            qsize_curr += vINDEX[i].qLength;
-        }
-        nQBLOCKS = vQSTART.size();
+        qsize_curr += vINDEX[i].qLength;
+    }
+    nQBLOCKS = vQSTART.size();
 
-        /// Create work items
-        for (size_t k = 0; k < nDBFILES; k++) {
-            size_t i = 0;
-            for (i = 0; i < nQBLOCKS - 1; i++) {
-                uint32_t qs = vQSTART[i];
-                uint32_t qe = vQSTART[i + 1] - 1;
-                STRUCTWORKITEM wi;
-                wi.bStart = qs;
-                wi.bEnd   = qe;            
-                wi.dbName = k;  
-                vWORKITEM.push_back(wi);
-            }
+    /// Create work items
+    for (size_t k = 0; k < nDBFILES; k++) {
+        size_t i = 0;
+        for (i = 0; i < nQBLOCKS - 1; i++) {
+            uint32_t qs = vQSTART[i];
+            uint32_t qe = vQSTART[i + 1] - 1;
             STRUCTWORKITEM wi;
-            wi.bStart = vQSTART[nQBLOCKS - 1];
-            wi.bEnd   = realFileSize; 
+            wi.bStart = qs;
+            wi.bEnd   = qe;            
             wi.dbName = k;  
-            vWORKITEM.push_back(wi);  
-        }        
-        nWORKITEMS = vWORKITEM.size();        
+            vWORKITEM.push_back(wi);
+        }
+        STRUCTWORKITEM wi;
+        wi.bStart = vQSTART[nQBLOCKS - 1];
+        wi.bEnd   = realFileSize; 
+        wi.dbName = k;  
+        vWORKITEM.push_back(wi);  
+    }        
+    nWORKITEMS = vWORKITEM.size();        
         
     if (MYRANK == 0) {
         cout << "Number of query blocks = " << nQBLOCKS << endl;     
         cout << "Number of DB files = " << nDBFILES << endl; 
         cout << "Number of work items = " << nWORKITEMS << endl;
     }
-    //} /// master
-        
+ 
     ///
-    /// Iteratively call blast and save results for nSubWorkItemFiles
-    /// times.
+    /// map, collate reduce
     ///
-
-    /// Broadcast the number of sub work item files
-    //MPI_Bcast(&nSubWorkItemFiles, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        
-    ///
-    /// n iterations
-    ///
-    //for (size_t n = 0; n < nSubWorkItemFiles; ++n) {
-    int n = 0;
-        //if (LOGORNOT) LOG << "[INFO] iteration number = " << n << endl;   
-        //string subMasterFileName = OUTPREFIX + "-workitems-" 
-            //+ boost::lexical_cast<string>(n) + ".txt";
-   
-        ///
-        /// map, collate reduce
-        ///
-        //uint32_t nVecRes;
-        double map_time;
-        if (LOGORNOT) {
-            map_time = MPI_Wtime();
-            LOG << LOGMSG << "map() starts: " <<  map_time << endl;
-        }
-        
-        ////////////////////////////////////////////////////
-        //mr->map(nWORKITEMS, &mr_run_blast, &vWORKITEM);
-        mr->map(nWORKITEMS, &mr_run_blast, (void*)NULL);
-        ////////////////////////////////////////////////////
-        
-        if (LOGORNOT) LOG << LOGMSG 
-            << "map() ends: " <<  MPI_Wtime() - map_time << endl;
-                            
-        WORKEROUTPUTFNAME = OUTPREFIX + "-hits-" 
-            + boost::lexical_cast<string>(n) + "-" 
-            + boost::lexical_cast<string>(MYRANK) + ".txt";
-        
-        double collate_time;
-        if (LOGORNOT) {
-             collate_time = MPI_Wtime();
-             LOG << LOGMSG << "collate starts: " << collate_time << endl;
-        }
-        
-        //////////////////
-        mr->collate(NULL);
-        //////////////////
-        
-        if (LOGORNOT) LOG << LOGMSG 
-            << "collate ends: " << MPI_Wtime() - collate_time << endl;
-        
-        double reduce_time;
-        if (LOGORNOT) {
-             reduce_time= MPI_Wtime();
-             LOG << LOGMSG << "reduce starts: " << reduce_time << endl;
-        }
-        
-        /////////////////////////////////////////////////
-        mr->reduce(&mr_sort_multivalues_by_evalue, NULL);
-        /////////////////////////////////////////////////
-        
-        if (LOGORNOT) LOG << LOGMSG 
-            << "reduce ends: " <<  MPI_Wtime() - reduce_time << endl;
-        
-        ///
-        /// Save history
-        ///
-        //if (MYRANK == 0) {                
-            //string histFileName = OUTPREFIX + "-history.txt";
-            //ofstream histFile(histFileName.c_str(), ios::out | ios::app);
-            //if (!histFile) {
-                //cerr << "ERROR: failed to open a history file" << endl;
-                //MPI_Abort(MPI_COMM_WORLD, 1);
-            //}
-            //else {
-                //time_t timer;
-                //timer = time(NULL);
-                //histFile << subMasterFileName << "," 
-                         //<< asctime(localtime(&timer));
-            //}
-            //histFile.close();
-        //}            
-        //MPI_Barrier(MPI_COMM_WORLD);           
-    //} /// n iterations
-         
+    //uint32_t nVecRes;
+    double map_time;
+    if (LOGORNOT) {
+        map_time = MPI_Wtime();
+        LOG << LOGMSG << "map() starts: " <<  map_time << endl;
+    }
+    
+    ////////////////////////////////////////////////////
+    //mr->map(nWORKITEMS, &mr_run_blast, &vWORKITEM);
+    mr->map(nWORKITEMS, &mr_run_blast, (void*)NULL);
+    ////////////////////////////////////////////////////
+    
+    if (LOGORNOT) LOG << LOGMSG 
+        << "map() ends: " <<  MPI_Wtime() - map_time << endl;
+                        
+    WORKEROUTPUTFNAME = OUTPREFIX + "-hits-" 
+        + boost::lexical_cast<string>(MYRANK) + ".txt";
+    
+    double collate_time;
+    if (LOGORNOT) {
+         collate_time = MPI_Wtime();
+         LOG << LOGMSG << "collate starts: " << collate_time << endl;
+    }
+    
+    //////////////////
+    mr->collate(NULL);
+    //////////////////
+    
+    if (LOGORNOT) LOG << LOGMSG 
+        << "collate ends: " << MPI_Wtime() - collate_time << endl;
+    
+    double reduce_time;
+    if (LOGORNOT) {
+         reduce_time= MPI_Wtime();
+         LOG << LOGMSG << "reduce starts: " << reduce_time << endl;
+    }
+    
+    /////////////////////////////////////////////////
+    mr->reduce(&mr_sort_multivalues_by_evalue, NULL);
+    /////////////////////////////////////////////////
+    
+    if (LOGORNOT) LOG << LOGMSG 
+        << "reduce ends: " <<  MPI_Wtime() - reduce_time << endl;
+             
     if (TIMING) {
         /// Wall-clock time
         gettimeofday(&totalEndTime, NULL);
@@ -733,11 +668,6 @@ void mr_run_blast(int itask,
                   KeyValue* kv, 
                   void* ptr)
 {
-    //vector<STRUCTWORKITEM> *wi = (vector<STRUCTWORKITEM>*) ptr;
-    //uint32_t s = (*wi)[itask].bStart;
-    //uint32_t e = (*wi)[itask].bEnd;
-    //uint32_t d = (*wi)[itask].dbName;
-    
     uint32_t s = vWORKITEM[itask].bStart;
     uint32_t e = vWORKITEM[itask].bEnd;
     uint32_t d = vWORKITEM[itask].dbName;

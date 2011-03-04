@@ -86,16 +86,6 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 /// Added by ssul
 ///
 #include <iostream>
-//extern int MYRANK;
-//#include <vector>
-////const int MAXSTR = 255;
-//typedef struct structWorkItem { 
-    //uint32_t bStart; 
-    //uint32_t bEnd; 
-    //uint32_t dbName;
-//} STRUCTWORKITEM;
-////std::vector<STRUCTWORKITEM> vWORKITEM;
-//extern std::vector<std::string> vDBFILE;
 
 /* ----------------------------------------------------------------------
    construct using caller's MPI communicator

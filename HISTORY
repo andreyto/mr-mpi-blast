@@ -87,10 +87,10 @@
     
     03.01.2011
         - Change index file format to <start_offset, bp_length>
-        - Add bp block size
+        - Change to use the number of base-pairs as a query block size
 
     03.04.2011
-        - Add new location-aware scheduler and test
+        - Add a new location-aware scheduler and test
         
         
         
