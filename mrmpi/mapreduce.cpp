@@ -81,6 +81,22 @@ int compare_strn_reverse(char *, int, char *, int);
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
+
+///
+/// Added by ssul
+///
+#include <iostream>
+//extern int MYRANK;
+//#include <vector>
+////const int MAXSTR = 255;
+//typedef struct structWorkItem { 
+    //uint32_t bStart; 
+    //uint32_t bEnd; 
+    //uint32_t dbName;
+//} STRUCTWORKITEM;
+////std::vector<STRUCTWORKITEM> vWORKITEM;
+//extern std::vector<std::string> vDBFILE;
+
 /* ----------------------------------------------------------------------
    construct using caller's MPI communicator
    perform no MPI_init() and no MPI_Finalize()
@@ -1144,7 +1160,6 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
-
     }
     ///
     /// Here I add my mapstyle (mapstyle=3) to implement location-aware
@@ -1174,13 +1189,13 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
     /// never have to be loaded again (because each was scanned against all 
     /// 40 work items).
     ///
-    else if (mapstyle == 3) {
-        if (me == 0) {
+    else if (mapstyle == 3) {        
+        if (me == 0) {            
             int doneflag = -1;
             int ndone = 0;
             int itask = 0;
             for (int iproc = 1; iproc < nprocs; iproc++) {
-                if (itask < ntask) {
+                if (itask < ntask) {                    
                     MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
                     itask++;
                 }
@@ -1193,29 +1208,34 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 int iproc, tmp;
                 MPI_Recv(&tmp, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
-
+                
                 if (itask < ntask) {
-                    MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
+                    int next = (tmp + (nprocs - 1));
+                    if (next < ntask) {
+                        MPI_Send(&next, 1, MPI_INT, iproc, 0, comm);
+                        itask++;
+                    }
+                    else {
+                        MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
+                        ndone++;
+                    }
                 }
                 else {
                     MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
                     ndone++;
                 }
             }
-
         }
         else {
             while (1) {
                 int itask;
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
-                if (itask < 0) break;
+                if (itask < 0) break;                
                 if (files) appmapfile(itask, files[itask], kv, appptr);
                 else appmaptask(itask, kv, appptr);
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
-
     }
     else error->all("Invalid mapstyle setting");
 

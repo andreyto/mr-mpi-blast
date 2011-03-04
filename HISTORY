@@ -1,7 +1,10 @@
-  MPI-MR-BLAST: Parallelizing BLAST on MR-MPI
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
+  MPI-MR-BLAST: Parallelizing BLAST using  MapReduce-MPI
 
   Author: Seung-Jin Sul
           (ssul@jcvi.org)
+
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
 
   Revisions
 
@@ -77,9 +80,21 @@
         - Add TIMING option for comparing elapsed times. 
         
     02.22.2011
-        - Add -l option for setting db name list file
-        - Add -c option for setting configuration file
-        - Change subject id type from uint_32t to char[256]
-        - Add Boost mmap query file
+        - Instead of setting in conf file, add -l option for setting db name list file and -c option for setting configuration file
+        - Change subject id type from uint_32t to char[256] to support generic hit result
+        - Add Boost mmaped query file
         - Upgrade mr-mpi to 11FEB2011 version
     
+    03.01.2011
+        - Change index file format to <start_offset, bp_length>
+        - Add bp block size
+
+    03.04.2011
+        - Add new location-aware scheduler and test
+        
+        
+        
+        
+        
+        
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
