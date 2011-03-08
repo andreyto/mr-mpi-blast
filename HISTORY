@@ -80,8 +80,10 @@
         - Add TIMING option for comparing elapsed times. 
         
     02.22.2011
-        - Instead of setting in conf file, add -l option for setting db name list file and -c option for setting configuration file
-        - Change subject id type from uint_32t to char[256] to support generic hit result
+        - Instead of setting in conf file, add -l option for setting db name 
+          list file and -c option for setting configuration file
+        - Change subject id type from uint_32t to char[MAXSTR] to support generic 
+          hit result
         - Add Boost mmaped query file
         - Upgrade mr-mpi to 11FEB2011 version
     
@@ -92,7 +94,12 @@
     03.04.2011
         - Add a new location-aware scheduler and test
         
-        
+    03.07.2011
+        - Add mmap/munmap DB files with MAP_SHARED | MAP_POPULATE | MAP_LOCKED 
+          flags
+        - Collect rank orders per node and use the numbers for initial work item 
+          assignment
+        - Add OUTOFCORE, NUCLDBLOC and PROTDBLOC in the conf. file.
         
         
         

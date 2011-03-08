@@ -86,6 +86,13 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 /// Added by ssul
 ///
 #include <iostream>
+#include <vector>
+typedef struct structWorkItem { 
+    uint32_t bStart; 
+    uint32_t bEnd; 
+    uint32_t dbName;
+} STRUCTWORKITEM;
+extern std::vector<STRUCTWORKITEM> vWORKITEM;
 
 /* ----------------------------------------------------------------------
    construct using caller's MPI communicator
@@ -1179,11 +1186,12 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
     /// never have to be loaded again (because each was scanned against all 
     /// 40 work items).
     ///
-    else if (mapstyle == 3) {        
+    else if (mapstyle == 3) {                
         if (me == 0) {            
             int doneflag = -1;
             int ndone = 0;
             int itask = 0;
+            
             for (int iproc = 1; iproc < nprocs; iproc++) {
                 if (itask < ntask) {                    
                     MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);

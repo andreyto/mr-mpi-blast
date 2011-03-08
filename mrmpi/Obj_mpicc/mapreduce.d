@@ -146,4 +146,8 @@ mapreduce.o: mapreduce.cpp /home/ssul/work/packages2/include/mpi.h \
   /home/ssul/work/packages2/include/openmpi/ompi/mpi/cxx/file_inln.h \
   /usr/include/sys/stat.h /usr/include/bits/stat.h /usr/include/dirent.h \
   /usr/include/bits/dirent.h mapreduce.h version.h mrtype.h keyvalue.h \
-  keymultivalue.h spool.h irregular.h hash.h memory.h error.h
+  keymultivalue.h spool.h irregular.h hash.h memory.h error.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/vector \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stl_vector.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/stl_bvector.h \
+  /local/packages/gcc-4.1.2/bin/../lib/gcc/x86_64-unknown-linux-gnu/4.1.2/../../../../include/c++/4.1.2/bits/vector.tcc

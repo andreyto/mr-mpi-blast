@@ -1,11 +1,11 @@
-////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////
 //
 //  MPI-MR-BLAST: Parallelizing BLAST on MR-MPI
 //
 //  Author: Seung-Jin Sul
 //          (ssul@jcvi.org)
 //
-//  Last updated: 02/08/2011
+//  Last updated: 03/08/2011
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -105,6 +105,8 @@ boost::iostreams::mapped_file_source MMAPIFILE; /// Read-only Boost mmap index f
 int VERBOSITY;              /// log from mr-mpi lib
 int TIMER;                  /// log elapsed time for each mapreduce call 
 int MEMSIZE;                /// # the page size (in Mbytes)
+int OUTOFCORE;
+
 int EXCLUSIONTHRESHOLD;     /// Exclusion threshold = 100bp
 bool EXCLUSIONORNOT;
 string EXCLUSIONHISTFNAME;
@@ -140,6 +142,8 @@ bool ISPROTEIN = false;
 /// Blast target DB setting
 static CSearchDatabase* PTARGETDB = 0;
 string PREVDBNAME;
+void* MMAPDBADDR = 0;
+size_t PREVDBSIZE;
 
 /// Import search strategy
 string STRATEGYFNAME;    /// Input blast search option file
@@ -200,6 +204,15 @@ uint32_t nQBLOCKS;
 uint32_t nWORKITEMS;
 int QSIZE; /// block size in base-pair
 /// ----------------------------------------------------------------------------
+
+ 
+/// 
+/// mmap db files
+///
+#include <sys/mman.h>
+#include <fcntl.h>
+string NUCLDBLOC;
+string PROTDBLOC;
 
 /// ----------------------------------------------------------------------------
 /// MR-MPI CALLS
@@ -371,7 +384,10 @@ int main(int argc, char** argv)
             TIMER = boost::lexical_cast<int>(
                 parameters["TIMER"]);
             MEMSIZE = boost::lexical_cast<int>(
-                parameters["MEMSIZE"]);         
+                parameters["MEMSIZE"]);      
+            OUTOFCORE = boost::lexical_cast<int>(
+                parameters["OUTOFCORE"]);         
+                
             EXCLUSIONTHRESHOLD = boost::lexical_cast<int>(
                 parameters["EXCLUSIONTHRESHOLD"]);     
             LOGORNOT = boost::lexical_cast<int>(
@@ -382,6 +398,11 @@ int main(int argc, char** argv)
                 parameters["OPTDUMP"]);
             LOGFNAME = boost::lexical_cast<string>(
                 parameters["LOGFNAME"]);
+                
+            NUCLDBLOC = boost::lexical_cast<string>(
+                parameters["NUCLDBLOC"]);
+            PROTDBLOC = boost::lexical_cast<string>(
+                parameters["PROTDBLOC"]);
         }
         catch(const boost::bad_lexical_cast &) {
             cerr << "Exception: bad_lexical_cast" << endl;
@@ -406,12 +427,13 @@ int main(int argc, char** argv)
     ///
     /// MPI setup
     ///
-    int MPI_nProcs, MPI_lenProcName;    
+    int MPI_nProcs, MPI_ProcNameLen; 
+    MPI_Status status;    
     MPI_Init(&argc, &argv);    
     MPI_Comm_rank(MPI_COMM_WORLD, &MYRANK);
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
-    MPI_Get_processor_name(MPIPROCNAME, &MPI_lenProcName);
-    
+    MPI_Get_processor_name(MPIPROCNAME, &MPI_ProcNameLen);
+        
     /// Log file init
     if (LOGORNOT || TIMING) {
         LOGFNAME = OUTPREFIX + "-" 
@@ -450,7 +472,7 @@ int main(int argc, char** argv)
     }
     
     /// 
-    /// MR-MPI init
+    /// MR-MPI init (FEB112011 version)
     ///    
     /// mapstyle = 0 (chunk) or 1 (stride) or 2 (master/slave)
     /// all2all = 0 (irregular communication) or 1 (use MPI_Alltoallv)
@@ -472,14 +494,11 @@ int main(int argc, char** argv)
     mr->memsize = MEMSIZE;
     mr->keyalign = sizeof(uint32_t); /// The key is a begin offset 
     mr->mapstyle = MAPSTYLE;         /// master/slave mode=2, custom scheduler=3
-    mr->outofcore = -1;              /// disable out-of-core 
-    MPI_Barrier(MPI_COMM_WORLD);
+    mr->outofcore = OUTOFCORE;
+    MPI_Barrier(MPI_COMM_WORLD);   
         
     ///
-    /// Make a file for map() which contains a list of file
-    /// names. A file name is a form of "queryFile,dbChunkName"
-    /// In map(), the file name is splitted into "queryFile" and
-    /// "dbChunkName". We've got 109 DB chunks (Jul 2010).
+    ///
     ///
     double master_init_time;
     if (LOGORNOT) master_init_time = MPI_Wtime();
@@ -497,7 +516,7 @@ int main(int argc, char** argv)
         vDBFILE.push_back(line);
     dbListFile.close();        
     nDBFILES = vDBFILE.size();
-    
+
     ///
     /// Load index file
     ///
@@ -530,7 +549,9 @@ int main(int argc, char** argv)
     }
     nQBLOCKS = vQSTART.size();
 
+    ///
     /// Create work items
+    ///    
     for (size_t k = 0; k < nDBFILES; k++) {
         size_t i = 0;
         for (i = 0; i < nQBLOCKS - 1; i++) {
@@ -538,28 +559,27 @@ int main(int argc, char** argv)
             uint32_t qe = vQSTART[i + 1] - 1;
             STRUCTWORKITEM wi;
             wi.bStart = qs;
-            wi.bEnd   = qe;            
-            wi.dbName = k;  
+            wi.bEnd = qe;
+            wi.dbName = k;
             vWORKITEM.push_back(wi);
         }
         STRUCTWORKITEM wi;
         wi.bStart = vQSTART[nQBLOCKS - 1];
-        wi.bEnd   = realFileSize; 
-        wi.dbName = k;  
-        vWORKITEM.push_back(wi);  
-    }        
-    nWORKITEMS = vWORKITEM.size();        
-        
-    if (MYRANK == 0) {
+        wi.bEnd = realFileSize;
+        wi.dbName = k;
+        vWORKITEM.push_back(wi);
+    }
+    nWORKITEMS = vWORKITEM.size(); 
+
+    if (MYRANK == 0) {         
         cout << "Number of query blocks = " << nQBLOCKS << endl;     
         cout << "Number of DB files = " << nDBFILES << endl; 
         cout << "Number of work items = " << nWORKITEMS << endl;
     }
- 
+    
     ///
     /// map, collate reduce
     ///
-    //uint32_t nVecRes;
     double map_time;
     if (LOGORNOT) {
         map_time = MPI_Wtime();
@@ -567,8 +587,7 @@ int main(int argc, char** argv)
     }
     
     ////////////////////////////////////////////////////
-    //mr->map(nWORKITEMS, &mr_run_blast, &vWORKITEM);
-    mr->map(nWORKITEMS, &mr_run_blast, (void*)NULL);
+    mr->map(nWORKITEMS, &mr_run_blast, &vWORKITEM);
     ////////////////////////////////////////////////////
     
     if (LOGORNOT) LOG << LOGMSG 
@@ -650,6 +669,7 @@ int main(int argc, char** argv)
     
     delete mr;
     delete PTARGETDB;
+
     MMAPQFILE.close();
     MPI_Finalize();
             
@@ -668,10 +688,10 @@ void mr_run_blast(int itask,
                   KeyValue* kv, 
                   void* ptr)
 {
+    uint32_t d = vWORKITEM[itask].dbName;
     uint32_t s = vWORKITEM[itask].bStart;
     uint32_t e = vWORKITEM[itask].bEnd;
-    uint32_t d = vWORKITEM[itask].dbName;
-    
+        
     struct timeval blastcallStartTime;
     struct timeval blastcallEndTime;
     struct timeval blastcallStart_u_Time;
@@ -724,6 +744,48 @@ void mr_run_blast(int itask,
     string dbChunkName = vDBFILE[d];
     if(PTARGETDB == 0 || dbChunkName != PREVDBNAME) {
         delete PTARGETDB;
+        if (MMAPDBADDR != 0) {
+            if (munmap(MMAPDBADDR, PREVDBSIZE) == -1) {
+                cerr << "ERROR: failed to munmap DB file\n";
+                MPI_Abort(MPI_COMM_WORLD, 1);
+                exit(1);
+            }
+        }
+        
+        string dbFileName;
+        if (ISPROTEIN) 
+            dbFileName = PROTDBLOC + dbChunkName + ".psq";
+        else 
+            dbFileName = NUCLDBLOC + dbChunkName + ".nsq";
+            
+        struct stat sb;
+        int fd = open(dbFileName.c_str(), O_RDONLY);
+        if (fd == -1) {
+            cerr << "ERROR: failed to open DB file to mmap\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            exit(1);
+        }
+        if (fstat(fd, &sb) == -1) { /// To obtain file size 
+            cerr << "ERROR: failed to get the length of DB file\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            exit(1);
+        }        
+        
+        MMAPDBADDR = mmap(0, sb.st_size, PROT_READ, MAP_SHARED | MAP_POPULATE | MAP_LOCKED , fd, 0);
+        if (MMAPDBADDR == MAP_FAILED) {
+            MMAPDBADDR = mmap(0, sb.st_size, PROT_READ, MAP_SHARED | MAP_POPULATE , fd, 0);
+            if (MMAPDBADDR == MAP_FAILED) {
+                MMAPDBADDR = mmap(0, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+                if (MMAPDBADDR == MAP_FAILED) {
+                    cerr << "ERROR: failed to mmap DB file\n";
+                    MPI_Abort(MPI_COMM_WORLD, 1);
+                    exit(1);
+                }        
+            }
+        }
+        close(fd);
+        PREVDBSIZE = sb.st_size;
+        
         if (ISPROTEIN) 
             PTARGETDB = new CSearchDatabase(dbChunkName,
                                         CSearchDatabase::eBlastDbIsProtein);
