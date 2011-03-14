@@ -97,11 +97,14 @@
     03.07.2011
         - Add mmap/munmap DB files with MAP_SHARED | MAP_POPULATE | MAP_LOCKED 
           flags
+        - Add OUTOFCORE, NUCLDBLOC and PROTDBLOC in the conf. file.
         - Collect rank orders per node and use the numbers for initial work item 
           assignment
-        - Add OUTOFCORE, NUCLDBLOC and PROTDBLOC in the conf. file.
         
+    03.10.2011
+        - Add a new location-aware scheduler based on active DB count per node
         
-        
+    03.13.2011
+        - Change the prev DB in the scheduler for improving DB name hit ratio.
         
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 

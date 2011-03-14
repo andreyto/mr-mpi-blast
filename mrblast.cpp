@@ -5,7 +5,7 @@
 //  Author: Seung-Jin Sul
 //          (ssul@jcvi.org)
 //
-//  Last updated: 03/08/2011
+//  Last updated: 02/08/2011
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -127,10 +127,9 @@ int LOGORNOT = 0;
 int TIMING = 0;
 int OPTDUMP = 0;            /// For dumping Blast opts out
 int CNT = 0;
-char MPIPROCNAME[MAXSTR];
 string LOGFNAME;
 string LOGMSG;
-#define NDEBUG 1
+//#define NDEBUG 1
 ofstream LOGFILE;
 ostream* LOGSTREAM = NULL;
 #define LOG (*LOGSTREAM)
@@ -155,9 +154,10 @@ const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
 string OUTPREFIX;           /// Prefix string for output file names
 string INDEXFNAME;
 string QUERYFNAME;
-int nITERATIONS;             /// iteration number
+//int nITERATIONS;             /// iteration number
 int MAPSTYLE = 0;
-int MYRANK;                   /// MPI rank
+int MYRANK;                 /// MPI rank
+char MPIPROCNAME[MAXSTR];   /// MPI procname
 
 /// For syncronized timing
 #ifndef MPI_WTIME_IS_GLOBAL
@@ -191,9 +191,9 @@ string WORKEROUTPUTFNAME = "";
 /// ----------------------------------------------------------------------------
 typedef struct structIndex { uint32_t qStart; uint32_t qLength; } STRUCTINDEX;
 typedef struct structWorkItem { 
+    uint32_t dbNum;
     uint32_t bStart; 
     uint32_t bEnd; 
-    uint32_t dbName;
 } STRUCTWORKITEM;
 vector<string> vDBFILE;
 vector<uint32_t> vQSTART;
@@ -203,12 +203,19 @@ uint32_t nQUERIES;
 uint32_t nQBLOCKS;  
 uint32_t nWORKITEMS;
 int QSIZE; /// block size in base-pair
+multimap<string, int> mmPROCNAMERANK;
+map<int, string> mRANKPROCNAME;
+//vector<int> vRANKORDER;
 /// ----------------------------------------------------------------------------
 
- 
+
+//#include <boost/multi_array.hpp>
+//typedef boost::multi_array<uint32_t, 3> ARRAY_3D_T;
+//ARRAY_3D_T WORKITEM;
+
+
 /// 
 /// mmap db files
-///
 #include <sys/mman.h>
 #include <fcntl.h>
 string NUCLDBLOC;
@@ -270,9 +277,9 @@ int main(int argc, char** argv)
     
     po::options_description OptionalDesc("Optional options");
     OptionalDesc.add_options()         
-        ("iteration,n", 
-            po::value<int>(&nITERATIONS)->default_value(1), 
-            "set the number of iterations")            
+        //("iteration,n", 
+            //po::value<int>(&nITERATIONS)->default_value(1), 
+            //"set the number of iterations")            
         ("output-prefix,o", 
             po::value<string>(&OUTPREFIX)->default_value("output"), 
             "set output prefix for output file names (default=output)")
@@ -352,8 +359,8 @@ int main(int argc, char** argv)
         ///
         if (vm.count("output-prefix")) 
             OUTPREFIX = vm["output-prefix"].as<string>();
-        if (vm.count("iteration")) 
-            nITERATIONS = vm["iteration"].as<int>();
+        //if (vm.count("iteration")) 
+            //nITERATIONS = vm["iteration"].as<int>();
         if (vm.count("map-style")) 
             MAPSTYLE = vm["map-style"].as<int>();
         if (vm.count("self-exclusion")) 
@@ -433,7 +440,24 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &MYRANK);
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_nProcs);
     MPI_Get_processor_name(MPIPROCNAME, &MPI_ProcNameLen);
-        
+    
+    char pname[MAXSTR];
+    int ranknum;
+    multimap<string, int>::iterator itr_mmProcNameRank;
+
+    if (MYRANK == 0) {
+        for (size_t i = 1; i < MPI_nProcs; i++) {
+            MPI_Recv(&ranknum, 1, MPI_INT, i, 0, MPI_COMM_WORLD, &status);
+            MPI_Recv(&pname, MAXSTR, MPI_CHAR, i, 0, MPI_COMM_WORLD, &status);
+            mmPROCNAMERANK.insert(pair<string, int>(pname, ranknum));            
+            mRANKPROCNAME.insert(pair<int, string>(ranknum, pname));
+        }
+    }
+    else {
+        MPI_Send(&MYRANK, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+        MPI_Send(&MPIPROCNAME, MAXSTR, MPI_CHAR, 0, 0, MPI_COMM_WORLD);
+    }
+ 
     /// Log file init
     if (LOGORNOT || TIMING) {
         LOGFNAME = OUTPREFIX + "-" 
@@ -453,12 +477,9 @@ int main(int argc, char** argv)
     struct rusage ru_total;
         
     if (TIMING) {        
-        /// MPI_Wtime 
-        profile_time = MPI_Wtime();
-        /// Wall-clock time
-        gettimeofday(&totalStartTime, NULL);
-        /// Process time
-        getrusage(RUSAGE_SELF, &ru_total);
+        profile_time = MPI_Wtime(); /// MPI_Wtime 
+        gettimeofday(&totalStartTime, NULL); /// Wall-clock time
+        getrusage(RUSAGE_SELF, &ru_total); /// Process time
         totalStart_u_Time = ru_total.ru_utime;
         totalStart_s_Time = ru_total.ru_stime;
         LOG << "mr-mpi-blast starts," 
@@ -503,79 +524,81 @@ int main(int argc, char** argv)
     double master_init_time;
     if (LOGORNOT) master_init_time = MPI_Wtime();
     
-    /// 
-    /// Load DB file list
-    ///
-    string line;
-    ifstream dbListFile(DBFNAME.c_str(), ios::in);
-    if (!dbListFile.is_open()) {
-        cerr << "ERROR: DB list file open error.\n";
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }    
-    while (!getline(dbListFile, line).eof() && line.length() > 0) 
-        vDBFILE.push_back(line);
-    dbListFile.close();        
-    nDBFILES = vDBFILE.size();
+    //if (MYRANK == 0) {
+        /// 
+        /// Load DB file list
+        ///
+        string line;
+        ifstream dbListFile(DBFNAME.c_str(), ios::in);
+        if (!dbListFile.is_open()) {
+            cerr << "ERROR: DB list file open error.\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }    
+        while (!getline(dbListFile, line).eof() && line.length() > 0) 
+            vDBFILE.push_back(line);
+        dbListFile.close();        
+        nDBFILES = vDBFILE.size();
 
-    ///
-    /// Load index file
-    ///
-    ifstream indexFile(INDEXFNAME.c_str(), ios::in);
-    if (!indexFile.is_open()) {
-        cerr << "ERROR: index file open error.\n";
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-    while (!getline(indexFile, line).eof() && line.length() > 0) {
-        vector<string> vInd;
-        boost::split(vInd, line, boost::is_any_of(","));
-        STRUCTINDEX si;
-        si.qStart  = boost::lexical_cast<uint32_t>(vInd[0]);
-        si.qLength = boost::lexical_cast<uint32_t>(vInd[1]);
-        vINDEX.push_back(si);
-    }
-    indexFile.close();        
-    nQUERIES = vINDEX.size();
-    
-    ///
-    /// Fill vQStarts vector from the index file using QSIZE
-    ///        
-    uint32_t qsize_curr = QSIZE;
-    for (size_t i = 0; i < nQUERIES; i++) {
-        if (qsize_curr >= QSIZE) {
-            vQSTART.push_back(vINDEX[i].qStart);
-            qsize_curr = 0;
+        ///
+        /// Load index file
+        ///
+        ifstream indexFile(INDEXFNAME.c_str(), ios::in);
+        if (!indexFile.is_open()) {
+            cerr << "ERROR: index file open error.\n";
+            MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        qsize_curr += vINDEX[i].qLength;
-    }
-    nQBLOCKS = vQSTART.size();
+        while (!getline(indexFile, line).eof() && line.length() > 0) {
+            vector<string> vInd;
+            boost::split(vInd, line, boost::is_any_of(","));
+            STRUCTINDEX si;
+            si.qStart  = boost::lexical_cast<uint32_t>(vInd[0]);
+            si.qLength = boost::lexical_cast<uint32_t>(vInd[1]);
+            vINDEX.push_back(si);
+        }
+        indexFile.close();        
+        nQUERIES = vINDEX.size();
+        
+        ///
+        /// Fill vQStarts vector from the index file using QSIZE
+        ///        
+        uint32_t qsize_curr = QSIZE;
+        for (size_t i = 0; i < nQUERIES; i++) {
+            if (qsize_curr >= QSIZE) {
+                vQSTART.push_back(vINDEX[i].qStart);
+                qsize_curr = 0;
+            }
+            qsize_curr += vINDEX[i].qLength;
+        }
+        nQBLOCKS = vQSTART.size();
 
-    ///
-    /// Create work items
-    ///    
-    for (size_t k = 0; k < nDBFILES; k++) {
-        size_t i = 0;
-        for (i = 0; i < nQBLOCKS - 1; i++) {
-            uint32_t qs = vQSTART[i];
-            uint32_t qe = vQSTART[i + 1] - 1;
+        ///
+        /// Create work items
+        ///      
+        for (size_t k = 0; k < nDBFILES; k++) {
+            size_t i = 0;
+            for (i = 0; i < nQBLOCKS - 1; i++) {
+                uint32_t qs = vQSTART[i];
+                uint32_t qe = vQSTART[i + 1] - 1;
+                STRUCTWORKITEM wi;
+                wi.bStart = qs;
+                wi.bEnd = qe;
+                wi.dbNum = k;
+                vWORKITEM.push_back(wi);
+            }
             STRUCTWORKITEM wi;
-            wi.bStart = qs;
-            wi.bEnd = qe;
-            wi.dbName = k;
+            wi.bStart = vQSTART[nQBLOCKS - 1];
+            wi.bEnd = realFileSize;
+            wi.dbNum = k;
             vWORKITEM.push_back(wi);
         }
-        STRUCTWORKITEM wi;
-        wi.bStart = vQSTART[nQBLOCKS - 1];
-        wi.bEnd = realFileSize;
-        wi.dbName = k;
-        vWORKITEM.push_back(wi);
-    }
-    nWORKITEMS = vWORKITEM.size(); 
-
-    if (MYRANK == 0) {         
-        cout << "Number of query blocks = " << nQBLOCKS << endl;     
-        cout << "Number of DB files = " << nDBFILES << endl; 
-        cout << "Number of work items = " << nWORKITEMS << endl;
-    }
+        nWORKITEMS = vWORKITEM.size(); 
+    
+        if (MYRANK == 0) {         
+            cout << "Number of query blocks = " << nQBLOCKS << endl;     
+            cout << "Number of DB files = " << nDBFILES << endl; 
+            cout << "Number of work items = " << nWORKITEMS << endl;
+        }
+    //} /// master
     
     ///
     /// map, collate reduce
@@ -587,7 +610,8 @@ int main(int argc, char** argv)
     }
     
     ////////////////////////////////////////////////////
-    mr->map(nWORKITEMS, &mr_run_blast, &vWORKITEM);
+    //mr->map(nWORKITEMS, &mr_run_blast, &vWORKITEM);
+    mr->map(nWORKITEMS, &mr_run_blast, (void*)NULL);
     ////////////////////////////////////////////////////
     
     if (LOGORNOT) LOG << LOGMSG 
@@ -688,10 +712,10 @@ void mr_run_blast(int itask,
                   KeyValue* kv, 
                   void* ptr)
 {
-    uint32_t d = vWORKITEM[itask].dbName;
+    uint32_t d = vWORKITEM[itask].dbNum;
     uint32_t s = vWORKITEM[itask].bStart;
     uint32_t e = vWORKITEM[itask].bEnd;
-        
+    
     struct timeval blastcallStartTime;
     struct timeval blastcallEndTime;
     struct timeval blastcallStart_u_Time;
@@ -741,8 +765,8 @@ void mr_run_blast(int itask,
     ///
     /// Target db name setting
     ///
-    string dbChunkName = vDBFILE[d];
-    if(PTARGETDB == 0 || dbChunkName != PREVDBNAME) {
+    string dbFName = vDBFILE[d];
+    if(PTARGETDB == 0 || dbFName != PREVDBNAME) {
         delete PTARGETDB;
         if (MMAPDBADDR != 0) {
             if (munmap(MMAPDBADDR, PREVDBSIZE) == -1) {
@@ -754,9 +778,9 @@ void mr_run_blast(int itask,
         
         string dbFileName;
         if (ISPROTEIN) 
-            dbFileName = PROTDBLOC + dbChunkName + ".psq";
+            dbFileName = PROTDBLOC + dbFName + ".psq";
         else 
-            dbFileName = NUCLDBLOC + dbChunkName + ".nsq";
+            dbFileName = NUCLDBLOC + dbFName + ".nsq";
             
         struct stat sb;
         int fd = open(dbFileName.c_str(), O_RDONLY);
@@ -787,13 +811,13 @@ void mr_run_blast(int itask,
         PREVDBSIZE = sb.st_size;
         
         if (ISPROTEIN) 
-            PTARGETDB = new CSearchDatabase(dbChunkName,
+            PTARGETDB = new CSearchDatabase(dbFName,
                                         CSearchDatabase::eBlastDbIsProtein);
         else
-            PTARGETDB = new CSearchDatabase(dbChunkName,
+            PTARGETDB = new CSearchDatabase(dbFName,
                                         CSearchDatabase::eBlastDbIsNucleotide);
     }
-    PREVDBNAME = dbChunkName;
+    PREVDBNAME = dbFName;
 
     ///
     /// Read sequence block and run blast
@@ -820,7 +844,7 @@ void mr_run_blast(int itask,
                 + qBuildStart_u_Time.tv_usec << ","
             << qBuildStart_s_Time.tv_sec*1000000 
                 + qBuildStart_s_Time.tv_usec << ","
-            << dbChunkName << "," << CNT << "," << MPIPROCNAME 
+            << dbFName << "," << CNT << "," << MPIPROCNAME 
             << "," << s << endl;
         LOG.flush();
     }
@@ -885,7 +909,7 @@ void mr_run_blast(int itask,
                 + blastcallStart_u_Time.tv_usec << ","
             << blastcallStart_s_Time.tv_sec*1000000 
                 + blastcallStart_s_Time.tv_usec << ","
-            << dbChunkName << "," << CNT << "," << MPIPROCNAME 
+            << dbFName << "," << CNT << "," << MPIPROCNAME 
             << "," << s << endl;
         LOG.flush();
     }
@@ -913,7 +937,7 @@ void mr_run_blast(int itask,
                 + blastcallEnd_u_Time.tv_usec << ","
             << blastcallEnd_s_Time.tv_sec*1000000 
                 + blastcallEnd_s_Time.tv_usec << "," 
-            << dbChunkName << "," << CNT << "," << MPIPROCNAME 
+            << dbFName << "," << CNT << "," << MPIPROCNAME 
             << "," << s << endl;
         LOG.flush();
     }    
@@ -944,8 +968,8 @@ void mr_run_blast(int itask,
         CConstRef<CSeq_align_set> aln_set = results[i].GetSeqAlign();
 
         if (results[i].HasAlignments()) {
-            ITERATE(CSeq_align_set::Tdata, itr, aln_set->Get()) {
-                const CSeq_align& s = **itr;
+            ITERATE(CSeq_align_set::Tdata, itr_res, aln_set->Get()) {
+                const CSeq_align& s = **itr_res;
                 
                 ///
                 /// VERY IMPORTANT!!
