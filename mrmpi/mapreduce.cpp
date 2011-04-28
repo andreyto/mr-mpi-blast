@@ -90,33 +90,20 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 #include <map>
 #include <boost/dynamic_bitset.hpp>
 using namespace std;
-typedef struct structWorkItem { 
-    uint32_t dbNum;
-    uint32_t bStart; 
-    uint32_t bEnd;     
-} STRUCTWORKITEM;
-extern vector<STRUCTWORKITEM> vWORKITEM;
-extern int MYRANK;
-//const int MAXSTR = 80;
-//extern char MPIPROCNAME[MAXSTR];
-extern multimap<string, int> mmPROCNAMERANK;
-extern map<int, string> mRANKPROCNAME;
-extern vector<string> vDBFILE;
-extern int nDBFILES;
-extern int nWORKITEMS;
-
-//#include <algorithm>
-//#include <iterator>
-//#include <boost/bind.hpp>
-//#include <boost/iterator/counting_iterator.hpp>
-#include <boost/foreach.hpp>
-#include <boost/format.hpp>
-#define foreach         BOOST_FOREACH
-#define reverse_foreach BOOST_REVERSE_FOREACH
-
-typedef multimap<string, vector<int> > MMSVI_T;
-typedef pair<string, vector<int> > PSVI_T;
-typedef multimap<int,int> MMII_T;
+typedef struct structWorkItem {
+    uint32_t dbNo;
+    uint32_t bStart;
+    uint32_t bEnd;
+} structWorkItem_t;
+extern vector<structWorkItem_t> g_vecWorkItem;
+extern multimap<string, int> g_multimapProcNameRank; 
+extern map<int, string> g_mapRankProcName;
+extern int g_numDbFiles;
+extern int g_numWorkItems;
+extern int g_MPI_myRank;         
+typedef multimap<string, vector<int> > multimapSVI_t;
+typedef pair<string, vector<int> > pairVI_t;
+typedef multimap<int,int> multimapII_t;
 
 
 /* ----------------------------------------------------------------------
@@ -133,7 +120,7 @@ MapReduce::MapReduce(MPI_Comm caller)
     comm = caller;
     MPI_Comm_rank(comm, &me);
     MPI_Comm_size(comm, &nprocs);
-
+    
     defaults();
 }
 
@@ -1093,21 +1080,23 @@ uint64_t MapReduce::map(int nstr, char **strings,
  * @param itaskDone
  * @param mmdba
  */
-inline void delete_db_assigned(int iproc, int itaskDone, MMSVI_T &mmdba) 
+inline void delete_db_assigned(int iproc, 
+                               int itaskDone, 
+                               multimapSVI_t &mmDbAssigned) 
 {
-    string ndname = mRANKPROCNAME[iproc];
-    assert(ndname.length() > 0);
-    pair<MMSVI_T::iterator, MMSVI_T::iterator> mmDbAssignedPair 
-        = mmdba.equal_range(ndname);
-    MMSVI_T::iterator itr = mmDbAssignedPair.first;
-    assert(itr != mmdba.end());
-    (itr->second)[vWORKITEM[itaskDone].dbNum]--;
+    string nodeName = g_mapRankProcName[iproc];
+    assert(nodeName.length() > 0);
+    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair 
+        = mmDbAssigned.equal_range(nodeName);
+    multimapSVI_t::iterator itr = mmDbAssignedPair.first;
+    assert(itr != mmDbAssigned.end());
+    (itr->second)[g_vecWorkItem[itaskDone].dbNo]--;
     
     /// debug print bit string
-    //itr = mmdba.begin();
-    //cout << "mmDbAssigned deleted: " << mmdba.size() << "\n";
-    //for (; itr != mmdba.end(); ++itr) {
-        //for (size_t j = 0; j < nDBFILES; j++)
+    //itr = mmDbAssigned.begin();
+    //cout << "mmDbAssigned deleted: " << mmDbAssigned.size() << "\n";
+    //for (; itr != mmDbAssigned.end(); ++itr) {
+        //for (size_t j = 0; j < g_numDbFiles; j++)
             //cout << (itr->second)[j] << ",";
         //cout << endl;
     //}
@@ -1115,32 +1104,32 @@ inline void delete_db_assigned(int iproc, int itaskDone, MMSVI_T &mmdba)
             
 /** 
  * @param iproc
- * @param itaskDone
+ * @param itask
  * @param mmdba
  */            
 inline void save_db_assigned(int iproc, 
                              int itask, 
-                             MMSVI_T &mmdba)
+                             multimapSVI_t &mmDbAssigned)
 {
-    string ndname = mRANKPROCNAME[iproc];
-    assert(ndname.length() > 0);
-    pair<MMSVI_T::iterator, MMSVI_T::iterator> mmDbAssignedPair 
-        = mmdba.equal_range(ndname);
-    MMSVI_T::iterator itr = mmDbAssignedPair.first;
-    if (itr == mmdba.end() ) {
-        vector<int> vDbAssigned(nDBFILES, 0);
-        vDbAssigned[vWORKITEM[itask].dbNum]++;
-        mmdba.insert(PSVI_T(ndname, vDbAssigned));
+    string nodeName = g_mapRankProcName[iproc];
+    assert(nodeName.length() > 0);
+    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair 
+        = mmDbAssigned.equal_range(nodeName);
+    multimapSVI_t::iterator itr = mmDbAssignedPair.first;
+    if (itr == mmDbAssigned.end() ) {
+        vector<int> vDbAssigned(g_numDbFiles, 0);
+        vDbAssigned[g_vecWorkItem[itask].dbNo]++;
+        mmDbAssigned.insert(pairVI_t(nodeName, vDbAssigned));
     }
     else {
-        (itr->second)[vWORKITEM[itask].dbNum]++;
+        (itr->second)[g_vecWorkItem[itask].dbNo]++;
     }
     
     /// debug print bit string
-    //itr = mmdba.begin();
-    //cout << "mmDbAssigned saved: " << mmdba.size() << "\n";
-    //for (; itr != mmdba.end(); ++itr) {
-        //for (size_t j = 0; j < nDBFILES; j++)
+    //itr = mmDbAssigned.begin();
+    //cout << "mmDbAssigned saved: " << mmDbAssigned.size() << "\n";
+    //for (; itr != mmDbAssigned.end(); ++itr) {
+        //for (size_t j = 0; j < g_numDbFiles; j++)
             //cout << (itr->second)[j] << ",";
         //cout << endl;
     //}
@@ -1148,73 +1137,73 @@ inline void save_db_assigned(int iproc,
 
 /** Sort by max. count and found the ranking of max count.
  * @param iproc
- * @param v
+ * @param mmSortedDbMaxCount
+ * @param mmDbAssigned
  */
 inline void get_sorted_dbcount(int iproc, 
-                               MMII_T &mms, 
-                               MMSVI_T &mmdba)
+                               multimapII_t &mmSortedDbMaxCount, 
+                               multimapSVI_t &mmDbAssigned)
 {
     /// get a vector<int> db_assigned_count of the node for iproc
-    string ndname = mRANKPROCNAME[iproc];
-    assert(ndname.length() > 0);
-    pair<MMSVI_T::iterator, MMSVI_T::iterator> mmDbAssignedPair 
-        = mmdba.equal_range(ndname);
-    MMSVI_T::iterator itr = mmDbAssignedPair.first;
-    assert(itr != mmdba.end());
+    string nodeName = g_mapRankProcName[iproc];
+    assert(nodeName.length() > 0);
+    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair 
+        = mmDbAssigned.equal_range(nodeName);
+    multimapSVI_t::iterator itr = mmDbAssignedPair.first;
+    assert(itr != mmDbAssigned.end());
     
     /// now we need to get the ranks of the count and the index
     /// just copy the count to map<int, int>, where first=count, second=index    
-    vector<size_t> v(nDBFILES);
-    for (size_t i = 0; i < nDBFILES; i++) v[i] = i;
-    std::transform ((itr->second).begin(), (itr->second).end(),
-                    v.begin(),
-                    std::inserter(mms, mms.begin()),
+    vector<size_t> v(g_numDbFiles);
+    for (size_t iDb = 0; iDb < g_numDbFiles; iDb++) v[iDb] = iDb;
+    std::transform ((itr->second).begin(), (itr->second).end(), v.begin(),
+                    std::inserter(mmSortedDbMaxCount, mmSortedDbMaxCount.begin()),
                     std::make_pair<int,int>);
-    //for (size_t i = 0; i < nDBFILES; i++) {
-        //mms.insert(pair<int, int>((itr->second)[i], i));
+    //for (size_t iDb = 0; iDb < g_numDbFiles; iDb++) {
+        //mmSortedDbMaxCount.insert(pair<int, int>((itr->second)[iDb], iDb));
     //}
     
     /// debug
-    //MMII_T::const_iterator itr_sdba = mms.begin();
-    //cout << "mmSortedDbCount: " << mms.size() << "\n";
-    //for (; itr_sdba != mms.end(); ++itr_sdba)
+    //multimapII_t::const_iterator itr_sdba = mmSortedDbMaxCount.begin();
+    //cout << "mmSortedDbCount: " << mmSortedDbMaxCount.size() << "\n";
+    //for (; itr_sdba != mmSortedDbMaxCount.end(); ++itr_sdba)
         //cout << itr_sdba->first << "," << itr_sdba->second << endl;
     //cout << endl;
 }
 
 /** 
+ * @param nAassigned
  * @param iproc
- * @param dbname
- * @param bswi
- * @param mmdba
+ * @param prevDbNo
+ * @param bsWorkItemAssigned
+ * @param mmDbAssigned
  */
-inline int get_next_itask(int nassigned,
-                          //int newstartloc,
+inline int get_next_itask(int nAassigned,
                           int iproc, 
-                          int prevdbnum,
-                          boost::dynamic_bitset<> &bswi, 
-                          MMSVI_T &mmdba)
+                          int prevDbNo,
+                          boost::dynamic_bitset<> &bsWorkItemAssigned, 
+                          multimapSVI_t &mmDbAssigned)
 {
-    int next = -1;
-    for (size_t i = nassigned; i < nWORKITEMS; i++) {
-        if (!bswi[i]) {
-            if (vWORKITEM[i].dbNum == prevdbnum) {
-                bswi[i] = true;
-                save_db_assigned(iproc, i, mmdba);
-                next = i;
+    int nextWorkItemNo = -1;
+    for (size_t iWi = nAassigned; iWi < g_numWorkItems; iWi++) {
+        if (!bsWorkItemAssigned[iWi]) {
+            if (g_vecWorkItem[iWi].dbNo == prevDbNo) {
+                bsWorkItemAssigned[iWi] = true;
+                save_db_assigned(iproc, iWi, mmDbAssigned);
+                nextWorkItemNo = iWi;
                 break;
             }
         }
     }
  
-    return next;
+    return nextWorkItemNo;
 }
 
                     
 uint64_t MapReduce::map_tasks(int ntask, char **files,
                               void (*appmaptask)(int, KeyValue *, void *),
                               void (*appmapfile)(int, char *,
-                                      KeyValue *, void *),
+                              KeyValue *, void *),
                               void *appptr, int addflag, int selfflag)
 {
     MPI_Status status;
@@ -1293,7 +1282,6 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                     ndone++;
                 }
             }
-
         }
         else {
             while (1) {
@@ -1348,112 +1336,151 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
 
     else if (mapstyle == 3) {                
         if (me == 0) { /// master          
-            int doneflag = -1;
-            int ndone = 0;
+            int doneFlag = -1;
+            int nDone = 0;
             int itask = 0;
             
             ///
             /// Initial distribution //////////////////////////////////////////
             ///
-            boost::dynamic_bitset<> bsWiAssigned(nWORKITEMS, false);
-            MMSVI_T mmDbAssigned;
-            int newProcNum;
+            boost::dynamic_bitset<> bsWorkItemAssigned(g_numWorkItems, false);
+            multimapSVI_t mmDbAssigned;
+            int newProcNo;
             int nAssigned = 0;
             
             ///
             /// For the case of being assinged with rank numbers which are not
-            /// serial in a node. mmPROCNAMERANK has a list of rank orders 
+            /// serial in a node. g_multimapProcNameRank has a list of rank orders 
             /// per node. i.e. node 0 has rank {0,3,6,9}
             ///
-            multimap<string, int>::iterator itr = mmPROCNAMERANK.begin();
+            multimap<string, int>::iterator itr = g_multimapProcNameRank.begin();
             for (int iproc = 1; iproc < nprocs; iproc++, ++itr) {
                 if (itask < ntask) {                    
                     ///Orig: MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
-                    newProcNum = itr->second;
-                    bsWiAssigned[itask] = true;
+                    newProcNo = itr->second;
+                    bsWorkItemAssigned[itask] = true;
                     save_db_assigned(iproc, itask, mmDbAssigned);
-                    
-                    MPI_Send(&itask, 1, MPI_INT, newProcNum, 0, comm);
+                    //cout << "SEND1: rank,dbname,workitem," << newProcNo
+                        //<< "," << g_vecWorkItem[itask].dbNo
+                        //<< "," << itask << endl;
+                    MPI_Send(&itask, 1, MPI_INT, newProcNo, 0, comm);
                     itask++;                    
                 }
                 else {
-                    ///Orig: MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    newProcNum = itr->second;
-                    MPI_Send(&doneflag, 1, MPI_INT, newProcNum, 0, comm);
-                    ndone++;
+                    ///Orig: MPI_Send(&doneFlag, 1, MPI_INT, iproc, 0, comm);
+                    newProcNo = itr->second;
+                    MPI_Send(&doneFlag, 1, MPI_INT, newProcNo, 0, comm);
+                    nDone++;
                 }
             }
-            /// Save itask to ignore the work items assigned
+            /// Save the current "itask" to ignore the work items assigned
             nAssigned = itask; 
             
             
             ///
             /// Load-balancing stage //////////////////////////////////////////
             /// 
-            int newDbNum = -1;
-            while (ndone < nprocs - 1) {
+            int newDbNo = -1;
+            while (nDone < nprocs - 1) {
                 int iproc, itaskDone;
-                int next = -1;
+                int nextWorkItemFound = -1;
                                 
                 MPI_Recv(&itaskDone, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
                                 
-                /// Pick a work item that maintains the db on a given rank                
-                int dbNum;
-                if (newDbNum == -1) dbNum = vWORKITEM[itaskDone].dbNum;                
-                else dbNum = newDbNum;
+                /// Pick a work item that maintains the db name on a given rank                
+                int dbNo;
+                if (newDbNo == -1) dbNo = g_vecWorkItem[itaskDone].dbNo;                
+                else dbNo = newDbNo;
                 
-                next = get_next_itask(nAssigned, iproc, 
-                                      dbNum, 
-                                      bsWiAssigned, mmDbAssigned);
+                nextWorkItemFound = get_next_itask(nAssigned, iproc, 
+                                                   dbNo, 
+                                                   bsWorkItemAssigned, 
+                                                   mmDbAssigned);
                 
-                bool bMiss1 = false;
-                if (next == -1) bMiss1 = true;
+                bool bIsMiss1 = false;
+                //if (nextWorkItemFound != -1) {
+                    //cout << "HIT1: rank,prevdbname,newdbname,nextworkitem," << iproc 
+                        //<< "," << g_vecWorkItem[itaskDone].dbNo 
+                        //<< "," << g_vecWorkItem[nextWorkItemFound].dbNo 
+                        //<< "," << nextWorkItemFound << "," 
+                        //<< endl;
+                    //cout.flush();
+                //}
+                //else { 
+                    //bIsMiss1 = true;
+                    //cout << "MISS1: rank,prevdbname,newdbname,nextworkitem," << iproc 
+                        //<< "," << g_vecWorkItem[itaskDone].dbNo 
+                        //<< "," << dbNo
+                        //<< "," << nextWorkItemFound << "," 
+                        //<< endl;
+                    //cout.flush();
+                //}
+                if (nextWorkItemFound == -1) bIsMiss1 = true;
                     
                 ///
                 /// If such is not available, pick a work item that matches 
                 /// the db with the max. count currently active on the node.
                 /// Then try the 2nd largest max. count and so on.
                 ///
-                int tempDbNum;
+                int tempDbNo;
                 int nTrial = 0;
-                if (next == -1) {
+                if (nextWorkItemFound == -1) {
                     /// Decrease the db count 
                     delete_db_assigned(iproc, itaskDone, mmDbAssigned);
                                         
                     /// Get the active max db count from mmDbAssigned and 
                     /// save the counts in asc order in mmSortedDbCount
-                    MMII_T mmSortedDbCount;
-                    get_sorted_dbcount(iproc, mmSortedDbCount, mmDbAssigned);                    
+                    multimapII_t mmSortedDbMaxCount;
+                    get_sorted_dbcount(iproc, mmSortedDbMaxCount, mmDbAssigned);                    
                     
                     /// Try to find the next work item which has a db name with
                     /// the max. count on the current node
-                    MMII_T::reverse_iterator ritr = mmSortedDbCount.rbegin();
-                    for (; ritr != mmSortedDbCount.rend(); ++ritr) {
+                    multimapII_t::reverse_iterator ritr = mmSortedDbMaxCount.rbegin();
+                    for (; ritr != mmSortedDbMaxCount.rend(); ++ritr) {
                         /// ritr->second is the db num index and
                         /// ritr->first is the actual count value
-                        tempDbNum = ritr->second;
-                        next = get_next_itask(nAssigned, iproc, 
-                                              tempDbNum, 
-                                              bsWiAssigned, mmDbAssigned);
+                        tempDbNo = ritr->second;
+                        nextWorkItemFound = get_next_itask(nAssigned, iproc, 
+                                              tempDbNo, 
+                                              bsWorkItemAssigned, mmDbAssigned);
                         nTrial++;
-                        if (next != -1) break;
+                        if (nextWorkItemFound != -1) break;
                     }
                 }   
                 
                 /// Set new DB num for assigning the next work item(s)
-                if (bMiss1) {
-                    if (next != -1) newDbNum = tempDbNum;
-                    else newDbNum = -1;
+                //if (bIsMiss1) {
+                    //if (nextWorkItemFound != -1) {
+                        //newDbNo = tempDbNo;
+                        //cout << "db num changed to=" << newDbNo << endl;
+                        //cout << "HIT2: rank,newdbname,nextworkitem,ntrial," << iproc 
+                            //<< "," << tempDbNo
+                            //<< "," << nextWorkItemFound << "," << nTrial 
+                            //<< endl;
+                        //cout.flush();
+                    //}
+                    //else { 
+                        //newDbNo = -1;
+                        //cout << "MISS2: rank,dbname,workitem,ntrial," << iproc 
+                            //<< "," << tempDbNo
+                            //<< "," << nextWorkItemFound << "," << nTrial 
+                            //<< endl;
+                        //cout.flush();
+                    //}
+                //}
+                if (bIsMiss1) {
+                    if (nextWorkItemFound != -1) newDbNo = tempDbNo;
+                    else newDbNo = -1;
                 }
                 
                 if (itask < ntask) {
-                    MPI_Send(&next, 1, MPI_INT, iproc, 0, comm);
+                    MPI_Send(&nextWorkItemFound, 1, MPI_INT, iproc, 0, comm);
                     itask++;
                 }
                 else {
-                    MPI_Send(&doneflag, 1, MPI_INT, iproc, 0, comm);
-                    ndone++;
+                    MPI_Send(&doneFlag, 1, MPI_INT, iproc, 0, comm);
+                    nDone++;
                 }
             }
         }

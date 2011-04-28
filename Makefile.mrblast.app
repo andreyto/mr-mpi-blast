@@ -5,52 +5,55 @@
 APP = mrblast
 SRC = mrblast
 
+
 ### MPI ########################################################################
 CC = mpicc
-
-### Open MPI
+## Open MPI
 #CXX = mpic++
-### MVAPICH
+## MVAPICH
 CXX = mpicxx
 
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 
 
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
-### MR-MPI Lib
+### dir setting ################################################################
+## For me
+MRMPI_HOME = /home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi
+BOOST_HOME = /home/ssul/work/packages2
+
+## For Ranger
+#MRMPI_HOME = /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/mrmpi
+#BOOST_HOME = /opt/apps/gcc4_4/boost/1.39.0
+#BOOST_HOME = /work/01471/ssul/work/packages3
+
+
+### MR-MPI Lib #################################################################
 #MRMPI_USRLIB = -lmrmpi
 #MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
 
-### For Ranger
-#MRMPI_USRLIB = -L/work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/#mr-mpi-blast/mrmpi -lmrmpi
-
-MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi_mpicc
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
+## For Ranger
+#MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi
+MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicc
 
 
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
-### Boost Lib
+### Boost Lib #################################################################
+## For Ranger
+#BOOST_INCLUDE = -I$(BOOST_HOME)/include/boost-1_39
+#BOOST_USRLIB = -L$(BOOST_HOME)/lib -lboost_program_options-gcc44-mt
 
-### For Ranger
-#BOOST_USRLIB = -L/opt/apps/gcc4_4/boost/1.39.0/lib -lboost_program_options-gcc44-mt
-#BOOST_INCLUDE = -I/work/01471/ssul/work/packages3/include
-#BOOST_INCLUDE = -I/work/01471/ssul/work/packages3/include
-#BOOST_USRLIB = -L/work/01471/ssul/work/packages3/lib -lboost_program_options -lboost_iostreams -lboost_filesystem
-#BOOST_INCLUDE = -I/opt/apps/gcc4_4/boost/1.39.0/include/boost-1_39
+#BOOST_INCLUDE = -I$(BOOST_HOME)/include
+#BOOST_USRLIB = -L$(BOOST_HOME)/lib -lboost_program_options -lboost_iostreams -lboost_filesystem
 
-#BOOST_USRLIB = -L/home/ssul/work/packages2/x86_64-rhel5/lib -lboost_program_options-gcc41-mt
-### boost_1_45_0
-BOOST_INCLUDE = -I/home/ssul/work/packages2/include
-
-### Boost program options
-#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options 
-#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options 
-### Boost mmap
-BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_iostreams -lboost_filesystem
+## For me: boost_1_45_0
+BOOST_INCLUDE = -I$(BOOST_HOME)/include
+BOOST_USRLIB = -L$(BOOST_HOME)/lib -lboost_program_options -lboost_iostreams -lboost_filesystem
 ### Boost.Log
-#BOOST_USRLIB = -L/home/ssul/work/packages2/lib -lboost_program_options -lboost_log -lboost_log_setup
-### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 
+#BOOST_USRLIB = -L$(BOOST_HOME)/lib -lboost_program_options -lboost_log -lboost_log_setup
+
+
+
+
 
 
 CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)

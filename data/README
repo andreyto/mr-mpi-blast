@@ -1,0 +1,4 @@
+Example of running MR-MPI Blast
+
+
+mpirun -np 8 ./mrblast -i 10seqs.query -d 10seqs.query.idx -c mrblast.ini -l dbchunks.txt -s option.txt -b 300 -m 3 -p 0 
