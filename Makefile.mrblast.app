@@ -33,7 +33,9 @@ BOOST_HOME = /home/ssul/work/packages2
 #MRMPI_USRLIB = -L/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi -lmrmpi
 
 ## For Ranger
-#MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi
+#MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicxx
+
+## For me
 MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicc
 
 
