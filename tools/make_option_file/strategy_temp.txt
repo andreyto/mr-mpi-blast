@@ -1,6 +1,6 @@
 Blast4-request ::= {
   body queue-search {
-    program "blastp",
+    program "blastn",
     service "plain",
     queries bioseq-set {
       seq-set {
@@ -9,106 +9,69 @@ Blast4-request ::= {
             local str "Query_1"
           },
           descr {
-            title "gi|4557231|ref|NP_000007.1| medium-chain specific acyl-CoA
- dehydrogenase, mitochondrial isoform a precursor [Homo sapiens]",
+            title "gi|222299687|1|579|0|400",
             user {
               type str "CFastaReader",
               data {
                 {
                   label str "DefLine",
-                  data str ">gi|4557231|ref|NP_000007.1| medium-chain specific
- acyl-CoA dehydrogenase, mitochondrial isoform a precursor [Homo sapiens]"
+                  data str ">gi|222299687|1|579|0|400"
                 }
               }
             }
           },
           inst {
             repr raw,
-            mol aa,
-            length 421,
-            seq-data ncbieaa "MAAGFGRCCRVLRSISRFHWRSQHTKANRQREPGLGFSFEFTEQQKEF
-QATARKFAREEIIPVAAEYDKTGEYPVPLIRRAWELGLMNTHIPENCGGLGLGTFDACLISEELAYGCTGVQTAIEGN
-SLGQMPIIIAGNDQQKKKYLGRMTEEPLMCAYCVTEPGAGSDVAGIKTKAEKKGDEYIINGQKMWITNGGKANWYFLL
-ARSDPDPKAPANKAFTGFIVEADTPGIQIGRKELNMGQRCSDTRGIVFEDVKVPKENVLIGDGAGFKVAMGAFDKTRP
-VVAAGAVGLAQRALDEATKYALERKTFGKLLVEHQAISFMLAEMAMKVELARMSYQRAAWEVDSGRRNTYYASIAKAF
-AGDIANQLATDAVQILGGNGFNTEYPVEKLMRDAKIYQIYEGTSQIQRLIVAREHIDKYKN"
+            mol na,
+            length 400,
+            seq-data ncbi2na '227512F8CA40B899A8BE22828AE47AE73A23C408CA2F8049
+9D526F5EBBE478411724CA04A479C482E88ACA252AF82CA8CA1388AFED3C2AA88E493D71CACA81
+C93E8C490AAD2F1CD4B93EACA3B53AB8EC4C8F020A0B2CACB3282281272D7B0A90EFCB2223'H
           }
         }
       }
     },
-    subject database "/usr/local/projects/DB/nr/nr_20110117/nr.00",
+    subject database "nt.00",
     algorithm-options {
       {
         name "DbLength",
-        value big-integer 0
+        value big-integer 3000000000
       },
       {
         name "EvalueThreshold",
-        value cutoff e-value { 1, 10, 1 }
-      },
-      {
-        name "GapOpeningCost",
-        value integer 11
-      },
-      {
-        name "GapExtensionCost",
-        value integer 1
+        value cutoff e-value { 1, 10, -4 }
       },
       {
         name "GapXDropoff",
-        value real { 15, 10, 0 }
-      },
-      {
-        name "GapXDropoffFinal",
-        value real { 25, 10, 0 }
+        value real { 15, 10, 1 }
       },
       {
         name "WordSize",
-        value integer 3
-      },
-      {
-        name "EffectiveSearchSpace",
-        value big-integer 0
-      },
-      {
-        name "MaskAtHash",
-        value boolean FALSE
-      },
-      {
-        name "SegFiltering",
-        value boolean TRUE
-      },
-      {
-        name "MatrixName",
-        value string "BLOSUM62"
-      },
-      {
-        name "WordThreshold",
         value integer 11
       },
       {
-        name "Culling",
-        value integer 0
+        name "MismatchPenalty",
+        value integer -5
       },
       {
-        name "WindowSize",
-        value integer 40
+        name "MatchReward",
+        value integer 4
       },
       {
-        name "HitlistSize",
-        value integer 500
+        name "MaskAtHash",
+        value boolean TRUE
+      },
+      {
+        name "DustFiltering",
+        value boolean TRUE
       },
       {
         name "UngappedMode",
         value boolean FALSE
       },
       {
-        name "CompositionBasedStats",
-        value integer 2
-      },
-      {
-        name "SmithWatermanMode",
-        value boolean FALSE
+        name "HitlistSize",
+        value integer 10000
       }
     }
   }

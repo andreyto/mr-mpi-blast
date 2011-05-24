@@ -5,7 +5,7 @@
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 04/28/2011
+//  Last updated: 05/23/2011
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -98,19 +98,6 @@ namespace pod = boost::program_options::detail;
 boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap query file
 uint32_t g_realFileSize;
 
-/// For pairwiase Blast
-#include <objtools/blast/seqdb_reader/seqdbexpert.hpp>
-#include <objtools/blast/blastdb_format/seq_writer.hpp>
-#include <objtools/blast/blastdb_format/blastdb_formatter.hpp>
-#include <objtools/blast/blastdb_format/blastdb_seqid.hpp>
-#include <algo/blast/api/blast_exception.hpp>
-typedef vector< CRef<CBlastDBSeqId> > vecBlDbSeqId_t;
-
-/// For pairwise BLAST
-#include <algo/blast/api/bl2seq.hpp>
-/// Seq_descr
-//#include <objects/seq/Seq_descr.hpp>
-
 
 /// ----------------------------------------------------------------------------
 /// Settings from mrblast.ini conf file
@@ -130,7 +117,7 @@ string g_exclHistFileName;
 string g_dbFileName;
 string g_configFileName;
 int g_numDbFiles;
-const int MAXSTR = 80;  
+const int MAXSTR = 80;      /// For mpi proc name and query header
 
 
 /// ----------------------------------------------------------------------------
@@ -172,28 +159,12 @@ uint32_t g_numWorkItems;
 uint32_t g_blockSize; /// block size in base-pair
 multimap<string, int> g_multimapProcNameRank; /// dict of rank by proc name
 map<int, string> g_mapRankProcName;           /// dict of proc name by rank 
-
-
-/// ----------------------------------------------------------------------------
-/// New scheduler with reader workers
-/// ----------------------------------------------------------------------------
-int g_MPI_blastMasterRank;
-int g_MPI_readerMasterRank;
-int g_numReaderWorkers;
-int g_MPI_rankInBlastGroup;
-int g_MPI_rankInReaderGroup;
-#include <boost/dynamic_bitset.hpp>
-#define MPI_TAG_EXIT  1
-#define MPI_TAG_REQ   2
-#define MPI_TAG_DONE  3
-#define MPI_TAG_FASTA 4
-MPI_Comm MPI_blastComm = MPI_COMM_NULL;
-MPI_Comm MPI_readerComm = MPI_COMM_NULL;
-
+ 
+ 
 /// ----------------------------------------------------------------------------
 /// Misc.
 /// ----------------------------------------------------------------------------
-const int MAXSTR2 = 20;     /// For KVing subject ID of blast hits. possible KMvec overflow
+const int SUB_ID_LEN = 20;  /// For KVing subject ID of blast hits. possible KMvec overflow
 const int QUERY = 0;        /// To retireve query info from CSeq_align
 const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
 string g_outFilePrefix;     /// Prefix string for output file names
@@ -209,7 +180,7 @@ bool g_bIsProtein = false;
 /// Blast target DB setting
 static CSearchDatabase *g_pTargetDb = 0;
 string g_prevDbName = "";
-string g_subject = "";      /// subject sequences for CBl2Seq pairwiase Blast
+
 
 /// Import search strategy
 string g_strategyFileName;  /// Input blast search option file
@@ -223,7 +194,7 @@ string g_strategyFileName;  /// Input blast search option file
 /// subject id, % identity, alignment length, nMismatches, gap opens,
 /// q. start, q. end, s. start, s. end, evalue, bit score
 typedef struct structBlRes {
-    char subjectId[MAXSTR2];
+    char subjectId[SUB_ID_LEN];
     double identity;
     uint32_t alignLen;
     int numMismatches;
@@ -244,63 +215,55 @@ typedef struct structEvalue {
 string g_outFileName = "";
 
 
+/// Multiple iterations
+int g_numIter = 1;   
+uint32_t nSubWorkItemFiles = 0;
+uint32_t nWorkItemsPerIter = 0;
+uint32_t nRemains = 0;
+typedef struct structToPass {
+    int rank;
+    int iter;
+} structToPass_t;
+
+
 /// ----------------------------------------------------------------------------
 /// MR-MPI CALLS
 /// ----------------------------------------------------------------------------
 void mr_run_blast(int itask, KeyValue *kv, void *ptr);
-void mr_run_pairwise_blast(int itask, KeyValue *kv, void *ptr);
 void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, 
                                    int nvalues, int *valuebytes, KeyValue *kv, 
                                    void *ptr);
 inline bool evalue_compare(structEValue_t e1, structEValue_t e2);
-
-/// Check hit exclusion
 inline bool check_exclusion(string qGi, string sGi, int qCutLocStart, 
                             int qCutLocEnd, int sStart, int sEnd, int threshold);
-
 void collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm);
 void run_mr_mpi_blast(MPI_Comm mpiComm, int rank);
-char *extract_fasta_from_db(char *dbFileName);
 
-void mpi_reader_master();
-void mpi_reader_slave();
  
 
-/// ----------------------------------------------------------------------------
 int main(int argc, char **argv)
-/// ----------------------------------------------------------------------------
 {
     po::options_description generalDesc("General options");
     generalDesc.add_options()
-    ("help", "print help message")
-    ("query-file,i", po::value<string>(),
-     "set input query file")
-    ("index-file,d", po::value<string>(),
-     "set input index file")
-    ("import-search-strategy,s", po::value<string>(),
-     "set search strategy file")
-    ("db-list,l", po::value<string>(),
-     "set DB partition name list file")
-    ("conf-file,c", po::value<string>(),
-     "set configuration file")
-    ("block-size,b", po::value<int>(),
-     "set the number of base-pairs per work item")
+    ("help,h", "print help message")
+    ("query-file,i", po::value<string>(), "set input query file")
+    ("index-file,d", po::value<string>(), "set input index file")
+    ("import-search-strategy,s", po::value<string>(), "set search strategy file")
+    ("db-list,l", po::value<string>(), "set DB partition name list file")
+    ("conf-file,c", po::value<string>(), "set configuration file")
+    ("block-size,b", po::value<int>(), "set the number of base-pairs per work item")
     ;
 
     po::options_description OptionalDesc("Optional options");
     OptionalDesc.add_options()
-    ("output-prefix,o",
-     po::value<string>(&g_outFilePrefix)->default_value("output"),
+    ("output-prefix,o", po::value<string>(&g_outFilePrefix)->default_value("output"),
      "set output prefix for output file names (default=output)")
-    ("map-style,m",
-     po::value<int>(&g_mapStyle)->default_value(2),
+    ("map-style,m", po::value<int>(&g_mapStyle)->default_value(2),
      "set MR-MPI mapstyle: 2=master/slave, 3=new scheduler")
-    ("is-protein,p",
-     po::value<bool>(&g_bIsProtein)->default_value(false),
+    ("is-protein,p", po::value<bool>(&g_bIsProtein)->default_value(false),
      "set db type (default=false)")
-    ("num-readers,r",
-     po::value<int>(&g_numReaderWorkers)->default_value(0),
-     "set the number of reader workers (default=0, if > 0, pairwise Blast mode)")
+    ("iteration,n", po::value<int>(&g_numIter)->default_value(1), 
+     "set the number of iterations")          
     ;
 
     po::options_description allDesc("Allowed options");
@@ -370,10 +333,8 @@ int main(int argc, char **argv)
         if (vm.count("output-prefix"))
             g_outFilePrefix = vm["output-prefix"].as<string>();
         if (vm.count("map-style")) g_mapStyle = vm["map-style"].as<int>();
-        if (g_mapStyle == 2 && g_numReaderWorkers > 0) {
-            cerr << "ERROR: mapstyle should be 3 when reader workers are enabled.\n";
-            return 1;
-        }
+        if (vm.count("iteration")) 
+            g_numIter = vm["iteration"].as<int>();
     }
 
     ///
@@ -421,63 +382,16 @@ int main(int argc, char **argv)
     /// MPI setup
     ///
     int MPI_numProcs, MPI_procNameLen;    
-    MPI_Group MPI_worldGroup, MPI_blastGroup, MPI_readerGroup;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &g_MPI_worldRank);
     MPI_Comm_size(MPI_COMM_WORLD, &MPI_numProcs);
     MPI_Get_processor_name(g_MPI_procName, &MPI_procNameLen);
 
     ///
-    /// MPI_Comm_create
+    /// Collect MPI node names and rank number for mapstyle=3 scheduler
     ///
-    int sizeBlastGroup = 0;
-    int sizeReaderGroup = 0;
-    if (g_numReaderWorkers == 0) {
-        /// All procs are designated to blast work
-        /// ...
-
-        /// Collect MPI node names and rank number for mapstyle=3 scheduler
-        collect_mpi_node_name(g_MPI_worldRank, MPI_numProcs, MPI_COMM_WORLD);
-    }
-    else {
-        ///
-        /// Create ranks of two overlapped groups
-        /// MPI_blastMasterRank is the readerMasterRanks and overlapped rank
-        ///
-        sizeBlastGroup = MPI_numProcs - g_numReaderWorkers;
-        sizeReaderGroup = g_numReaderWorkers;        
-        int MPI_blastGroupRankList[sizeBlastGroup]; 
-        int MPI_readerGroupRankList[sizeReaderGroup];
-        g_MPI_blastMasterRank = 0;
-        g_MPI_readerMasterRank = MPI_numProcs - g_numReaderWorkers;
-
-        /// Assign ranks for MPI_blastGroupRankList
-        size_t j = 0;
-        for (size_t i = 0; i < (unsigned)MPI_numProcs; i++) {
-            if (i < (unsigned)sizeBlastGroup) MPI_blastGroupRankList[i] = i;
-            else MPI_readerGroupRankList[j++] = i;
-        }
-
-        /// Create MPI_blastGroup and MPI_readerGroup groups
-        MPI_Comm_group(MPI_COMM_WORLD, &MPI_worldGroup);
-        MPI_Group_incl(MPI_worldGroup, sizeBlastGroup, MPI_blastGroupRankList, 
-                       &MPI_blastGroup);
-        MPI_Group_incl(MPI_worldGroup, sizeReaderGroup, MPI_readerGroupRankList, 
-                       &MPI_readerGroup);
-
-        /// Create MPI communicators
-        MPI_Comm_create(MPI_COMM_WORLD, MPI_blastGroup, &MPI_blastComm);
-        MPI_Comm_create(MPI_COMM_WORLD, MPI_readerGroup, &MPI_readerComm);
-
-        /// Set rank per group
-        MPI_Group_rank(MPI_blastGroup, &g_MPI_rankInBlastGroup);
-        MPI_Group_rank(MPI_readerGroup, &g_MPI_rankInReaderGroup);
-
-        /// Collect MPI node names and rank number for mapstyle=3 scheduler
-        collect_mpi_node_name(g_MPI_rankInBlastGroup, sizeBlastGroup, 
-                              MPI_blastComm);
-    }
-
+    collect_mpi_node_name(g_MPI_worldRank, MPI_numProcs, MPI_COMM_WORLD);
+    
     ///
     /// Creat memory-mapped file for query
     ///
@@ -492,241 +406,119 @@ int main(int argc, char **argv)
     ///
     /// Create work items
     ///
-    //if (g_MPI_worldRank == 0) {
-        ///
-        /// Load DB list 
-        ///
-        string line;
-        ifstream dbListFile(g_dbFileName.c_str(), ios::in);
-        if (!dbListFile.is_open()) {
-            cerr << "ERROR: DB list file open error.\n";
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        while (!getline(dbListFile, line).eof() && line.length() > 0)
-            g_vecDbFile.push_back(line);
-        dbListFile.close();
-        g_numDbFiles = g_vecDbFile.size();
 
-        ///
-        /// Load index file
-        ///
-        ifstream indexFile(g_indexFileName.c_str(), ios::in);
-        if (!indexFile.is_open()) {
-            cerr << "ERROR: index file open error.\n";
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        while (!getline(indexFile, line).eof() && line.length() > 0) {
-            vector<string> vecIndexTokens;
-            boost::split(vecIndexTokens, line, boost::is_any_of(","));
-            structQueryIndex_t queryIndex;
-            queryIndex.qStart  = boost::lexical_cast<uint32_t>(vecIndexTokens[0]);
-            queryIndex.qLength = boost::lexical_cast<uint32_t>(vecIndexTokens[1]);
-            g_vecQueryIndex.push_back(queryIndex);
-        }
-        indexFile.close();
-        g_numQueries = g_vecQueryIndex.size();
+    ///
+    /// Load DB list 
+    ///
+    string line;
+    ifstream dbListFile(g_dbFileName.c_str(), ios::in);
+    if (!dbListFile.is_open()) {
+        cerr << "ERROR: DB list file open error.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    while (!getline(dbListFile, line).eof() && line.length() > 0)
+        g_vecDbFile.push_back(line);
+    dbListFile.close();
+    g_numDbFiles = g_vecDbFile.size();
 
-        ///
-        /// Fill g_vQueryStartLoc vector from the index file using g_blockSize
-        ///
-        uint32_t qSizeCurr = g_blockSize;
-        for (size_t q = 0; q < g_numQueries; q++) {
-            if (qSizeCurr >= (unsigned)g_blockSize) {
-                g_vecQueryStartLoc.push_back(g_vecQueryIndex[q].qStart);
-                qSizeCurr = 0;
-            }
-            qSizeCurr += g_vecQueryIndex[q].qLength;
-        }
-        g_numQueryBlocks = g_vecQueryStartLoc.size();
+    ///
+    /// Load index file
+    ///
+    ifstream indexFile(g_indexFileName.c_str(), ios::in);
+    if (!indexFile.is_open()) {
+        cerr << "ERROR: index file open error.\n";
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    while (!getline(indexFile, line).eof() && line.length() > 0) {
+        vector<string> vecIndexTokens;
+        boost::split(vecIndexTokens, line, boost::is_any_of(","));
+        structQueryIndex_t queryIndex;
+        queryIndex.qStart  = boost::lexical_cast<uint32_t>(vecIndexTokens[0]);
+        queryIndex.qLength = boost::lexical_cast<uint32_t>(vecIndexTokens[1]);
+        g_vecQueryIndex.push_back(queryIndex);
+    }
+    indexFile.close();
+    g_numQueries = g_vecQueryIndex.size();
 
-        ///
-        /// Create work items
-        ///
-        for (size_t d = 0; d < (unsigned)g_numDbFiles; d++) {
-            for (size_t b = 0; b < g_numQueryBlocks - 1; b++) {
-                uint32_t qs = g_vecQueryStartLoc[b];
-                uint32_t qe = g_vecQueryStartLoc[b + 1] - 1;
-                structWorkItem_t aWorkItem;
-                aWorkItem.bStart = qs;
-                aWorkItem.bEnd = qe;
-                aWorkItem.dbNo = d;
-                g_vecWorkItem.push_back(aWorkItem);
-            }
+    ///
+    /// Fill g_vQueryStartLoc vector from the index file using g_blockSize
+    ///
+    uint32_t qSizeCurr = g_blockSize;
+    for (size_t q = 0; q < g_numQueries; q++) {
+        if (qSizeCurr >= (unsigned)g_blockSize) {
+            g_vecQueryStartLoc.push_back(g_vecQueryIndex[q].qStart);
+            qSizeCurr = 0;
+        }
+        qSizeCurr += g_vecQueryIndex[q].qLength;
+    }
+    g_numQueryBlocks = g_vecQueryStartLoc.size();
+
+    ///
+    /// Create work items
+    /// Here we iterate query block ID with fixing each DB partition name
+    ///
+    for (size_t d = 0; d < (unsigned)g_numDbFiles; d++) {
+        for (size_t b = 0; b < g_numQueryBlocks - 1; b++) {
+            uint32_t qs = g_vecQueryStartLoc[b];
+            uint32_t qe = g_vecQueryStartLoc[b + 1] - 1;
             structWorkItem_t aWorkItem;
-            aWorkItem.bStart = g_vecQueryStartLoc[g_numQueryBlocks - 1];
-            aWorkItem.bEnd = g_realFileSize;
+            aWorkItem.bStart = qs;
+            aWorkItem.bEnd = qe;
             aWorkItem.dbNo = d;
             g_vecWorkItem.push_back(aWorkItem);
         }
-        g_numWorkItems = g_vecWorkItem.size();
+        structWorkItem_t aWorkItem;
+        aWorkItem.bStart = g_vecQueryStartLoc[g_numQueryBlocks - 1];
+        aWorkItem.bEnd = g_realFileSize;
+        aWorkItem.dbNo = d;
+        g_vecWorkItem.push_back(aWorkItem);
+    }
+    g_numWorkItems = g_vecWorkItem.size();
+    
+    if (g_MPI_worldRank == 0) {
+        cout << "Number of query blocks = " << g_numQueryBlocks << endl;
+        cout << "Number of DB files = " << g_numDbFiles << endl;
+        cout << "Number of total work items = " << g_numWorkItems << endl;
+        cout.flush();
+    }
 
-        if (g_MPI_worldRank == 0) {
-            cout << "Number of query blocks = " << g_numQueryBlocks << endl;
-            cout << "Number of DB files = " << g_numDbFiles << endl;
-            cout << "Number of work items = " << g_numWorkItems << endl;
-            cout.flush();
-        }
-    //} /// master
+    ///
+    /// Calculate sub work item size for multiple iterations
+    ///
+    if (g_numIter != 1) {
+        nSubWorkItemFiles = g_numIter;
+        nWorkItemsPerIter = (g_numQueryBlocks / g_numIter) * g_numDbFiles;            
+        nRemains = (g_numQueryBlocks % g_numIter) * g_numDbFiles;
+    }
+    else { 
+        nWorkItemsPerIter = g_numWorkItems;
+        nRemains = 0;
+        nSubWorkItemFiles = 1;
+    }
+    if (nRemains) nSubWorkItemFiles++; /// for one more added file of remaining work items
+
+    if (g_MPI_worldRank == 0 && g_numIter != 1) {        
+        cout << "Number of sub work item sets = " << nSubWorkItemFiles << endl;
+        cout << "Number of work items per iteration  = " << nWorkItemsPerIter << endl;
+        cout << "Number of work items remaining = " << nRemains << endl;
+    }
+        
+        
     MPI_Barrier(MPI_COMM_WORLD);
 
     ///
     /// Run mr-mpi calls
     ///
-    if (g_numReaderWorkers == 0) {
-        run_mr_mpi_blast(MPI_COMM_WORLD, g_MPI_worldRank);
-    }
-    else {
-        if (g_MPI_rankInBlastGroup != MPI_UNDEFINED) {
-            /// do blast call
-            assert(MPI_blastComm != MPI_COMM_NULL);
-            run_mr_mpi_blast(MPI_blastComm, g_MPI_rankInBlastGroup);
-        }
-        if (g_MPI_rankInReaderGroup != MPI_UNDEFINED) {
-            /// do reader work
-            if (g_MPI_rankInReaderGroup == 0) mpi_reader_master();
-            else mpi_reader_slave();
-        }
-    }
+    run_mr_mpi_blast(MPI_COMM_WORLD, g_MPI_worldRank); 
 
     if (g_MPI_worldRank == 0) cout << "Done!" << endl;
     if (g_logEnabled || g_timingEnabled) g_logFileStream.close();
     g_memmapQueryFile.close(); /// close mmapped file
-
     delete g_pTargetDb; 
-
-    /// Clean MPI_Comms and MPI_Groups
-    if (g_numReaderWorkers > 0) {
-        if (MPI_blastComm != MPI_COMM_NULL) MPI_Comm_free(&MPI_blastComm); 
-        if (MPI_readerComm != MPI_COMM_NULL) MPI_Comm_free(&MPI_readerComm); 
-        MPI_Group_free(&MPI_blastGroup); 
-        MPI_Group_free(&MPI_readerGroup); 
-        MPI_Group_free(&MPI_worldGroup); 
-    }
     MPI_Finalize();
-
-
     return 0;
 }
 
-void mpi_reader_master()
-{
-    ///
-    /// Now wait for a request for sending FASTA seqs is
-    /// sent from a blast worker
-    /// 1. find a reader worker and set it BUSY
-    ///    and send the selected readerWorkderRankId to the
-    ///    blast worker who made the request; If all BUSY, wait...
-    /// 2. send a read task to the reader worker with blWorkderId
-    /// 3. wait for COMPLETE from the reader worker
-    /// 4. set it as FREE and wait...
-    ///
-    MPI_Status status;
-    char buff[MAXSTR];
-    int readerRank;
-    int reqFrom;
-    for (readerRank = 1; readerRank < g_numReaderWorkers; readerRank++) {
-        /// Get a work
-        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        MPI_Recv(buff, MAXSTR, MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG,
-                 MPI_COMM_WORLD, &status);
-        reqFrom = status.MPI_SOURCE;
-        assert(status.MPI_TAG == MPI_TAG_REQ);
-        
-        /// Send work to reader worker
-        MPI_Send((char*)buff, strlen(buff)+1, MPI_CHAR, readerRank, MPI_TAG_REQ,
-                 MPI_readerComm);
-        MPI_Send(&reqFrom, 1, MPI_INT, readerRank, MPI_TAG_REQ,
-                 MPI_readerComm);
-    }
-
-    /// Loop over getting new work requests until getting MPI_TAG_EXIT
-    MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-    if (status.MPI_TAG == MPI_TAG_EXIT) {
-        return;
-    }
-    assert(status.MPI_TAG == MPI_TAG_REQ);
-    MPI_Recv(buff, MAXSTR, MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG,
-             MPI_COMM_WORLD, &status);
-    reqFrom = status.MPI_SOURCE;
-    
-    while (status.MPI_TAG != MPI_TAG_EXIT) {
-        /// Get a dummy result from reader worker
-        /// The FASTA result should be sent to the blast worker directly
-        MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, MPI_TAG_DONE,
-                 MPI_readerComm, &status);
-        int doneFrom = status.MPI_SOURCE;
-        assert(status.MPI_TAG == MPI_TAG_DONE);
-
-        /// Send req to reader worker
-        MPI_Send((char*)buff, strlen(buff)+1, MPI_CHAR, doneFrom, MPI_TAG_REQ,
-                 MPI_readerComm);
-        MPI_Send(&reqFrom, 1, MPI_INT, doneFrom, MPI_TAG_REQ,
-                 MPI_readerComm);
-
-        /// Get a new work
-        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        if (status.MPI_TAG == MPI_TAG_EXIT) {
-            break; /// just for debugging
-        }
-        MPI_Recv(buff, MAXSTR, MPI_CHAR, MPI_ANY_SOURCE, MPI_ANY_TAG,
-                 MPI_COMM_WORLD, &status);
-        reqFrom = status.MPI_SOURCE;
-    }
-
-    /// No more works. Wait for res.
-    for (readerRank = 1; readerRank < g_numReaderWorkers; readerRank++) {
-        MPI_Recv(NULL, 0, MPI_INT, MPI_ANY_SOURCE, MPI_TAG_DONE,
-                 MPI_readerComm, &status);
-        assert(status.MPI_TAG == MPI_TAG_DONE);
-    }
-
-    /// Terminating all reader workers
-    for (readerRank = 1; readerRank < g_numReaderWorkers; readerRank++)
-        MPI_Send(NULL, 0, MPI_INT, readerRank, MPI_TAG_EXIT,
-                 MPI_readerComm);
-}
-
-void mpi_reader_slave()
-{
-    ///
-    /// 1. wait for an order from the reader master
-    /// 2. read the request db and make FASTA seqs
-    ///    and send them to blWorkderId rank
-    ///    and send COMPLETE to the reader master
-    ///
-    MPI_Status status;
-    char buff[MAXSTR];
-    int dest;
-    while (1) {
-        /// Prove msg from the reader master
-        MPI_Probe(0, MPI_ANY_TAG, MPI_readerComm, &status);
-        if (status.MPI_TAG == MPI_TAG_EXIT) return;
-        assert(status.MPI_TAG == MPI_TAG_REQ);
-
-        /// Receive db name and dest rank to send the FASTA
-        MPI_Recv(buff, MAXSTR, MPI_CHAR, 0, MPI_TAG_REQ,
-                 MPI_readerComm, &status);
-        MPI_Recv(&dest, 1, MPI_INT, 0, MPI_TAG_REQ,
-                 MPI_readerComm, &status);
-        
-        /// DEBUG
-        //g_subject = ">gi|222299687|1|579|0|400\nAGAGCTCCACAGTTGATAGGCAAAGTGAGCGCGGGAGTTGAGAGGAAGGAGGTGCACTGGTGCTATGGAGATTACAAAGATAGGAGTTGAAACAGCGCTCCCAGCGTTCCTGGTGTTGCACTGACAACACCTAGCATAGGAACAGGCACTGCTACAGAAGTGGAGAGGTAGGAGCCAGGGTTGAAGTAGGGATAGGACATGAGAGGTTTGTCATTAAGGGGGGAGATGCAGCATTCCTACTAGGTAGGGAACTAGCATTGGATACAGCAAGGGGTCAGTTACTATCCAGTGCATTGGGTAGGATGTCCATGGGTGATGTACATAGATTAAAGAAGGAAGTAGTAGGTAGTATAGGAAGAGGAACAGCTAGTCCTGTAAGGGCAATGTTTAGTAGAGAGAT\n>gi|7|emb|X51700.1| Bos taurus mRNA for bone Gla protein\nGTCCACGCAGCCGCTGACAGACACACCATGAGAACCCCCATGCTGCTCGCCCTGCTGGCCCTGGCCACACTCTGCCTCGCTGGCCGGGCAGATGCAAAGCCTGGTGATGCAGAGTCGGGCAAAGGCGCAGCCTTCGTGTCCAAGCAGGAGGGCAGCGAGGTGGTGAAGAGACTCAGGCGCTACCTGGACCACTGGCTGGGAGCCCCAGCCCCCTACCCAGATCCGCTGGAGCCCAAGAGGGAGGTGTGTGAGCTCAACCCTGACTGTGACGAGCTAGCTGACCACATCGGCTTCCAGGAAGCCTATCGGCGCTTCTACGGCCCAGTCTAGAGCTTGCAGCCCTGCCCACCTGGCTGGCAGCCCCCAGCTCTGGCTTCTCTCCAGGACCCCTCCCCTCCCCGTCATCCCCGCTGCTCTAGAATAAACTCCAGAAGAGG";
-        //int fastaLen = g_subject.length()+1;
-        //char *fasta = (char*)malloc(sizeof(char)*fastaLen);
-        //strncpy(fasta, (const char*)(g_subject.c_str()), fastaLen);
-        ///
-        
-        /// Make FASTA from reqeusted DB 
-        /// and Send FASTA to dest and send done to the reader master
-        char *fasta = extract_fasta_from_db(buff);
-        int fastaLen = strlen(fasta)+1;
-        MPI_Send((char*)fasta, fastaLen, MPI_CHAR, dest, MPI_TAG_FASTA,
-                 MPI_COMM_WORLD);
-        MPI_Send(NULL, 0, MPI_INT, 0, MPI_TAG_DONE,
-                 MPI_readerComm);
-        delete fasta;
-    }
-}
 
 /** MapReduce fuctions
  * @param mpiComm
@@ -798,433 +590,109 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
     pMr->outofcore = g_outOfCore;
     MPI_Barrier(mpiComm);
 
-    ///
-    /// map, collate reduce
-    ///
-    double mapTime;
-    if (g_logEnabled) {
-        mapTime = MPI_Wtime();
-        LOG << g_logMsg << "map() starts: " <<  mapTime << endl;
+    for (int iter = 0; iter < nSubWorkItemFiles; iter++) {
+        if (g_MPI_worldRank == 0) cout << "Iteration: " << iter << endl;
+        if (g_logEnabled) LOG << g_logMsg << "Iteration: " << iter << endl;
+        
+        ///
+        /// map, collate reduce
+        ///
+        double mapTime;
+        if (g_logEnabled) {
+            mapTime = MPI_Wtime();
+            LOG << g_logMsg << "map() starts: " <<  mapTime << endl;
+        }
+    
+        structToPass_t toPass;
+        toPass.rank = rank;
+        toPass.iter = iter;
+        
+        /// ///////////////////////////////////////////////////////
+        if (g_numIter != 1)
+            if (nRemains != 0 && iter == nSubWorkItemFiles - 1) /// if there is additional set of 
+                pMr->map(nRemains, &mr_run_blast, &toPass);
+            else 
+                pMr->map(nWorkItemsPerIter, &mr_run_blast, &toPass);
+        else 
+            pMr->map(g_numWorkItems, &mr_run_blast, &toPass);
+        /// ///////////////////////////////////////////////////////
+
+        if (g_logEnabled)
+            LOG << g_logMsg << "map() ends: " <<  MPI_Wtime() - mapTime << endl;
+
+        g_outFileName = g_outFilePrefix + "-hits-" 
+                        + boost::lexical_cast<string>(iter) + "-"
+                        + boost::lexical_cast<string>(rank) + ".txt";
+                        
+        double collateTime;
+        if (g_logEnabled) {
+            collateTime = MPI_Wtime();
+            LOG << g_logMsg << "collate() starts: " << collateTime << endl;
+        }
+
+        /// ////////////////
+        pMr->collate(NULL);
+        /// ////////////////
+
+        if (g_logEnabled)
+            LOG << g_logMsg << "collate() ends: " << MPI_Wtime() - collateTime << endl;
+
+        double reduceTime;
+        if (g_logEnabled) {
+            reduceTime = MPI_Wtime();
+            LOG << g_logMsg << "reduce() starts: " << reduceTime << endl;
+        }
+
+        /// //////////////////////////////////////////////
+        pMr->reduce(&mr_sort_multivalues_by_evalue, NULL);
+        /// //////////////////////////////////////////////
+
+        if (g_logEnabled)
+            LOG << g_logMsg << "reduce() ends: " <<  MPI_Wtime() - reduceTime << endl;
+
+        if (g_timingEnabled) {
+            /// Wall-clock time
+            gettimeofday(&wallTimeEnd, NULL);
+            double tS = wallTimeStart.tv_sec * 1000000 + (wallTimeStart.tv_usec);
+            double tE = wallTimeEnd.tv_sec * 1000000  + (wallTimeEnd.tv_usec);
+
+            /// process time
+            getrusage(RUSAGE_SELF, &ruTotal);
+            userTimeEnd = ruTotal.ru_utime;
+            sysTimeEnd = ruTotal.ru_stime;
+            double tS_user = userTimeStart.tv_sec * 1000000
+                             + (userTimeStart.tv_usec);
+            double tE_user = userTimeEnd.tv_sec * 1000000
+                             + (userTimeEnd.tv_usec);
+            double tS_sys  = sysTimeStart.tv_sec * 1000000
+                             + (sysTimeStart.tv_usec);
+            double tE_sys  = sysTimeEnd.tv_sec * 1000000
+                             + (sysTimeEnd.tv_usec);
+
+            double profile_etime = MPI_Wtime();
+            LOG << "mr-mpi-blast ends,"
+                << profile_etime << ","
+                << wallTimeEnd.tv_sec * 1000000 + wallTimeEnd.tv_usec << ","
+                << userTimeEnd.tv_sec * 1000000 + userTimeEnd.tv_usec << ","
+                << sysTimeEnd.tv_sec * 1000000 + sysTimeEnd.tv_usec << endl;
+
+            /// MP_Wtime
+            profileTime = profile_etime - profileTime;
+            LOG << "Total MPI_Wtime time," << profileTime << endl;
+            LOG << "Total wall-clock time,"
+                << tE - tS << "," << (tE - tS) / 1000000 << endl;
+            LOG << "Total process time (user),"
+                << tE_user - tS_user << "," << (tE_user - tS_user) / 1000000 << endl;
+            LOG << "Total process time (sys),"
+                << tE_sys - tS_sys << "," << (tE_sys - tS_sys) / 1000000 << endl;
+            LOG << "Total total process time (user+sys),"
+                << (tE_user - tS_user) + (tE_sys - tS_sys) << ","
+                << ((tE_user - tS_user) + (tE_sys - tS_sys)) / 1000000 << endl;
+            LOG.flush();
+        }
     }
-
-    /// ///////////////////////////////////////////////////////
-    if (mpiComm == MPI_COMM_WORLD) 
-         pMr->map(g_numWorkItems, &mr_run_blast, &rank);
-    else {
-        pMr->map(g_numWorkItems, &mr_run_pairwise_blast, &rank);
-
-        /// Terminate the reader master
-        MPI_Send(NULL, 0, MPI_INT, g_MPI_readerMasterRank, MPI_TAG_EXIT,
-                 MPI_COMM_WORLD);
-    }
-    /// ///////////////////////////////////////////////////////
-
-    if (g_logEnabled)
-        LOG << g_logMsg << "map() ends: " <<  MPI_Wtime() - mapTime << endl;
-
-    g_outFileName = g_outFilePrefix + "-hits-" 
-                    + boost::lexical_cast<string>(rank) + ".txt";
-
-    double collateTime;
-    if (g_logEnabled) {
-        collateTime = MPI_Wtime();
-        LOG << g_logMsg << "collate() starts: " << collateTime << endl;
-    }
-
-    /// ////////////////
-    pMr->collate(NULL);
-    /// ////////////////
-
-    if (g_logEnabled)
-        LOG << g_logMsg << "collate() ends: " << MPI_Wtime() - collateTime << endl;
-
-    double reduceTime;
-    if (g_logEnabled) {
-        reduceTime = MPI_Wtime();
-        LOG << g_logMsg << "reduce() starts: " << reduceTime << endl;
-    }
-
-    /// //////////////////////////////////////////////
-    pMr->reduce(&mr_sort_multivalues_by_evalue, NULL);
-    /// //////////////////////////////////////////////
-
-    if (g_logEnabled)
-        LOG << g_logMsg << "reduce() ends: " <<  MPI_Wtime() - reduceTime << endl;
-
-    if (g_timingEnabled) {
-        /// Wall-clock time
-        gettimeofday(&wallTimeEnd, NULL);
-        double tS = wallTimeStart.tv_sec * 1000000 + (wallTimeStart.tv_usec);
-        double tE = wallTimeEnd.tv_sec * 1000000  + (wallTimeEnd.tv_usec);
-
-        /// process time
-        getrusage(RUSAGE_SELF, &ruTotal);
-        userTimeEnd = ruTotal.ru_utime;
-        sysTimeEnd = ruTotal.ru_stime;
-        double tS_user = userTimeStart.tv_sec * 1000000
-                         + (userTimeStart.tv_usec);
-        double tE_user = userTimeEnd.tv_sec * 1000000
-                         + (userTimeEnd.tv_usec);
-        double tS_sys  = sysTimeStart.tv_sec * 1000000
-                         + (sysTimeStart.tv_usec);
-        double tE_sys  = sysTimeEnd.tv_sec * 1000000
-                         + (sysTimeEnd.tv_usec);
-
-        double profile_etime = MPI_Wtime();
-        LOG << "mr-mpi-blast ends,"
-            << profile_etime << ","
-            << wallTimeEnd.tv_sec * 1000000 + wallTimeEnd.tv_usec << ","
-            << userTimeEnd.tv_sec * 1000000 + userTimeEnd.tv_usec << ","
-            << sysTimeEnd.tv_sec * 1000000 + sysTimeEnd.tv_usec << endl;
-
-        /// MP_Wtime
-        profileTime = profile_etime - profileTime;
-        LOG << "Total MPI_Wtime time," << profileTime << endl;
-        LOG << "Total wall-clock time,"
-            << tE - tS << "," << (tE - tS) / 1000000 << endl;
-        LOG << "Total process time (user),"
-            << tE_user - tS_user << "," << (tE_user - tS_user) / 1000000 << endl;
-        LOG << "Total process time (sys),"
-            << tE_sys - tS_sys << "," << (tE_sys - tS_sys) / 1000000 << endl;
-        LOG << "Total total process time (user+sys),"
-            << (tE_user - tS_user) + (tE_sys - tS_sys) << ","
-            << ((tE_user - tS_user) + (tE_sys - tS_sys)) / 1000000 << endl;
-        LOG.flush();
-    }
-
+    
     delete pMr; /// MR-MPI
-}
-
-
-/** MR-MPI Map function - settup NCBI C++ Toolkit env and call blast
- * @param itask
- * @param kv
- * @param ptr
- */
- 
-void mr_run_pairwise_blast(int itask,
-                           KeyValue *kv,
-                           void *ptr)
-{
-    int *rank = (int *) ptr;
-
-    uint32_t d = g_vecWorkItem[itask].dbNo;
-    uint32_t s = g_vecWorkItem[itask].bStart;
-    uint32_t e = g_vecWorkItem[itask].bEnd;
-
-    ///
-    /// Load Blast opotions from file
-    ///
-    ifstream strategyFile(g_strategyFileName.c_str(), ios::in);
-    if (!strategyFile.is_open()) {
-        cerr << "ERROR: failed to open a search strategy file" << endl;
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-    CNcbiIstream *pStrategyFileStream = &strategyFile;
-    CRef<CBlast4_request> pBl4Req;
-    try {
-        pBl4Req = ExtractBlast4Request(*pStrategyFileStream);
-    }
-    catch (const CSerialException&) {
-        NCBI_THROW(CInputException, eInvalidInput, "Failed to read search strategy");
-    }
-    CImportStrategy importStrategy(pBl4Req);
-    CRef<blast::CBlastOptionsHandle> pBlOpts = importStrategy.GetOptionsHandle();
-    pBlOpts->Validate();
-
-    if (*rank == 1 && g_optDumpEnabled == 1) {
-        g_optDumpEnabled = 0;
-        ofstream strategyOutFile("search_strategy.out", ios::out);
-        pBlOpts->GetOptions().DebugDumpText(strategyOutFile, "pBlOpts", 1);
-        strategyOutFile.close();
-    }
-
-    ///
-    /// Create query sequence
-    ///
-    uint32_t beginOffset = s;
-    uint32_t endOffset   = e;
-    const char *pMmapQueryFile = (char*)g_memmapQueryFile.data();
-    string query(pMmapQueryFile + beginOffset, endOffset - beginOffset);
-    vector<string> vecHeader;        /// For collecting def lines of queries
-    vector<uint32_t> vecBeginOffset; /// For collecting beginoffsets of queries
-    uint32_t numQueries = 0;
-    char *c = (char*)(pMmapQueryFile + beginOffset);
-    uint32_t loc = beginOffset;
-    char buff2[MAXSTR];
-    size_t buffIdx = 0;
-
-    while (loc < endOffset) {
-        if ((*c) == '>') {
-            numQueries++;
-            vecBeginOffset.push_back(loc);
-            buffIdx = 0;
-        }
-        if (g_exclEnabled && (*c) != '\n' && buffIdx < (unsigned)MAXSTR)
-            buff2[buffIdx++] = (*c);
-        else if (g_exclEnabled && (*c) == '\n')
-            vecHeader.push_back(string(buff2));
-        c++;
-        loc++;
-    }
-
-    ///
-    /// Set queries as fasta input
-    ///
-    SDataLoaderConfig dataLoaderConf(g_bIsProtein);
-    dataLoaderConf.OptimizeForWholeLargeSequenceRetrieval();
-    CBlastInputSourceConfig blInputSourceConf(dataLoaderConf);
-    /// Assign local query ID like "Query_1" with each query 
-    //blInputSourceConf.SetQueryLocalIdMode();
-    CBlastFastaInputSource blFastaInputSource(query, blInputSourceConf);
-    CBlastInput blInput(&blFastaInputSource);
-    CRef<CObjectManager> pObjmgr = CObjectManager::GetInstance();
-    if (!pObjmgr) {
-        throw runtime_error("Could not initialize object manager");
-    }
-    CScope scope(*pObjmgr);
-    TSeqLocVector vecQueryLoc = blInput.GetAllSeqLocs(scope);
-
-    ///
-    /// Request FASTA subject to the reader master
-    ///
-    /// Now is the time to request FASTA seqs to the reader master
-    /// 1. send dbFileName to the reader master using "g_MPI_readerMasterRank"
-    ///    on MPI_COMM_WORLD
-    /// 2. wait for "readerWorkderRankId" to listen to from g_MPI_readerMasterRank
-    /// 3. wait for data from readerWorkderRankId
-    ///
-
-    ///
-    /// Target db name setting
-    ///
-    string dbFileName = g_vecDbFile[d];
-    if (g_subject.length() == 0 || dbFileName != g_prevDbName) {
-        /// Send a REQ to the reader master
-        cout << "I, rank=" << g_MPI_rankInBlastGroup << " sent a REQ=" << dbFileName << " to the reader master" << endl; cout.flush();
-        MPI_Send((char*)dbFileName.c_str(), dbFileName.length()+1, MPI_CHAR, 
-                 g_MPI_readerMasterRank, MPI_TAG_REQ, MPI_COMM_WORLD);
-
-        /// Get the requested FASTA from a reader worker
-        int count=0;
-        MPI_Status status;
-        MPI_Probe(MPI_ANY_SOURCE, MPI_TAG_FASTA, MPI_COMM_WORLD, &status);
-        MPI_Get_count(&status, MPI_CHAR, &count);
-        char *fastaBuff = (char*)malloc(sizeof(char)*count);
-        assert(fastaBuff != NULL);
-        MPI_Recv(fastaBuff, count, MPI_CHAR, status.MPI_SOURCE, MPI_TAG_FASTA,
-                 MPI_COMM_WORLD, &status);
-        g_subject = fastaBuff;
-        cout << "I, rank=" << g_MPI_rankInBlastGroup << " received FASTA" << endl; cout.flush();
-        delete fastaBuff;
-    }
-    g_prevDbName = dbFileName;        
-
-    ///
-    /// Extract a TSeqLocVector for the subject sequences
-    ///
-    SDataLoaderConfig dataLoaderConf4Subject(g_bIsProtein);
-    dataLoaderConf4Subject.OptimizeForWholeLargeSequenceRetrieval();
-    CBlastInputSourceConfig blInputSourceConf4Subject(dataLoaderConf4Subject);
-    CBlastFastaInputSource blFastaInputSource4Subject(g_subject, blInputSourceConf4Subject);
-    CBlastInput blInput4Subject(&blFastaInputSource4Subject);
-    CRef<CObjectManager> pObjmgr4Subject = CObjectManager::GetInstance();
-    if (!pObjmgr4Subject) {
-        throw runtime_error("Could not initialize object manager");
-    }
-    CScope scope4Subject(*pObjmgr4Subject);
-    /// typedef vector<SSeqLoc> TSeqLocVector
-    TSeqLocVector vecQueryLoc4Subject = blInput4Subject.GetAllSeqLocs(scope4Subject);
-
-    ///
-    /// Use the CBl2Seq class to run a BLAST search b/w input FASTA queries
-    /// and FASTA subjects
-    ///
-    /// Ref.) http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCBl2Seq.html
-    ///
-    /// Perform BLAST search Assuming N queries and M subjects, the structure 
-    /// of the returned vector is as follows, with types indicated in 
-    /// parenthesis: TSeqAlignVector = [ {Results for query 1 and subject 1 
-    /// (Seq-align-set)}, {Results for query 1 and subject 2 (Seq-align-set)},...
-    ///
-    /// TSeqAlignVector Run() or CRef<CSearchResultSet> RunEx()
-    /// TSeqAlignVector results;
-    /// results = *bl2Seq_blast.Run();
-    ///
-    CBl2Seq bl2Seq_blast(vecQueryLoc, vecQueryLoc4Subject, *pBlOpts);
-    CSearchResultSet results;
-    results = *bl2Seq_blast.RunEx();    
-    cout << "results.GetNumResults()= " << results.GetNumResults() << endl; cout.flush();
-
-    ///
-    /// Get warning messages
-    ///
-    for (size_t i = 0; i < results.GetNumResults(); ++i) {
-        TQueryMessages messages = results[i].GetErrors(eBlastSevWarning);
-        if (messages.size() > 0) {
-            CConstRef<CSeq_id> pSeq_id = results[i].GetSeqId();
-            if (pSeq_id.NotEmpty()) 
-                cerr << "ID: " << pSeq_id->AsFastaString() << endl;
-            else
-                cerr << "ID: " << "Unknown" << endl;
-
-            ITERATE(vector<CRef<CSearchMessage> >, it, messages) {
-                cerr << (*it)->GetMessage() << endl;
-            }
-        }
-    }
-
-    ///
-    /// Get the results and add to kv
-    ///
-    for (size_t i = 0; i < results.GetNumResults(); ++i) {
-
-        CConstRef<CSeq_align_set> pAln_set = results[i].GetSeqAlign();
-
-        if (results[i].HasAlignments()) {
-            ITERATE(CSeq_align_set::Tdata, itr_res, pAln_set->Get()) {
-                const CSeq_align& s = **itr_res;
-
-                /// Note: queryID is not unique. It's internal qid in 
-                /// blFastaInputSource.
-                string queryID = s.GetSeq_id(QUERY).GetSeqIdString();
-                string subID = s.GetSeq_id(SUBJECT).GetSeqIdString(); /// GI
-
-                ///
-                /// Refer: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/
-                /// doxyhtml/classCSeq__align.html
-                ///
-                double pIdentity = 0.0;
-                s.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
-
-                uint32_t alignLen = 0, qStart = 0, qEnd = 0;
-                uint32_t sStart = 0, sEnd = 0;
-                uint32_t gapOpens = 0;
-                gapOpens    = s.GetNumGapOpenings();
-                qStart      = s.GetSeqStart(QUERY);
-                qEnd        = s.GetSeqStop(QUERY);
-                sStart      = s.GetSeqStart(SUBJECT);
-                sEnd        = s.GetSeqStop(SUBJECT);
-                alignLen    = s.GetAlignLength();
-
-                double eValue = 0.0;
-                int bitScore = 0;
-                int misMatches = 0;
-
-                s.GetNamedScore(CSeq_align::eScore_EValue, eValue);
-                s.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
-                s.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
-
-                /// Get the saved beginOffset from vBeginOffset
-                uint32_t uniqueQID =
-                    vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
-
-                ///
-                /// Add a csv blast result to kv
-                ///
-                if (g_exclEnabled) {
-                    /// Tokenize query header
-                    string qHeader =
-                        vecHeader[boost::lexical_cast<uint32_t>(queryID)-1];
-                    vector<string> vecQueryId;
-                    boost::split(vecQueryId, qHeader, boost::is_any_of("|"));
-
-                    ///
-                    /// The below infomation is only for our own simulated
-                    /// sequence data sets which has
-                    /// - origin GI
-                    /// - unique query ID
-                    /// - original sequence length
-                    /// - cut location start
-                    /// - cut location end
-                    ///
-
-                    /// GI
-                    string qGi = vecQueryId[1];   
-                    /// length of the orig seq
-                    //uint32_t origLen = boost::lexical_cast<uint32_t>(vecQueryId[3]);
-                    /// cut coordinates - start
-                    int qCutLocStart = boost::lexical_cast<int>(vecQueryId[4]);
-                    /// cut coordinates - end
-                    int qCutLocEnd =   boost::lexical_cast<int>(vecQueryId[5]);
-
-                    if (!check_exclusion(qGi, subID, qCutLocStart, qCutLocEnd,
-                                         sStart, sEnd, g_exclThreshold)) {
-
-                        ///
-                        /// To pass Blast hits using struct, outfmt=6
-                        /// query id, subject id, % identity, alignment length,
-                        /// numMismatches, gap opens, q. start, q. end, s. start,
-                        /// s. end, evalue, bit score
-                        ///
-                        structBlRes_t res;
-                        strncpy(res.subjectId, subID.c_str(), subID.length());
-                        res.identity = pIdentity;
-                        res.alignLen = alignLen;
-                        res.numMismatches = misMatches;
-                        res.numGapOpens = gapOpens;
-                        res.qStart = qStart;
-                        res.qEnd = qEnd;
-                        res.sStart = sStart;
-                        res.sEnd = sEnd;
-                        res.evalue = eValue;
-                        res.bitScore = bitScore;
-
-                        ///
-                        /// ADD <KEY = "QUERYID", VALUE="BLASTRESULT">
-                        /// TO KV
-                        ///
-                        uint32_t newKey = uniqueQID;
-                        kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
-                                sizeof(structBlRes_t));
-                    }
-                    ///
-                    /// Found self hits. Record the hits in a histroy file
-                    ///
-                    else {
-                        string exFileName = g_outFilePrefix + "-"
-                                            + boost::lexical_cast<string>(*rank) 
-                                            + "-" + g_exclHistFileName;
-                        ofstream exFile(exFileName.c_str(), ios::out | ios::app);
-
-                        if (!exFile) {
-                            cerr << "ERROR: failed to open a exclusion "
-                                 << "history file" << endl;
-                            MPI_Abort(MPI_COMM_WORLD, 1);
-                        }
-                        else {
-                            /// Format: qGi sGi qCutLocStart qCutLocEnd sStart sEnd
-                            exFile << qGi << "\t"
-                                   << subID << "\t"
-                                   << qCutLocStart << "\t"
-                                   << qCutLocEnd << "\t"
-                                   << sStart << "\t"
-                                   << sEnd << endl;
-                        }
-                        exFile.close();
-                    }
-                }
-                else {
-                    structBlRes_t res;
-                    strncpy(res.subjectId, subID.c_str(), subID.length());
-                    res.identity      = pIdentity;
-                    res.alignLen      = alignLen;
-                    res.numMismatches = misMatches;
-                    res.numGapOpens   = gapOpens;
-                    res.qStart        = qStart;
-                    res.qEnd          = qEnd;
-                    res.sStart        = sStart;
-                    res.sEnd          = sEnd;
-                    res.evalue        = eValue;
-                    res.bitScore      = bitScore;
-
-                    uint32_t newKey   = uniqueQID;
-                    kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
-                            sizeof(structBlRes_t));
-                }
-            }
-        }
-    }
 }
 
 
@@ -1238,11 +706,22 @@ void mr_run_blast(int itask,
                   KeyValue *kv,
                   void *ptr)
 {
-    int *rank = (int *) ptr;
-
-    uint32_t d = g_vecWorkItem[itask].dbNo;
-    uint32_t s = g_vecWorkItem[itask].bStart;
-    uint32_t e = g_vecWorkItem[itask].bEnd;
+    structToPass_t *toPass = (structToPass_t *) ptr;
+    int rank = toPass->rank;
+    int iter = toPass->iter;
+    
+    uint32_t dbno, qBlockBeginOffset, qBlockEndOffset;
+    
+    if (g_numIter > 1) {
+        dbno = g_vecWorkItem[itask + nWorkItemsPerIter * iter].dbNo;
+        qBlockBeginOffset = g_vecWorkItem[itask + nWorkItemsPerIter * iter].bStart;
+        qBlockEndOffset = g_vecWorkItem[itask + nWorkItemsPerIter * iter].bEnd;
+    }
+    else {
+        dbno = g_vecWorkItem[itask].dbNo;
+        qBlockBeginOffset = g_vecWorkItem[itask].bStart;
+        qBlockEndOffset = g_vecWorkItem[itask].bEnd;
+    }
 
     struct timeval blastcallStartTime;
     struct timeval blastcallEndTime;
@@ -1250,12 +729,17 @@ void mr_run_blast(int itask,
     struct timeval blastcallEnd_u_Time;
     struct timeval blastcallStart_s_Time;
     struct timeval blastcallEnd_s_Time;
-    struct rusage ru_blastcall;
+    struct rusage  ru_blastcall;
 
     struct timeval qBuildStartTime;
     struct timeval qBuildStart_u_Time;
     struct timeval qBuildStart_s_Time;
-    struct rusage ru_qBuild;
+    struct rusage  ru_qBuild;
+    
+    struct timeval dbLoadingStartTime;
+    struct timeval dbLoadingStart_u_Time;
+    struct timeval dbLoadingStart_s_Time;
+    struct rusage  ru_dbLoading;
 
     ///
     /// Load Blast opotions from file
@@ -1271,20 +755,20 @@ void mr_run_blast(int itask,
         pBl4Req = ExtractBlast4Request(*pStrategyFileStream);
     }
     catch (const CSerialException&) {
-        NCBI_THROW(CInputException, eInvalidInput, "Failed to read search strategy");
+        NCBI_THROW(CInputException, eInvalidInput, "Failed to read search strategy file");
     }
     CImportStrategy importStrategy(pBl4Req);
     CRef<blast::CBlastOptionsHandle> pBlOpts = importStrategy.GetOptionsHandle();
     pBlOpts->Validate();
 
-    if (*rank == 1 && g_optDumpEnabled == 1) {
+    if (rank == 1 && g_optDumpEnabled == 1) {
         g_optDumpEnabled = 0;
         ofstream strategyOutFile("search_strategy.txt", ios::out);
         pBlOpts->GetOptions().DebugDumpText(strategyOutFile, "pBlOpts", 1);
         strategyOutFile.close();
     }
 
-    string dbFileName = g_vecDbFile[d];
+    string dbFileName = g_vecDbFile[dbno];
 
     ///
     /// Read a block of sequeces from beginOffset
@@ -1306,14 +790,16 @@ void mr_run_blast(int itask,
             << qBuildStart_s_Time.tv_sec * 1000000
              + qBuildStart_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << s << endl;
+            << "," << qBlockBeginOffset << endl;
         LOG.flush();
     }
 
-    uint32_t beginOffset = s;
-    uint32_t endOffset   = e;
+    uint32_t beginOffset = qBlockBeginOffset;
+    uint32_t endOffset   = qBlockEndOffset;
     const char *pMmapQueryFile = (char*)g_memmapQueryFile.data();
+    /// ////////////////////////////////////////////////////////////////
     string query(pMmapQueryFile + beginOffset, endOffset - beginOffset);
+    /// ////////////////////////////////////////////////////////////////
     vector<string> vecHeader;        /// For collecting def lines of queries
     vector<uint32_t> vecBeginOffset; /// For collecting beginoffsets of queries
     uint32_t numQueries = 0;
@@ -1361,8 +847,30 @@ void mr_run_blast(int itask,
     ///
     /// Target db name setting
     ///
+    
+    double db_loading_time;
+    if (g_timingEnabled) {
+        g_mapCallNo++;
+        db_loading_time = MPI_Wtime();
+        gettimeofday(&dbLoadingStartTime, NULL); /// Wall-clock time
+        getrusage(RUSAGE_SELF, &ru_dbLoading);   /// Process time
+        dbLoadingStart_u_Time = ru_dbLoading.ru_utime;
+        dbLoadingStart_s_Time = ru_dbLoading.ru_stime;
+        LOG << g_logMsg << "db_loading starts,"
+            << db_loading_time << ","
+            << dbLoadingStartTime.tv_sec * 1000000
+             + dbLoadingStartTime.tv_usec << ","
+            << dbLoadingStart_u_Time.tv_sec * 1000000
+             + dbLoadingStart_u_Time.tv_usec << ","
+            << dbLoadingStart_s_Time.tv_sec * 1000000
+             + dbLoadingStart_s_Time.tv_usec << ","
+            << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
+            << "," << qBlockBeginOffset << endl;
+        LOG.flush();
+    }
+    
     if (g_pTargetDb == 0 || dbFileName != g_prevDbName) {
-        delete g_pTargetDb;
+        delete g_pTargetDb;        
         if (g_bIsProtein)
             g_pTargetDb = new CSearchDatabase(dbFileName,
                                               CSearchDatabase::eBlastDbIsProtein);
@@ -1391,7 +899,7 @@ void mr_run_blast(int itask,
             << blastcallStart_s_Time.tv_sec * 1000000
              + blastcallStart_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << s << endl;
+            << "," << qBlockBeginOffset << endl;
         LOG.flush();
     }
 
@@ -1407,7 +915,6 @@ void mr_run_blast(int itask,
         getrusage(RUSAGE_SELF, &ru_blastcall); /// process time
         blastcallEnd_u_Time = ru_blastcall.ru_utime;
         blastcallEnd_s_Time = ru_blastcall.ru_stime;
-
         LOG << g_logMsg << "blast call ends,"
             << blast_call_etime << ","
             << blastcallEndTime.tv_sec * 1000000
@@ -1417,7 +924,7 @@ void mr_run_blast(int itask,
             << blastcallEnd_s_Time.tv_sec * 1000000
              + blastcallEnd_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << s << endl;
+            << "," << qBlockBeginOffset << endl;
         LOG.flush();
     }
 
@@ -1448,37 +955,37 @@ void mr_run_blast(int itask,
 
         if (results[i].HasAlignments()) {
             ITERATE(CSeq_align_set::Tdata, itr_res, pAln_set->Get()) {
-                const CSeq_align& s = **itr_res;
+                const CSeq_align& seqAlign = **itr_res;
 
                 /// Note: queryID is not unique. It's internal qid in 
                 /// blFastaInputSource.
-                string queryID = s.GetSeq_id(QUERY).GetSeqIdString();
-                string subID = s.GetSeq_id(SUBJECT).GetSeqIdString(); /// GI
+                string queryID = seqAlign.GetSeq_id(QUERY).GetSeqIdString();
+                string subID = seqAlign.GetSeq_id(SUBJECT).GetSeqIdString(); /// GI
 
                 ///
                 /// Refer: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/
                 /// doxyhtml/classCSeq__align.html
                 ///
                 double pIdentity = 0.0;
-                s.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
+                seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
 
                 uint32_t alignLen = 0, qStart = 0, qEnd = 0;
                 uint32_t sStart = 0, sEnd = 0;
                 uint32_t gapOpens = 0;
-                gapOpens    = s.GetNumGapOpenings();
-                qStart      = s.GetSeqStart(QUERY);
-                qEnd        = s.GetSeqStop(QUERY);
-                sStart      = s.GetSeqStart(SUBJECT);
-                sEnd        = s.GetSeqStop(SUBJECT);
-                alignLen    = s.GetAlignLength();
+                gapOpens    = seqAlign.GetNumGapOpenings();
+                qStart      = seqAlign.GetSeqStart(QUERY);
+                qEnd        = seqAlign.GetSeqStop(QUERY);
+                sStart      = seqAlign.GetSeqStart(SUBJECT);
+                sEnd        = seqAlign.GetSeqStop(SUBJECT);
+                alignLen    = seqAlign.GetAlignLength();
 
                 double eValue = 0.0;
                 int bitScore = 0;
                 int misMatches = 0;
 
-                s.GetNamedScore(CSeq_align::eScore_EValue, eValue);
-                s.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
-                s.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
+                seqAlign.GetNamedScore(CSeq_align::eScore_EValue, eValue);
+                seqAlign.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
+                seqAlign.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
 
                 /// Get the saved beginOffset from vBeginOffset
                 uint32_t uniqueQID =
@@ -1548,7 +1055,7 @@ void mr_run_blast(int itask,
                     ///
                     else {
                         string exFileName = g_outFilePrefix + "-"
-                                            + boost::lexical_cast<string>(*rank) 
+                                            + boost::lexical_cast<string>(rank) 
                                             + "-" + g_exclHistFileName;
                         ofstream exFile(exFileName.c_str(), ios::out | ios::app);
 
@@ -1590,6 +1097,7 @@ void mr_run_blast(int itask,
             }
         }
     }
+    /// end of processing hits       
 }
 
 
@@ -1760,59 +1268,6 @@ void collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm)
     }
 }
 
-/** Extract FASTA seqs from NCBI DB 
- * @param dbFileName
- */
-
-char *extract_fasta_from_db(char *dbFileName)
-{
-    ///
-    /// Extract FASTA seqs from NCBI DB 
-    ///
-    /// Ref.) http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCBlastDBExtractor.html
-    ///
-    //cout << "Extracting FASTA from " << dbFileName << endl; cout.flush();
-    
-    /// Try 1st
-    stringstream sstreamSubject("");
-    string stringDbFileName(dbFileName);
-    CRef<CSeqDBExpert> pBlDb;
-    CSeqDB::ESeqType seqType; 
-    seqType = (g_bIsProtein) ? (CSeqDB::eProtein) : (CSeqDB::eNucleotide);
-    pBlDb.Reset(new CSeqDBExpert(stringDbFileName, seqType));
-
-    CSeqFormatterConfig seqFormatterConf;
-    seqFormatterConf.m_FiltAlgoId = -1;
-
-    vecBlDbSeqId_t vecBlDbSeqId;
-    for (int i = 0; pBlDb->CheckOrFindOID(i); i++) {
-        //add_Oid(vecBlDbSeqId, i, *pBlDb);
-        CRef<CBlastDBSeqId> pBlDbSeqId(new CBlastDBSeqId());
-        pBlDbSeqId->SetOID(i);
-        vecBlDbSeqId.push_back(pBlDbSeqId);
-    }
-
-    bool bErrorsFound = false;
-    string outFmt = "%f";
-    CSeqFormatter seqFmt(outFmt, *pBlDb, sstreamSubject, seqFormatterConf);
-    NON_CONST_ITERATE(vecBlDbSeqId_t, itr, vecBlDbSeqId) {
-        try { 
-            seqFmt.Write(**itr); 
-        } catch (const CException& e) {
-            bErrorsFound = true;
-        } catch (...) {
-            bErrorsFound = true;
-        }
-    }       
-   
-    int fastaLen = sstreamSubject.str().length()+1;
-    char *fasta = (char*)malloc(sizeof(char)*fastaLen);
-    strncpy(fasta, (const char*)(g_subject.c_str()), fastaLen);
-    
- 
-    
-    return fasta;
-}
 
  
 
