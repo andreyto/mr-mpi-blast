@@ -110,5 +110,14 @@
     --------------
     
     
+    05.13.2011
+        - DEBUG: splitter.py: fix overlap range in start:end
+        - DEBUG: SID should be cleared by '\0' before strcpy()
+        - BLAST hits are sorted by SID & evalue
+    
+    06.03.2011
+        - Doug's filtering is done.
+        - Split query and adjust hits (q.Start and q.End) are done.
+    
         
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 

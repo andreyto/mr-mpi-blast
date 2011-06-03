@@ -1007,60 +1007,23 @@ void mr_run_blast(int itask,
                 /// eScore_PercentIdentity = eScore_PercentIdentity_Gapped 
                 ///
                 double pIdentity = 0.0;
-                //double PercentIdentity_Gapped;
-                //double PercentIdentity_Ungapped;
-                //double PercentIdentity_GapOpeningOnly;
-                //double percentCoverage = 0.0;
-                //double HighQualityPercentCoverage;
-                
                 seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity_Gapped, PercentIdentity_Gapped);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity_Ungapped, PercentIdentity_Ungapped);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity_GapOpeningOnly, PercentIdentity_GapOpeningOnly);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentCoverage, percentCoverage);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_HighQualityPercentCoverage, HighQualityPercentCoverage);
-                //cout << "pIdentity = " << double(pIdentity) << endl;
-                //cout << "PercentIdentity_Gapped = " << PercentIdentity_Gapped << endl;
-                //cout << "PercentIdentity_Ungapped = " << PercentIdentity_Ungapped << endl;
-                //cout << "PercentIdentity_GapOpeningOnly = " << PercentIdentity_GapOpeningOnly << endl;
-                //cout << "PercentCoverage = " << double(percentCoverage) << endl;
-                //cout << "HighQualityPercentCoverage = " << HighQualityPercentCoverage << endl;
-
+ 
                 uint32_t gapOpens    = seqAlign.GetNumGapOpenings();
-                //cout << "gapOpens = " << gapOpens << endl;                
-                //uint32_t totalGaps   = seqAlign.GetTotalGapCount();
-                //cout << "totalGaps = " << totalGaps << endl;                
-                uint32_t qStart      = seqAlign.GetSeqStart(QUERY);
+                 uint32_t qStart      = seqAlign.GetSeqStart(QUERY);
                 uint32_t qEnd        = seqAlign.GetSeqStop(QUERY);
                 uint32_t sStart      = seqAlign.GetSeqStart(SUBJECT);
                 uint32_t sEnd        = seqAlign.GetSeqStop(SUBJECT);
                 uint32_t alignLen    = seqAlign.GetAlignLength();
-                //cout << "alignLen = " << alignLen << endl;                
-
+ 
                 double eValue = 0.0;
                 int bitScore = 0, misMatches = 0;
                 seqAlign.GetNamedScore(CSeq_align::eScore_EValue, eValue);
                 seqAlign.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
                 seqAlign.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
-                //cout << "misMatches = " << misMatches << endl;  
-                
-                //double alignLenRatio = seqAlign.AlignLengthRatio();
-                //TSeqRange r0 = seqAlign.GetSeqRange(QUERY);
-                //TSeqRange r1 = seqAlign.GetSeqRange(SUBJECT);
-                //double r = 0;
-                //if (r0.GetLength()) {
-                    //r = double(r1.GetLength()) / double(r0.GetLength());
-                //}
-                //cout << "alignLenRatio = " << r << " "<< r1.GetLength() << " / " << r0.GetLength() << endl;
                 
                 int identityCount = 0;
-                //int positiveCount = 0, negativeCount = 0;
                 seqAlign.GetNamedScore(CSeq_align::eScore_IdentityCount, identityCount);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_PositiveCount, positiveCount);
-                //seqAlign.GetNamedScore(CSeq_align::eScore_NegativeCount, negativeCount);
-                //cout << "identityCount = " << identityCount << endl;
-                //cout << "positiveCount = " << positiveCount << endl;
-                //cout << "negativeCount = " << negativeCount << endl;
                 
                 ///
                 /// Retrieve GI and cutting locations    
@@ -1103,10 +1066,7 @@ void mr_run_blast(int itask,
                     ///
                     double ident = double(identityCount) / double(length);
                     double cover = double(qEnd - qStart) / double(length);
-                    //cout << "length = " << length << endl;
-                    //cout << "ident = " << ident << endl;
-                    //cout << "cover = " << cover << endl;
- 
+  
                     if (ident >= g_IDENT_CUTOFF && cover >= g_COVER_CUTOFF) {
                         structBlRes_t res;
                         res.subjectId[0] = '\0';
