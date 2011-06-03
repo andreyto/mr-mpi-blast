@@ -41,7 +41,7 @@ if __name__ == '__main__':
     print start, stop, stop - start
     numSlices = 1000
     inc = (stop - start) / numSlices
-    #life = npy.zeros(numSlices, dtype=float)
+    life = npy.zeros(numSlices, dtype=float)
     
     ### Collect node names
     nodenames = []
@@ -61,20 +61,21 @@ if __name__ == '__main__':
     print "nd = " , nd, nodenames[nd]
     
     ####
-    #dbnames = [] 
-    #sql = "select distinct db___name from item"
-    #curs.execute(sql)
-    #for row in curs:
-        #dbnames.append(row[0])
-    ##print len(dbnames)
-    
-    ###
     dbnames = [] 
-    sql = "select distinct db___name from item where proc_name == '%s' order by wallclock" % (nodenames[nd])
+    sql = "select distinct db___name from item"
     curs.execute(sql)
     for row in curs:
-        #print row[0]          
         dbnames.append(row[0])
+    print len(dbnames)
+    
+    ###
+    #dbnames = [] 
+    #sql = "select distinct db___name from item where proc_name == '%s' order by wallclock" % (nodenames[nd])
+    #curs.execute(sql)
+    #for row in curs:
+        ##print row[0]          
+        #dbnames.append(row[0])
+    
     
     ###
     vecStart = [] 
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     ax.yaxis.grid(True, linestyle='-.', which='minor')
     ax.xaxis.grid(True, linestyle='-.', which='minor')
 
-    ax.set_ylabel('DB files (from 1 to 109)', fontsize=20)
+    ax.set_ylabel('DB file (1~109)', fontsize=20)
     ax.set_xlabel('t (%)', fontsize=20)
     
     ax.set_xticklabels(('0', '', '', '', '', '100'))
@@ -131,8 +132,8 @@ if __name__ == '__main__':
     for tick in ax.yaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
         
-    imFileName = dbName + "-life1.png"
-    pylab.savefig(imFileName, dpi=(300))
+    #imFileName = dbName + "-life.png"
+    #pylab.savefig(imFileName, dpi=(300))
     pylab.show()
     
 ### EOF

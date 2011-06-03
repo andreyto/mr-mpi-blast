@@ -72,6 +72,7 @@ if __name__ == '__main__':
         
         cnt = 0
         for elem in reversed(cov_busy):
+            #print elem
             if (int(elem) <= core * 0.2):
                 cnt += 1
             if (int(elem) > core * 0.2):

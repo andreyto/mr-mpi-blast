@@ -67,7 +67,6 @@ if __name__ == '__main__':
             vecOrigStart.append(row[1])
             vecRusageUStart.append(row[2])
         elif row[3] == 1: ### End time
-            #vecEnd.append(int(row[0]/inc))
             vecEnd.append(int((row[1] - start) / inc))
             vecOrigEnd.append(row[1])
             vecRusageUEnd.append(row[2])

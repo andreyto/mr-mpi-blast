@@ -40,7 +40,10 @@ if __name__ == '__main__':
     recNum = 1;
     csvFileName = dbName + ".csv"
     csvFile = open(csvFileName, 'w')
-    csvFile.write("# UID, RANK, START(0)/END(1), MPI_Wtime (sec), wallclock, rusage user time, rusage system time, db name, call id, proc name, start offset\n")
+    csvFile.write("#################################################################################################################################\n")
+    csvFile.write("# UID, rank, OP_CODE, MPI_Wtime (sec), wallclock, rusage user time, rusage system time, db name, call id, proc name, start offset\n")
+    csvFile.write("# OP_CODE = 2:query loading start, 3:db loading start, 0:blast call start, 1:blast call end\n")
+    csvFile.write("#################################################################################################################################\n")
     for np in range(1, int(nProc)):
         logfilename = logfinenameprefix + str(np) + "-log.txt"
         print logfilename
@@ -93,9 +96,9 @@ if __name__ == '__main__':
                         if s[0].find("starts") > -1: 
                             cmd += "2,"
                             csvString += "2,"
-                        else:
-                            cmd += "3,"
-                            csvString += "3,"
+                        #else:
+                            #cmd += "3,"
+                            #csvString += "3,"
                             
                         cmd += str(s[1]) + "," \
                             + str(s[2]) + "," \
@@ -119,7 +122,42 @@ if __name__ == '__main__':
                         curs.execute(cmd)
                         recNum += 1
                         csvFile.write(csvString)                   
-                    
+                elif line.find("db_loading") > -1:
+                    s = line.split(",") 
+                    if (len(s) > 2):                        
+                        cmd = "insert into item values (" \
+                            + str(recNum) + "," \
+                            + str(np) + "," 
+                        csvString = str(recNum) + "," + str(np) + "," 
+                        if s[0].find("starts") > -1: 
+                            cmd += "3,"
+                            csvString += "3,"
+                        #else:
+                            #cmd += "1,"
+                            #csvString += "1,"
+                            
+                        cmd += str(s[1]) + "," \
+                            + str(s[2]) + "," \
+                            + str(s[3]) + "," \
+                            + str(s[4]) + "," \
+                            + "'" + str(s[5]) + "'," \
+                            + str(s[6]) + "," \
+                            + "'" + str(s[7]) + "'," \
+                            + str(s[8]) \
+                            + ")" 
+                            
+                        csvString += str(s[1]) + "," \
+                            + str(s[2]) + "," \
+                            + str(s[3]) + "," \
+                            + str(s[4]) + "," \
+                            + str(s[5]).strip() + "," \
+                            + str(s[6]) + "," \
+                            + str(s[7]).strip() + "," \
+                            + str(s[8])
+
+                        curs.execute(cmd)
+                        recNum += 1
+                        csvFile.write(csvString)
         conn.commit()
     
     csvFile.close()

@@ -124,7 +124,36 @@ if __name__ == '__main__':
     ax=pylab.subplot(111)
     y = range(numSlices)
     ##print y
-    ax.plot(y, cov_cpu, 'bo', linewidth=1, markersize=6)
+    ax.plot(y, cov_cpu, 'bo-', linewidth=1, markersize=6)
+    
+    
+    #res_from_3 = [  9.98315110e-01,   9.98315110e-01,   9.98315110e-01,   9.98315110e-01,
+   #9.98315110e-01,   9.98315110e-01,   9.98315110e-01,   9.98315110e-01,
+   #9.98315110e-01,   9.98315110e-01,   9.98315110e-01,   9.98315110e-01,
+   #9.98315110e-01,   9.98315110e-01,   9.98315110e-01,   9.98315110e-01,
+   #9.98315110e-01,   9.98322399e-01,   9.98327431e-01,   9.98329672e-01,
+   #9.98345774e-01,   9.98396182e-01,   9.98435782e-01,   9.98459885e-01,
+   #9.98538857e-01,   9.98504077e-01,   9.98508818e-01,   9.98508818e-01,
+   #9.98508818e-01,   9.98508818e-01,   9.98508818e-01,   9.98508818e-01,
+   #9.98508818e-01,   9.98508818e-01,   9.98508818e-01,   9.98508818e-01,
+   #9.98508818e-01,   9.98479780e-01,   9.98479780e-01,   9.98451447e-01,
+   #9.98471687e-01,   9.98390510e-01,   9.98390510e-01,   9.98390947e-01,
+   #9.98401464e-01,   9.98392907e-01,   9.98336014e-01,   9.98333846e-01,
+   #9.98332603e-01,   9.98326430e-01,   9.98279970e-01,   9.98279576e-01,
+   #9.98279576e-01,   9.98279576e-01,   9.98279576e-01,   9.98279576e-01,
+   #9.98295078e-01,   9.98240974e-01,   9.97284057e-01,   9.98245520e-01,
+   #9.98278249e-01,   9.98239237e-01,   9.98269611e-01,   9.96235377e-01,
+   #9.98108207e-01,   9.98107583e-01,   9.98126227e-01,   9.98101674e-01,
+   #9.98135195e-01,   9.98142630e-01,   9.98131385e-01,   9.98131385e-01,
+   #9.98131385e-01,   9.98131385e-01,   9.98131385e-01,   9.98154813e-01,
+   #9.98181566e-01,   9.98185777e-01,   9.98179912e-01,   9.03537185e-01,
+   #8.54748590e-01,   5.93338391e-01,   4.29412836e-01,   3.92322916e-01,
+   #3.72808505e-01,   3.26946936e-01,   3.17191272e-01,   2.92788121e-01,
+   #2.62541437e-01,   2.19582773e-01,   2.04950880e-01,   1.79572444e-01,
+   #1.78596683e-01,   1.78596683e-01,   1.78596683e-01,   1.78596683e-01,
+   #1.71773053e-01,   1.21030045e-01,   3.51450614e-02,   9.76368380e-04]
+
+    #ax.plot(y, res_from_3, 'rd-', linewidth=1, markersize=6)
     
     ##ax.set_ylim(0, 800)
     ##ax.set_xlim(16, 2048)
@@ -136,15 +165,27 @@ if __name__ == '__main__':
     ax.yaxis.grid(True, linestyle='-.', which='minor')
     ax.xaxis.grid(True, linestyle='-.', which='minor')
 
-    ax.set_ylabel('Avg. CPU utilization over time', fontsize=20)
-    ax.set_xlabel('t (%)', fontsize=20)
+    ax.set_ylabel('"Useful" CPU utilization over time', fontsize=20)
+    ax.set_xlabel('Time from start (% of total run-time)', fontsize=20)
         
+    ax.set_ylim(0, 1.0)
+    #ax.set_xlim(32, 1024)
+
     fontsize=16
     for tick in ax.xaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
     for tick in ax.yaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
-        
+    
+    #ax.legend( (
+            #'average CPU utilization',
+            #'"Userful" CPU utilization'
+            #), loc=3)
+            
+    #leg = plt.gca().get_legend()
+    #ltext  = leg.get_texts()
+    #plt.setp(ltext, fontsize='14')    # the legend text fontsize
+
     imFileName = dbName + "-cov_cpu_div_by_cov_busy.png"
     pylab.savefig(imFileName, dpi=(300))
     pylab.show()

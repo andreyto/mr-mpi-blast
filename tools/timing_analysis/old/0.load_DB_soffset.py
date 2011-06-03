@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 from sqlite3 import *
+
 import sys
+#import numpy as npy
+#import matplotlib.pyplot as plt
+#import pylab
+
     
 if __name__ == '__main__':
 
@@ -50,6 +55,8 @@ if __name__ == '__main__':
                 if line.find("blast") > -1:
                     s = line.split(",") 
                     if (len(s) > 2):                        
+                        #for i in range(len(s)):
+                            #print str(i) + " " + str(s[i])
                         cmd = "insert into item values (" \
                             + str(recNum) + "," \
                             + str(np) + "," 
@@ -80,12 +87,18 @@ if __name__ == '__main__':
                             + str(s[7]).strip() + "," \
                             + str(s[8])
 
+                        #print cmd
+                        #print csvString
                         curs.execute(cmd)
                         recNum += 1
                         csvFile.write(csvString)
                 elif line.find("query") > -1:
                     s = line.split(",") 
+                    #print len(s)
                     if (len(s) > 2):
+                        
+                        #for i in range(len(s)):
+                            #print str(i) + " " + str(s[i])
                         cmd = "insert into item values (" \
                             + str(recNum) + "," \
                             + str(np) + "," 
@@ -116,6 +129,8 @@ if __name__ == '__main__':
                             + str(s[7]).strip() + "," \
                             + str(s[8])
                             
+                        #print cmd
+                        #print csvString
                         curs.execute(cmd)
                         recNum += 1
                         csvFile.write(csvString)                   
@@ -125,7 +140,12 @@ if __name__ == '__main__':
     csvFile.close()
     
     ### 
+    #curs.execute("select * from item")
     curs.execute("select count(*) from item")
+    #curs.execute("select * from item order by wallclock desc")
+    #curs.execute("select * from item where min(wallclock)")
+    #for row in curs:
+        #print row
     print curs.fetchone()[0]
 
     

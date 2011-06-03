@@ -98,8 +98,8 @@ if __name__ == '__main__':
     pylab.figure(1)
     ax=pylab.subplot(111)
     y = range(numSlices)
-    print cov_cpu
-    ax.plot(y, cov_cpu, 'ro', linewidth=1, markersize=6)
+    ##print y
+    ax.plot(y, cov_cpu, 'bo', linewidth=1, markersize=6)
     
     ##ax.set_ylim(0, 800)
     ##ax.set_xlim(16, 2048)

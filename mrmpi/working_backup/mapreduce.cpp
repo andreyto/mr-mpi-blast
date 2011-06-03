@@ -81,7 +81,6 @@ int compare_strn_reverse(char *, int, char *, int);
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
-//#define MEMORY_DEBUG 1   // set if want debug output from memory requests
 
 ///
 /// Added by ssul
@@ -107,7 +106,6 @@ typedef pair<string, vector<int> > pairVI_t;
 typedef multimap<int,int> multimapII_t;
 
 
-
 /* ----------------------------------------------------------------------
    construct using caller's MPI communicator
    perform no MPI_init() and no MPI_Finalize()
@@ -122,7 +120,7 @@ MapReduce::MapReduce(MPI_Comm caller)
     comm = caller;
     MPI_Comm_rank(comm, &me);
     MPI_Comm_size(comm, &nprocs);
-
+    
     defaults();
 }
 
@@ -271,11 +269,8 @@ void MapReduce::defaults()
     kv = NULL;
     kmv = NULL;
 
-    if (sizeof(uint64_t) != 8) error->all("Not compiled for 8-byte integers");
-
-    if (sizeof(char *) != 8 && me == 0)
-        error->warning("Not compiled for 8-byte pointers, "
-                       "be sure to limit your memory usage to less than 4 Gb");
+    if (sizeof(uint64_t) != 8 || sizeof(char *) != 8)
+        error->all("Not compiled for 8-byte integers and pointers");
 
     int mpisize;
     MPI_Type_size(MRMPI_BIGINT, &mpisize);
@@ -1072,6 +1067,14 @@ uint64_t MapReduce::map(int nstr, char **strings,
     return nkeyall;
 }
 
+/* ----------------------------------------------------------------------
+   called by 2 user map methods above (task count, list of files)
+   assign out and process the tasks
+   ntasks can be generic (files = NULL), or number of files
+   make one call to two different flavors of appmap() for each task
+   mapstyle and selfflag determine how tasks are partitioned to processors
+------------------------------------------------------------------------- */
+
 /** 
  * @param iproc
  * @param itaskDone
@@ -1196,19 +1199,11 @@ inline int get_next_itask(int nAassigned,
     return nextWorkItemNo;
 }
 
-
-/* ----------------------------------------------------------------------
-   called by 2 user map methods above (task count, list of files)
-   assign out and process the tasks
-   ntasks can be generic (files = NULL), or number of files
-   make one call to two different flavors of appmap() for each task
-   mapstyle and selfflag determine how tasks are partitioned to processors
-------------------------------------------------------------------------- */
-
+                    
 uint64_t MapReduce::map_tasks(int ntask, char **files,
                               void (*appmaptask)(int, KeyValue *, void *),
                               void (*appmapfile)(int, char *,
-                                      KeyValue *, void *),
+                              KeyValue *, void *),
                               void *appptr, int addflag, int selfflag)
 {
     MPI_Status status;
@@ -1287,7 +1282,6 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                     ndone++;
                 }
             }
-
         }
         else {
             while (1) {
@@ -1299,7 +1293,6 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
-
     }
     ///
     /// ** Implementing a location-aware scheduler. 
@@ -3659,11 +3652,6 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
 {
     int i, j, ok;
 
-#ifdef MEMORY_DEBUG
-    printf("MEMORY REQUEST for %d pages on proc %d\n", n, me);
-    mem_debug(me);
-#endif
-
     // satisfy request out of first unused chunk of exactly size N
 
     for (i = 0; i < npage; i++) {
@@ -3700,12 +3688,6 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
 
     tagmax++;
     for (j = 0; j < n; j++) memusage[i+j] = tagmax;
-
-#ifdef MEMORY_DEBUG
-    printf("MEMORY RETURN with %d pages on proc %d\n", n, me);
-    mem_debug(me);
-#endif
-
     tag = tagmax;
     size = n * pagesize;
     return memptr[i];

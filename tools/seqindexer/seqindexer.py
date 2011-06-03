@@ -122,6 +122,7 @@ if __name__ == '__main__':
         print "python seqindexer.py inFile outFile"
         sys.exit(1)   
     
+    numSeq = 0
     currLoc = 0    
     outFile = open(sys.argv[2], "w")
     for rec in FastaReader(open(sys.argv[1], 'r')).records():
@@ -133,7 +134,8 @@ if __name__ == '__main__':
             seqLen += len(line.rstrip("\n"))
             currLoc += len(line)
         #print "seqLen = ", seqLen
+        numSeq += 1
         outFile.write(str(loc)+","+str(seqLen)+"\n")
     outFile.close()
-    
+    print "Total num seqs = ", numSeq
     

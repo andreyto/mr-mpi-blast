@@ -21,20 +21,51 @@ import pylab
         #s__offset double
        #)''')
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ###    
-    
+   
 if __name__ == '__main__':
      
     if len(sys.argv) != 2:
-        print "python analysis.py dbName"
+        print "python cov_*.py dbName"
         sys.exit(1)    
     
     dbName = sys.argv[1]
     conn = connect(dbName)
     curs = conn.cursor()
- 
     numSlices = 100
-    cov_cpu = npy.zeros(numSlices,dtype=float)
+    cov_busy = npy.zeros(numSlices,dtype=float)    
  
+    vecStart = [] 
+    vecEnd   = []
+ 
+    #### 
+    curs.execute("select min(wallclock), max(wallclock) from item")
+    res = curs.fetchone()
+    start = res[0]
+    stop =  res[1]
+    inc = (stop - start) / numSlices
+    print start, stop, stop - start, "step = ", inc
+    
+    ###
+    curs.execute("select mpi_wtime, wallclock, startends from item order by rec____ID asc")
+ 
+    for row in curs:
+        ### If you want to exclude query build time
+        #if row[2] == 0: ### blast call start time
+        ### If you want to include query build time
+        if row[2] == 2: ### query build start time
+            vecStart.append(int((row[1] - start) / inc))
+        elif row[2] == 1: ### blast call end time
+            vecEnd.append(int((row[1] - start) / inc))
+ 
+    print len(vecStart), len(vecEnd)
+    
+    for i in range(len(vecEnd)):
+        cov_busy[vecStart[i]:vecEnd[i]] += 1
+        
+    #############################################
+    
+    cov_cpu = npy.zeros(numSlices,dtype=float)
+
     #### 
     curs.execute("select min(wallclock), max(wallclock), min(rusage_ut), max(rusage_ut) from item")
     res = curs.fetchone()
@@ -75,31 +106,25 @@ if __name__ == '__main__':
     ### increment by (end_blast_cpu - start_blast_cpu)
     ### /(end_blast_wall - start_blast_wall)
     ### 
-    for i in range(len(vecEnd)):
+    for i in range(len(vecStart)):
         diff_wallclock = vecOrigEnd[i] - vecOrigStart[i]
         diff_rusageuser = vecRusageUEnd[i] - vecRusageUStart[i]
         cpu_util = diff_rusageuser / diff_wallclock
         cov_cpu[vecStart[i]:vecEnd[i]] += cpu_util
-    
-    ###
-    ### Get the max(rank) and compute CPU utilization per core
-    ###
-    curs.execute("select max(rank___ID) from item")
-    maxRank = curs.fetchone()[0]
-    print maxRank
-    cov_cpu /=  (maxRank + 1)
         
+    cov_cpu /= (cov_busy+0.01)    
+
     curs.close()
     conn.close()
-
+ 
     ####
     #### Plotting
     ####
     pylab.figure(1)
     ax=pylab.subplot(111)
     y = range(numSlices)
-    print cov_cpu
-    ax.plot(y, cov_cpu, 'ro', linewidth=1, markersize=6)
+    ##print y
+    ax.plot(y, cov_cpu, 'bo', linewidth=1, markersize=6)
     
     ##ax.set_ylim(0, 800)
     ##ax.set_xlim(16, 2048)
@@ -111,7 +136,7 @@ if __name__ == '__main__':
     ax.yaxis.grid(True, linestyle='-.', which='minor')
     ax.xaxis.grid(True, linestyle='-.', which='minor')
 
-    ax.set_ylabel('CPU utilization over time per core', fontsize=20)
+    ax.set_ylabel('Avg. CPU utilization over time', fontsize=20)
     ax.set_xlabel('t (%)', fontsize=20)
         
     fontsize=16
@@ -120,9 +145,8 @@ if __name__ == '__main__':
     for tick in ax.yaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
         
-    imFileName = dbName + "-cov_cpu_per_core.png"
+    imFileName = dbName + "-cov_cpu_div_by_cov_busy.png"
     pylab.savefig(imFileName, dpi=(300))
     pylab.show()
     
 ### EOF
-

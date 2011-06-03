@@ -36,7 +36,8 @@ if __name__ == '__main__':
     cov_cpu = npy.zeros(numSlices,dtype=float)
  
     #### 
-    curs.execute("select min(wallclock), max(wallclock), min(rusage_ut), max(rusage_ut) from item")
+    curs.execute("select min(wallclock), max(wallclock), min(rusage_ut), \
+                  max(rusage_ut) from item")
     res = curs.fetchone()
     start = res[0]
     stop =  res[1]
@@ -54,7 +55,8 @@ if __name__ == '__main__':
     vecRusageUEnd   = []
     
     ###
-    curs.execute("select mpi_wtime, wallclock, rusage_ut, startends from item order by rec____ID asc")
+    curs.execute("select mpi_wtime, wallclock, rusage_ut, startends \
+                  from item order by rec____ID asc")
 
     for row in curs:
         ### If you want to exclude query build time
@@ -65,6 +67,7 @@ if __name__ == '__main__':
             vecOrigStart.append(row[1])
             vecRusageUStart.append(row[2])
         elif row[3] == 1: ### End time
+            #vecEnd.append(int(row[0]/inc))
             vecEnd.append(int((row[1] - start) / inc))
             vecOrigEnd.append(row[1])
             vecRusageUEnd.append(row[2])
@@ -81,25 +84,17 @@ if __name__ == '__main__':
         cpu_util = diff_rusageuser / diff_wallclock
         cov_cpu[vecStart[i]:vecEnd[i]] += cpu_util
     
-    ###
-    ### Get the max(rank) and compute CPU utilization per core
-    ###
-    curs.execute("select max(rank___ID) from item")
-    maxRank = curs.fetchone()[0]
-    print maxRank
-    cov_cpu /=  (maxRank + 1)
-        
     curs.close()
     conn.close()
-
+    
     ####
     #### Plotting
     ####
     pylab.figure(1)
     ax=pylab.subplot(111)
     y = range(numSlices)
-    print cov_cpu
-    ax.plot(y, cov_cpu, 'ro', linewidth=1, markersize=6)
+    ##print y
+    ax.plot(y, cov_cpu, 'bo', linewidth=1, markersize=6)
     
     ##ax.set_ylim(0, 800)
     ##ax.set_xlim(16, 2048)
@@ -111,7 +106,7 @@ if __name__ == '__main__':
     ax.yaxis.grid(True, linestyle='-.', which='minor')
     ax.xaxis.grid(True, linestyle='-.', which='minor')
 
-    ax.set_ylabel('CPU utilization over time per core', fontsize=20)
+    ax.set_ylabel('CPU utilization over time', fontsize=20)
     ax.set_xlabel('t (%)', fontsize=20)
         
     fontsize=16
@@ -120,7 +115,7 @@ if __name__ == '__main__':
     for tick in ax.yaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
         
-    imFileName = dbName + "-cov_cpu_per_core.png"
+    imFileName = dbName + "-cov_cpu.png"
     pylab.savefig(imFileName, dpi=(300))
     pylab.show()
     
