@@ -1,13 +1,13 @@
-//////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 //
 //  MR-MPI-BLAST: Parallelizing BLAST with MR-MPI
 //
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 05/23/2011
+//  Last updated: 06/03/2011
 //
-////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 /*
  *  This program is free software; you can redistribute it and/or modify
@@ -56,9 +56,9 @@
 using namespace MAPREDUCE_NS;
 using namespace std;
 
-/// ----------------------------------------------------------------------------
+/// 
 /// NCBI C++ Toolkit
-/// ----------------------------------------------------------------------------
+/// 
 #include <algo/blast/api/local_blast.hpp>
 #include <algo/blast/api/objmgr_query_data.hpp>
 #include <algo/blast/blastinput/blast_fasta_input.hpp>
@@ -67,6 +67,11 @@ using namespace std;
 #include <objects/blast/Blast4_request.hpp>
 #include <algo/blast/api/search_strategy.hpp>
 
+/// Tabular
+#include <algo/blast/format/blast_format.hpp>
+#include <algo/blast/format/blastfmtutil.hpp> 
+#include <objtools/align_format/tabular.hpp>
+
 USING_NCBI_SCOPE;
 USING_SCOPE(blast);
 
@@ -74,9 +79,10 @@ USING_SCOPE(blast);
 #include <stdint.h>
 
 
-/// ----------------------------------------------------------------------------
+/// 
 /// Boost lib
-/// ----------------------------------------------------------------------------
+/// 
+
 /// For tokenizer
 #include <boost/algorithm/string.hpp>
 
@@ -98,9 +104,10 @@ boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap
 uint32_t g_realFileSize;
 
 
-/// ----------------------------------------------------------------------------
+/// 
 /// Settings from mrblast.ini conf file
-/// ----------------------------------------------------------------------------
+/// 
+
 /// MR-MPI options
 int g_verbosity;
 int g_timer;                /// log elapsed time for each mapreduce call
@@ -118,10 +125,13 @@ string g_configFileName;
 int g_numDbFiles;
 const int MAXSTR = 80;      /// For mpi proc name and query header
 
+/// Filtering
+double g_IDENT_CUTOFF = 0.5; /// Doug's identity for filtering
+double g_COVER_CUTOFF = 0.9; /// Doug's coverage for filtering
 
-/// ----------------------------------------------------------------------------
+/// 
 /// Log
-/// ----------------------------------------------------------------------------
+/// 
 #include <sys/time.h>
 #include <sys/resource.h>
 //#define NDEBUG 1
@@ -136,9 +146,9 @@ static ostream *g_pLogStream = NULL;
 #define LOG (*g_pLogStream)
 
 
-/// ----------------------------------------------------------------------------
+/// 
 /// New scheduler
-/// ----------------------------------------------------------------------------
+/// 
 typedef struct structIndex {
     uint32_t qStart;
     uint32_t qLength;
@@ -160,9 +170,9 @@ multimap<string, int> g_multimapProcNameRank; /// dict of rank by proc name
 map<int, string> g_mapRankProcName;           /// dict of proc name by rank 
  
  
-/// ----------------------------------------------------------------------------
+/// 
 /// Misc.
-/// ----------------------------------------------------------------------------
+/// 
 const int SUB_ID_LEN = 20;  /// For KVing subject ID of blast hits. possible KMvec overflow
 const int QUERY = 0;        /// To retireve query info from CSeq_align
 const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
@@ -172,6 +182,7 @@ string g_queryFileName;
 int g_mapStyle;
 int g_MPI_worldRank;         /// MPI rank
 char g_MPI_procName[MAXSTR]; /// MPI procname
+int g_MPI_numProcs;
 
 /// For nucl or prot DB setting
 bool g_bIsProtein = false;
@@ -180,6 +191,8 @@ bool g_bIsProtein = false;
 static CSearchDatabase *g_pTargetDb = 0;
 string g_prevDbName = "";
 
+/// Output file to store BLAST hits
+string g_hitFileName = "";
 
 /// Import search strategy
 string g_strategyFileName;  /// Input blast search option file
@@ -197,17 +210,21 @@ typedef struct structBlRes {
     char subjectId[SUB_ID_LEN];
     double identity;
     uint32_t alignLen;
-    int numMismatches;
-    uint32_t numGapOpens;
+    int misMatches;
+    uint32_t gapOpens;
     uint32_t qStart;
     uint32_t qEnd;
     uint32_t sStart;
     uint32_t sEnd;
     double evalue;
     int bitScore;
+    uint32_t cutStart;
+    uint32_t cutEnd;
+    double doug_identity;
+    double doug_coverage;
 } structBlRes_t;
 
-
+ 
 /// To sort Blast hits by evalue
 typedef struct structEvalue {
     structBlRes_t *pRec;
@@ -215,31 +232,29 @@ typedef struct structEvalue {
     double evalue;
     int bitScore;
 } structEValue_t;
-string g_outFileName = "";
-
 
 /// Multiple iterations
 int g_numIter = 1;   
 uint32_t nSubWorkItemFiles = 0;
 uint32_t nWorkItemsPerIter = 0;
 uint32_t nRemains = 0;
+
+/// To pass info to map() and reduce()
 typedef struct structToPass {
     int rank;
     int iter;
 } structToPass_t;
 
-
-void collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm);
-void run_mr_mpi_blast(MPI_Comm mpiComm, int rank); 
-void mr_run_blast(int itask, KeyValue *kv, void *ptr);
-void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, 
-                                   int nvalues, int *valuebytes, KeyValue *kv, 
-                                   void *ptr);
+ 
+///
+/// Function declarations
+///
+void        collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm);
+void        run_mr_mpi_blast(MPI_Comm mpiComm, int rank); 
+void        mr_run_blast(int itask, KeyValue *kv, void *ptr);
+void        mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
 inline bool evalue_compare(structEValue_t e1, structEValue_t e2);
-inline bool check_exclusion(string qGi, string sGi, int qCutLocStart, 
-                            int qCutLocEnd, int sStart, int sEnd, int threshold);
-void run_mr_mpi_hit_rebuilt(MPI_Comm mpiComm, int rank);
-
+inline bool check_exclusion(string qGi, string sGi, int qCutLocStart, int qCutLocEnd, int sStart, int sEnd, int threshold);                        
 
  
 int main(int argc, char **argv)
@@ -369,6 +384,9 @@ int main(int argc, char **argv)
             g_timingEnabled = boost::lexical_cast<int>(parameters["TIMING"]);
             g_optDumpEnabled = boost::lexical_cast<int>(parameters["OPTDUMP"]);
             g_logFileName = parameters["LOGFNAME"];
+            
+            g_IDENT_CUTOFF = boost::lexical_cast<double>(parameters["IDENTCUTOFF"]);
+            g_COVER_CUTOFF = boost::lexical_cast<double>(parameters["COVERCUTOFF"]);
         }
         catch (const boost::bad_lexical_cast &) {
             cerr << "Exception: bad_lexical_cast" << endl;
@@ -382,16 +400,16 @@ int main(int argc, char **argv)
     ///
     /// MPI setup
     ///
-    int MPI_numProcs, MPI_procNameLen;    
+    int MPI_procNameLen;    
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &g_MPI_worldRank);
-    MPI_Comm_size(MPI_COMM_WORLD, &MPI_numProcs);
+    MPI_Comm_size(MPI_COMM_WORLD, &g_MPI_numProcs);
     MPI_Get_processor_name(g_MPI_procName, &MPI_procNameLen);
 
     ///
     /// Collect MPI node names and rank number for mapstyle=3 scheduler
     ///
-    collect_mpi_node_name(g_MPI_worldRank, MPI_numProcs, MPI_COMM_WORLD);
+    collect_mpi_node_name(g_MPI_worldRank, g_MPI_numProcs, MPI_COMM_WORLD);
     
     ///
     /// Creat memory-mapped file for query
@@ -464,14 +482,14 @@ int main(int argc, char **argv)
             uint32_t blockEnd = g_vecBlockBeginLoc[b + 1] - 1;
             structWorkItem_t aWorkItem;
             aWorkItem.blockBegin = blockBegin;
-            aWorkItem.blockEnd = blockEnd;
-            aWorkItem.dbNo = d;
+            aWorkItem.blockEnd   = blockEnd;
+            aWorkItem.dbNo       = d;
             g_vecWorkItem.push_back(aWorkItem);
         }
         structWorkItem_t aWorkItem;
         aWorkItem.blockBegin = g_vecBlockBeginLoc[g_numQueryBlocks - 1];
-        aWorkItem.blockEnd = g_realFileSize;
-        aWorkItem.dbNo = d;
+        aWorkItem.blockEnd   = g_realFileSize;
+        aWorkItem.dbNo       = d;
         g_vecWorkItem.push_back(aWorkItem);
     }
     g_numWorkItems = g_vecWorkItem.size();
@@ -496,7 +514,8 @@ int main(int argc, char **argv)
         nRemains = 0;
         nSubWorkItemFiles = 1;
     }
-    if (nRemains) nSubWorkItemFiles++; /// for one more added file of remaining work items
+    /// for one more added file of remaining work items
+    if (nRemains) nSubWorkItemFiles++; 
 
     if (g_MPI_worldRank == 0 && g_numIter != 1) {        
         cout << "Number of sub work item sets = " << nSubWorkItemFiles << endl;
@@ -512,48 +531,21 @@ int main(int argc, char **argv)
     run_mr_mpi_blast(MPI_COMM_WORLD, g_MPI_worldRank); 
     if (g_MPI_worldRank == 0) cout << "BLAST searching is done!" << endl;
     
+    ///
     /// Clean up
+    ///
     g_vecDbFile.clear();
     g_vecQueryIndex.clear();
     g_vecBlockBeginLoc.clear();
     g_vecWorkItem.clear();
     delete g_pTargetDb; 
-    
-    ///
-    /// Rebuilt hits 
-    ///
-    run_mr_mpi_hit_rebuilt(MPI_COMM_WORLD, g_MPI_worldRank); 
-    if (g_MPI_worldRank == 0) cout << "Hit rebuilding is done!" << endl;
-    
-    /// clean up
     if (g_logEnabled || g_timingEnabled) g_logFileStream.close();
     g_memmapQueryFile.close(); /// close mmapped file    
     MPI_Finalize();
     
     return 0;
 }
-
-
-/** MapReduce fuction for rebulding hits
- * @param mpiComm
- * @param rank
- */
-
-void run_mr_mpi_hit_rebuilt(MPI_Comm mpiComm, int rank)
-{
-    MapReduce *pMr = new MapReduce(mpiComm);
-    pMr->verbosity = g_verbosity;
-    pMr->timer = g_timer;
-    pMr->memsize = g_memSize;
-    //pMr->keyalign = sizeof(uint32_t); /// The key is Subject ID
-    pMr->mapstyle = 2; /// master/slave mode=2
-    pMr->outofcore = g_outOfCore;
-    MPI_Barrier(mpiComm);
-    
-    
-    delete pMr; /// MR-MPI
-}
-
+ 
 /** MapReduce fuction for BLAST search
  * @param mpiComm
  * @param rank
@@ -598,7 +590,7 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
 
     ///
     ///
-    /// MR-MPI init (FEB112011 version)
+    /// MR-MPI init (MAY2011 version)
     ///
     /// mapstyle = 0 (chunk) or 1 (stride) or 2 (master/slave)
     /// all2all = 0 (irregular communication) or 1 (use MPI_Alltoallv)
@@ -617,10 +609,10 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
     ///
     MapReduce *pMr = new MapReduce(mpiComm);
     pMr->verbosity = g_verbosity;
-    pMr->timer = g_timer;
-    pMr->memsize = g_memSize;
-    pMr->keyalign = sizeof(uint32_t); /// The key is a begin offset
-    pMr->mapstyle = g_mapStyle;       /// master/slave mode=2, custom scheduler=3
+    pMr->timer     = g_timer;
+    pMr->memsize   = g_memSize;
+    pMr->keyalign  = sizeof(uint32_t); /// The key is GI
+    pMr->mapstyle  = g_mapStyle;       /// master/slave mode=2, custom scheduler=3
     pMr->outofcore = g_outOfCore;
     MPI_Barrier(mpiComm);
 
@@ -641,7 +633,7 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
         toPass.rank = rank;
         toPass.iter = iter;
         
-        /// ///////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
         if (g_numIter != 1)
             if (nRemains != 0 && iter == nSubWorkItemFiles - 1)
                 pMr->map(nRemains, &mr_run_blast, &toPass);
@@ -649,12 +641,12 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
                 pMr->map(nWorkItemsPerIter, &mr_run_blast, &toPass);
         else 
             pMr->map(g_numWorkItems, &mr_run_blast, &toPass);
-        /// ///////////////////////////////////////////////////////
+        /////////////////////////////////////////////////////////////
 
         if (g_logEnabled)
             LOG << g_logMsg << "map() ends: " <<  MPI_Wtime() - mapTime << endl;
 
-        g_outFileName = g_outFilePrefix + "-hits-" 
+        g_hitFileName = g_outFilePrefix + "-hits-" 
                         + boost::lexical_cast<string>(iter) + "-"
                         + boost::lexical_cast<string>(rank) + ".txt";
                         
@@ -664,9 +656,9 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
             LOG << g_logMsg << "collate() starts: " << collateTime << endl;
         }
 
-        /// ////////////////
+        ///////////////////
         pMr->collate(NULL);
-        /// ////////////////
+        ///////////////////
 
         if (g_logEnabled)
             LOG << g_logMsg << "collate() ends: " << MPI_Wtime() - collateTime << endl;
@@ -677,9 +669,9 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
             LOG << g_logMsg << "reduce() starts: " << reduceTime << endl;
         }
 
-        /// //////////////////////////////////////////////
+        ///////////////////////////////////////////////////
         pMr->reduce(&mr_sort_multivalues_by_evalue, NULL);
-        /// //////////////////////////////////////////////
+        ///////////////////////////////////////////////////
 
         if (g_logEnabled)
             LOG << g_logMsg << "reduce() ends: " <<  MPI_Wtime() - reduceTime << endl;
@@ -744,17 +736,17 @@ void mr_run_blast(int itask,
     int rank = toPass->rank;
     int iter = toPass->iter;
     
-    uint32_t dbno, qBlockBeginOffset, qBlockEndOffset;
+    uint32_t dbno, qBlockStart, qBlockEnd;
     
     if (g_numIter > 1) {
         dbno = g_vecWorkItem[itask + nWorkItemsPerIter * iter].dbNo;
-        qBlockBeginOffset = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockBegin;
-        qBlockEndOffset = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockEnd;
+        qBlockStart = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockBegin;
+        qBlockEnd = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockEnd;
     }
     else {
         dbno = g_vecWorkItem[itask].dbNo;
-        qBlockBeginOffset = g_vecWorkItem[itask].blockBegin;
-        qBlockEndOffset = g_vecWorkItem[itask].blockEnd;
+        qBlockStart = g_vecWorkItem[itask].blockBegin;
+        qBlockEnd = g_vecWorkItem[itask].blockEnd;
     }
 
     struct timeval blastcallStartTime;
@@ -805,7 +797,7 @@ void mr_run_blast(int itask,
     string dbFileName = g_vecDbFile[dbno];
 
     ///
-    /// Read a block of sequeces from qBlockBeginOffset
+    /// Read a block of sequeces from qBlockStart
     ///
     double query_build_time;
     if (g_timingEnabled) {
@@ -824,25 +816,23 @@ void mr_run_blast(int itask,
             << qBuildStart_s_Time.tv_sec * 1000000
              + qBuildStart_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << qBlockBeginOffset << endl;
+            << "," << qBlockStart << endl;
         LOG.flush();
     }
 
-    //uint32_t qBlockBeginOffset = qBlockBeginOffset;
-    //uint32_t qBlockEndOffset   = qBlockEndOffset;
     const char *pMmapQueryFile = (char*)g_memmapQueryFile.data();
-    /// //////////////////////////////////////////////////////////////////////////////////
-    string query(pMmapQueryFile + qBlockBeginOffset, qBlockEndOffset - qBlockBeginOffset);
-    /// //////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////
+    string query(pMmapQueryFile + qBlockStart, qBlockEnd - qBlockStart);
+    ////////////////////////////////////////////////////////////////////
     vector<string> vecHeader;        /// For collecting def lines of queries
     vector<uint32_t> vecBeginOffset; /// For collecting beginoffsets of queries
     uint32_t numQueries = 0;
-    char *c = (char*)(pMmapQueryFile + qBlockBeginOffset);
-    uint32_t loc = qBlockBeginOffset;
+    char *c = (char*)(pMmapQueryFile + qBlockStart);
+    uint32_t loc = qBlockStart;
     char buff2[MAXSTR];
     size_t buffIdx = 0;
 
-    while (loc < qBlockEndOffset) {
+    while (loc < qBlockEnd) {
         if ((*c) == '>') {
             numQueries++;
             vecBeginOffset.push_back(loc);
@@ -880,8 +870,7 @@ void mr_run_blast(int itask,
 
     ///
     /// Target db name setting
-    ///
-    
+    ///    
     double db_loading_time;
     if (g_timingEnabled) {
         g_mapCallNo++;
@@ -899,13 +888,13 @@ void mr_run_blast(int itask,
             << dbLoadingStart_s_Time.tv_sec * 1000000
              + dbLoadingStart_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << qBlockBeginOffset << endl;
+            << "," << qBlockStart << endl;
         LOG.flush();
     }
     
     if (g_pTargetDb == 0 || dbFileName != g_prevDbName) {
         delete g_pTargetDb;        
-        if (g_bIsProtein)
+        if (g_bIsProtein) 
             g_pTargetDb = new CSearchDatabase(dbFileName,
                                               CSearchDatabase::eBlastDbIsProtein);
         else
@@ -933,15 +922,15 @@ void mr_run_blast(int itask,
             << blastcallStart_s_Time.tv_sec * 1000000
              + blastcallStart_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << qBlockBeginOffset << endl;
+            << "," << qBlockStart << endl;
         LOG.flush();
     }
 
-    /// //////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////
     CSearchResultSet results;
     CLocalBlast lcl_blast(pQueryFactory, pBlOpts, *g_pTargetDb);
     results = *lcl_blast.Run(); 
-    /// //////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////
 
     if (g_timingEnabled) {
         double blast_call_etime = MPI_Wtime();
@@ -958,7 +947,7 @@ void mr_run_blast(int itask,
             << blastcallEnd_s_Time.tv_sec * 1000000
              + blastcallEnd_s_Time.tv_usec << ","
             << dbFileName << "," << g_mapCallNo << "," << g_MPI_procName
-            << "," << qBlockBeginOffset << endl;
+            << "," << qBlockStart << endl;
         LOG.flush();
     }
 
@@ -986,7 +975,6 @@ void mr_run_blast(int itask,
     for (size_t i = 0; i < results.GetNumResults(); ++i) {
 
         CConstRef<CSeq_align_set> pAln_set = results[i].GetSeqAlign();
-
         if (results[i].HasAlignments()) {
             ITERATE(CSeq_align_set::Tdata, itr_res, pAln_set->Get()) {
                 const CSeq_align& seqAlign = **itr_res;
@@ -994,7 +982,7 @@ void mr_run_blast(int itask,
                 /// Note: queryID is not unique. It's internal qid in 
                 /// blFastaInputSource.
                 string queryID = seqAlign.GetSeq_id(QUERY).GetSeqIdString();
-                string subID = seqAlign.GetSeq_id(SUBJECT).GetSeqIdString(); /// GI
+                string subID = seqAlign.GetSeq_id(SUBJECT).GetSeqIdString();
 
                 ///
                 /// Refer: 
@@ -1009,46 +997,144 @@ void mr_run_blast(int itask,
                 /// eScore_PositiveCount
                 /// eScore_NegativeCount
                 /// eScore_MismatchCount
-                
                 /// eScore_PercentIdentity_Gapped
                 /// eScore_PercentIdentity_Ungapped
                 /// eScore_PercentIdentity_GapOpeningOnly
                 /// eScore_PercentCoverage
-                
                 /// eScore_SumEValue
                 /// eScore_CompAdjMethod
                 /// eScore_HighQualityPercentCoverage ?????
                 /// eScore_PercentIdentity = eScore_PercentIdentity_Gapped 
                 ///
                 double pIdentity = 0.0;
+                //double PercentIdentity_Gapped;
+                //double PercentIdentity_Ungapped;
+                //double PercentIdentity_GapOpeningOnly;
+                //double percentCoverage = 0.0;
+                //double HighQualityPercentCoverage;
+                
                 seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity_Gapped, PercentIdentity_Gapped);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity_Ungapped, PercentIdentity_Ungapped);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity_GapOpeningOnly, PercentIdentity_GapOpeningOnly);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_PercentCoverage, percentCoverage);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_HighQualityPercentCoverage, HighQualityPercentCoverage);
+                //cout << "pIdentity = " << double(pIdentity) << endl;
+                //cout << "PercentIdentity_Gapped = " << PercentIdentity_Gapped << endl;
+                //cout << "PercentIdentity_Ungapped = " << PercentIdentity_Ungapped << endl;
+                //cout << "PercentIdentity_GapOpeningOnly = " << PercentIdentity_GapOpeningOnly << endl;
+                //cout << "PercentCoverage = " << double(percentCoverage) << endl;
+                //cout << "HighQualityPercentCoverage = " << HighQualityPercentCoverage << endl;
 
-                uint32_t alignLen = 0, qStart = 0, qEnd = 0, sStart = 0, sEnd = 0;
-                uint32_t gapOpens = 0;
-                gapOpens    = seqAlign.GetNumGapOpenings();
-                qStart      = seqAlign.GetSeqStart(QUERY);
-                qEnd        = seqAlign.GetSeqStop(QUERY);
-                sStart      = seqAlign.GetSeqStart(SUBJECT);
-                sEnd        = seqAlign.GetSeqStop(SUBJECT);
-                alignLen    = seqAlign.GetAlignLength();
+                uint32_t gapOpens    = seqAlign.GetNumGapOpenings();
+                //cout << "gapOpens = " << gapOpens << endl;                
+                //uint32_t totalGaps   = seqAlign.GetTotalGapCount();
+                //cout << "totalGaps = " << totalGaps << endl;                
+                uint32_t qStart      = seqAlign.GetSeqStart(QUERY);
+                uint32_t qEnd        = seqAlign.GetSeqStop(QUERY);
+                uint32_t sStart      = seqAlign.GetSeqStart(SUBJECT);
+                uint32_t sEnd        = seqAlign.GetSeqStop(SUBJECT);
+                uint32_t alignLen    = seqAlign.GetAlignLength();
+                //cout << "alignLen = " << alignLen << endl;                
 
                 double eValue = 0.0;
-                int bitScore = 0;
-                int misMatches = 0;
-
+                int bitScore = 0, misMatches = 0;
                 seqAlign.GetNamedScore(CSeq_align::eScore_EValue, eValue);
                 seqAlign.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
                 seqAlign.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
-
-                /// Get the saved qBlockBeginOffset from vBeginOffset
-                uint32_t uniqueQID =
-                    vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
-
+                //cout << "misMatches = " << misMatches << endl;  
+                
+                //double alignLenRatio = seqAlign.AlignLengthRatio();
+                //TSeqRange r0 = seqAlign.GetSeqRange(QUERY);
+                //TSeqRange r1 = seqAlign.GetSeqRange(SUBJECT);
+                //double r = 0;
+                //if (r0.GetLength()) {
+                    //r = double(r1.GetLength()) / double(r0.GetLength());
+                //}
+                //cout << "alignLenRatio = " << r << " "<< r1.GetLength() << " / " << r0.GetLength() << endl;
+                
+                int identityCount = 0;
+                //int positiveCount = 0, negativeCount = 0;
+                seqAlign.GetNamedScore(CSeq_align::eScore_IdentityCount, identityCount);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_PositiveCount, positiveCount);
+                //seqAlign.GetNamedScore(CSeq_align::eScore_NegativeCount, negativeCount);
+                //cout << "identityCount = " << identityCount << endl;
+                //cout << "positiveCount = " << positiveCount << endl;
+                //cout << "negativeCount = " << negativeCount << endl;
+                
+                ///
+                /// Retrieve GI and cutting locations    
+                ///
+                
+                /// Get the saved qBlockStart from vBeginOffset
+                uint32_t bOffset = vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
+                
+                /// Get GI
+                string line(pMmapQueryFile + bOffset, 80);
+                vector<string> vecTokens;
+                boost::split(vecTokens, line, boost::is_any_of("\n"));
+                assert(vecTokens.size() == 2);
+                string defLine = vecTokens[0];
+                vecTokens.clear();
+                boost::split(vecTokens, defLine, boost::is_any_of("|"));
+                uint32_t gi = boost::lexical_cast<uint32_t>(vecTokens[1]);
+                
+                /// Get cutting coords               
+                string coord = vecTokens[vecTokens.size()-1];
+                vecTokens.clear();
+                boost::split(vecTokens, coord, boost::is_any_of("_"));
+                int cutStart = boost::lexical_cast<int>(vecTokens[vecTokens.size()-2]);
+                int cutEnd   = boost::lexical_cast<int>(vecTokens[vecTokens.size()-1]);
+                int length   = cutEnd - cutStart;
+   
                 ///
                 /// Add a csv blast result to kv
                 ///
-                if (g_exclEnabled) {
-                    /// Tokenize query header
+                if (!g_exclEnabled) {
+                    
+                    ///
+                    /// Doug's filtering
+                    ///
+                    /// identity = # of identical bases / length of read
+                    /// coverage = (read end – read begin)/ length of read
+                    ///
+                    /// identity > 50%
+                    /// coverage > 90%
+                    ///
+                    double ident = double(identityCount) / double(length);
+                    double cover = double(qEnd - qStart) / double(length);
+                    //cout << "length = " << length << endl;
+                    //cout << "ident = " << ident << endl;
+                    //cout << "cover = " << cover << endl;
+ 
+                    if (ident >= g_IDENT_CUTOFF && cover >= g_COVER_CUTOFF) {
+                        structBlRes_t res;
+                        res.subjectId[0] = '\0';
+                        strcpy(res.subjectId, subID.c_str());
+                        res.identity      = pIdentity;
+                        res.alignLen      = alignLen;
+                        res.misMatches    = misMatches;
+                        res.gapOpens      = gapOpens;
+                        res.qStart        = qStart + cutStart;
+                        res.qEnd          = qEnd + cutStart;
+                        res.sStart        = sStart;
+                        res.sEnd          = sEnd;
+                        res.evalue        = eValue;
+                        res.bitScore      = bitScore;
+                        res.cutStart      = cutStart;
+                        res.cutEnd        = cutEnd;
+                        res.doug_identity = ident;
+                        res.doug_coverage = cover;
+                        
+                        uint32_t newKey   = gi;
+                        kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
+                                sizeof(structBlRes_t));     
+                    }               
+                }
+                else {
+                    ///
+                    /// Tokenize query def line
+                    ///
                     string qHeader =
                         vecHeader[boost::lexical_cast<uint32_t>(queryID)-1];
                     vector<string> vecQueryId;
@@ -1078,29 +1164,28 @@ void mr_run_blast(int itask,
                         ///
                         /// To pass Blast hits using struct, outfmt=6
                         /// query id, subject id, % identity, alignment length,
-                        /// numMismatches, gap opens, q. start, q. end, s. start,
+                        /// misMatches, gap opens, q. start, q. end, s. start,
                         /// s. end, evalue, bit score
                         ///
                         structBlRes_t res;
-                        //strncpy(res.subjectId, subID.c_str(), subID.length());
                         res.subjectId[0] = '\0';
                         strcpy(res.subjectId, subID.c_str());
-                        res.identity = pIdentity;
-                        res.alignLen = alignLen;
-                        res.numMismatches = misMatches;
-                        res.numGapOpens = gapOpens;
-                        res.qStart = qStart;
-                        res.qEnd = qEnd;
-                        res.sStart = sStart;
-                        res.sEnd = sEnd;
-                        res.evalue = eValue;
-                        res.bitScore = bitScore;
-
+                        res.identity   = pIdentity;
+                        res.alignLen   = alignLen;
+                        res.misMatches = misMatches;
+                        res.gapOpens   = gapOpens;
+                        res.qStart     = qStart;
+                        res.qEnd       = qEnd;
+                        res.sStart     = sStart;
+                        res.sEnd       = sEnd;
+                        res.evalue     = eValue;
+                        res.bitScore   = bitScore;
+                        
                         ///
                         /// ADD <KEY = "QUERYID", VALUE="BLASTRESULT">
                         /// TO KV
                         ///
-                        uint32_t newKey = uniqueQID;
+                        uint32_t newKey = boost::lexical_cast<uint32_t>(qGi);
                         kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
                                 sizeof(structBlRes_t));
                     }
@@ -1130,26 +1215,6 @@ void mr_run_blast(int itask,
                         exFile.close();
                     }
                 }
-                else {
-                    structBlRes_t res;
-                    //strncpy(res.subjectId, subID.c_str(), subID.length());
-                    res.subjectId[0] = '\0';
-                    strcpy(res.subjectId, subID.c_str());
-                    res.identity      = pIdentity;
-                    res.alignLen      = alignLen;
-                    res.numMismatches = misMatches;
-                    res.numGapOpens   = gapOpens;
-                    res.qStart        = qStart;
-                    res.qEnd          = qEnd;
-                    res.sStart        = sStart;
-                    res.sEnd          = sEnd;
-                    res.evalue        = eValue;
-                    res.bitScore      = bitScore;
-
-                    uint32_t newKey   = uniqueQID;
-                    kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
-                            sizeof(structBlRes_t));
-                }
             }
         }
     }
@@ -1171,11 +1236,10 @@ inline bool evalue_compare(structEValue_t e1,
     /// ret == 0: e1.pSubjectId == e2.pSubjectId
     /// ret < 0: e1.pSubjectId < e2.pSubjectId
     if (ret == 0)
-        return (e1.evalue != e2.evalue) ? (e1.evalue < e2.evalue):(e1.bitScore < e2.bitScore);
-    else if (ret > 0)
-        return true;
-    else 
-        return false;
+        return (e1.evalue != e2.evalue) ? 
+            (e1.evalue < e2.evalue) : (e1.bitScore < e2.bitScore);
+    else if (ret > 0) return true;
+    else return false;
 }
 
 /** Sort by evalue - Passed to MR-MPI reduce() for sorting KMVs by evalue.
@@ -1230,21 +1294,25 @@ void mr_sort_multivalues_by_evalue(char *key,
     /// Note: The file open option is "a".
     /// Note: outfmt = 6 in Blast
     ///
-    ofstream outputFile(g_outFileName.c_str(), ios::out | ios::app);
+    ofstream outputFile(g_hitFileName.c_str(), ios::out | ios::app);
     for (size_t n = 0; n < (unsigned)nvalues; n++) {
         structBlRes_t* res = (structBlRes_t*)(vecHit[n].pRec);
         outputFile << *(uint32_t*)key << "\t"
             << res->subjectId << "\t"
             << double(res->identity) << "\t"
             << res->alignLen << "\t"
-            << res->numMismatches << "\t"
-            << res->numGapOpens << "\t"
+            << res->misMatches << "\t"
+            << res->gapOpens << "\t"
             << res->qStart << "\t"
             << res->qEnd << "\t"
             << res->sStart << "\t"
             << res->sEnd << "\t"
             << double(res->evalue) << "\t"
-            << res->bitScore 
+            << res->bitScore << "\t"
+            << res->cutStart << "\t"
+            << res->cutEnd << "\t"
+            << res->doug_identity << "\t"
+            << res->doug_coverage
             << endl;
     }
     outputFile.close();
