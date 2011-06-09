@@ -33,7 +33,7 @@ Blast4-request ::= {
     algorithm-options {
       {
         name "DbLength",
-        value big-integer 364332541498
+        value big-integer 0
       },
       {
         name "EvalueThreshold",
@@ -46,6 +46,10 @@ Blast4-request ::= {
       {
         name "GapXDropoffFinal",
         value real { 0, 10, 0 }
+      },
+      {
+        name "WordSize",
+        value integer 11
       },
       {
         name "EffectiveSearchSpace",
@@ -78,6 +82,14 @@ Blast4-request ::= {
       {
         name "WindowSize",
         value integer 0
+      },
+      {
+        name "ForceMbIndex",
+        value boolean FALSE
+      },
+      {
+        name "MbIndexName",
+        value string "nt.00"
       },
       {
         name "HitlistSize",

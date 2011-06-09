@@ -17,13 +17,23 @@ if __name__ == "__main__":
         print "OK! Num seqs = %d" % sid
     
     elif (op_case == 2):
+        numShortGenome = 0
         for cur_record in SeqIO.parse(inFileName, "fasta"):
-            if (len(cur_record) < 1000000):
+            if (len(cur_record) < 3000):
                 #print cur_record.id
                 #print cur_record.seq
                 #print len(cur_record) #len(cur_record.seq) seq length
                 header1 = cur_record.id
                 seq1 = cur_record.seq.upper()
+                print ">"+header1
+                print seq1
+                numShortGenome += 1
+                if (numShortGenome == 10):
+                    break
+                
+    elif (op_case == 3):
+        numLongGenome = 0
+        for cur_record in SeqIO.parse(inFileName, "fasta"):
             if (len(cur_record) > 5000000):
                 #print cur_record.id
                 #print repr(cur_record.seq)
@@ -31,10 +41,24 @@ if __name__ == "__main__":
                 #print len(cur_record) #len(cur_record.seq) seq length
                 header2 = cur_record.id
                 seq2 = cur_record.seq.upper()
-                break
-        print header1
-        print seq1
-        print header2
-        print seq2
-        
-        
+                print ">"+header2
+                print seq2
+                numLongGenome += 1        
+                if (numLongGenome == 2):
+                    break
+                    
+    elif (op_case == 4):
+        numShortGenome = 0
+        for cur_record in SeqIO.parse(inFileName, "fasta"):
+            if (len(cur_record) > 10000 and len(cur_record) < 20000):
+                #print cur_record.id
+                #print cur_record.seq
+                #print len(cur_record) #len(cur_record.seq) seq length
+                header1 = cur_record.id
+                seq1 = cur_record.seq.upper()
+                print ">"+header1
+                print seq1
+                numShortGenome += 1
+                if (numShortGenome == 2):
+                    break
+## EOF        

@@ -5,7 +5,7 @@
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 06/03/2011
+//  Last updated: 06/09/2011
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -62,19 +62,29 @@ using namespace std;
 #include <algo/blast/api/local_blast.hpp>
 #include <algo/blast/api/objmgr_query_data.hpp>
 #include <algo/blast/blastinput/blast_fasta_input.hpp>
+#include <algo/blast/api/blast_nucl_options.hpp>
+#include <algo/blast/api/blast_prot_options.hpp>
 
 /// Import search strategy
 #include <objects/blast/Blast4_request.hpp>
 #include <algo/blast/api/search_strategy.hpp>
 
 /// Tabular
+#include <algo/blast/blastinput/blast_args.hpp>
 #include <algo/blast/format/blast_format.hpp>
 #include <algo/blast/format/blastfmtutil.hpp> 
+#include <algo/blast/blastinput/blastn_args.hpp>
+#include <algo/blast/blastinput/blastp_args.hpp>
+#include <algo/blast/blastinput/cmdline_flags.hpp>
+#include <algo/blast/blastinput/blast_input.hpp>
+#include <algo/blast/blastinput/blast_input_aux.hpp>
 #include <objtools/align_format/tabular.hpp>
 
 USING_NCBI_SCOPE;
-USING_SCOPE(blast);
-
+USING_SCOPE (blast);
+USING_SCOPE (objects);
+USING_SCOPE (align_format);
+    
 /// For typedef unsigned long long int uint32_t
 #include <stdint.h>
 
@@ -103,6 +113,7 @@ namespace pod = boost::program_options::detail;
 boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap query file
 uint32_t g_realFileSize;
 
+#include "blast_app_util.hpp"
 
 /// 
 /// Settings from mrblast.ini conf file
@@ -121,7 +132,7 @@ string g_exclHistFileName;
 
 /// DB options
 string g_dbFileName;
-string g_configFileName;
+string g_configFileName = "mrblast.ini";
 int g_numDbFiles;
 const int MAXSTR = 80;      /// For mpi proc name and query header
 
@@ -137,7 +148,7 @@ double g_COVER_CUTOFF = 0.9; /// Doug's coverage for filtering
 //#define NDEBUG 1
 int g_logEnabled = 0;
 int g_timingEnabled = 0;
-int g_optDumpEnabled = 0;   /// For dumping Blast pBlOpts out
+int g_optDumpEnabled = 0;   /// For dumping Blast opts_hndl out
 int g_mapCallNo = 0;        /// Serial no of map calls in each rank
 string g_logFileName;
 string g_logMsg;
@@ -188,7 +199,7 @@ int g_MPI_numProcs;
 bool g_bIsProtein = false;
 
 /// Blast target DB setting
-static CSearchDatabase *g_pTargetDb = 0;
+CRef<CSearchDatabase> g_searchDatabase;
 string g_prevDbName = "";
 
 /// Output file to store BLAST hits
@@ -217,7 +228,7 @@ typedef struct structBlRes {
     uint32_t sStart;
     uint32_t sEnd;
     double evalue;
-    int bitScore;
+    double bitScore;
     uint32_t cutStart;
     uint32_t cutEnd;
     double doug_identity;
@@ -230,7 +241,7 @@ typedef struct structEvalue {
     structBlRes_t *pRec;
     char* pSubjectId;
     double evalue;
-    int bitScore;
+    double bitScore;
 } structEValue_t;
 
 /// Multiple iterations
@@ -245,121 +256,37 @@ typedef struct structToPass {
     int iter;
 } structToPass_t;
 
- 
+/// For NcbiApp
+CRef<CBlastOptionsHandle> g_opts_hndl;
+CRef<CBlastAppArgs> g_cmdLineArgs;
+
 ///
 /// Function declarations
 ///
-void        collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm);
 void        run_mr_mpi_blast(MPI_Comm mpiComm, int rank); 
 void        mr_run_blast(int itask, KeyValue *kv, void *ptr);
-void        mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
+inline void collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm);
+inline void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
 inline bool evalue_compare(structEValue_t e1, structEValue_t e2);
 inline bool check_exclusion(string qGi, string sGi, int qCutLocStart, int qCutLocEnd, int sStart, int sEnd, int threshold);                        
 
- 
-int main(int argc, char **argv)
+
+
+class CMrMpiBlastApplication : public CNcbiApplication
 {
-    po::options_description generalDesc("General options");
-    generalDesc.add_options()
-    ("help,h", "print help message")
-    ("query-file,i", po::value<string>(), "set input query file")
-    ("index-file,d", po::value<string>(), "set input index file")
-    ("import-search-strategy,s", po::value<string>(), "set search strategy file")
-    ("db-list,l", po::value<string>(), "set DB partition name list file")
-    ("conf-file,c", po::value<string>(), "set configuration file")
-    ("block-size,b", po::value<int>(), "set the number of base-pairs per work item")
-    ;
+private:
+    virtual void Init(void);
+    virtual int  Run(void); 
+};
 
-    po::options_description OptionalDesc("Optional options");
-    OptionalDesc.add_options()
-    ("output-prefix,o", po::value<string>(&g_outFilePrefix)->default_value("output"),
-     "set output prefix for output file names (default=output)")
-    ("map-style,m", po::value<int>(&g_mapStyle)->default_value(2),
-     "set MR-MPI mapstyle: 2=master/slave, 3=new scheduler")
-    ("is-protein,p", po::value<bool>(&g_bIsProtein)->default_value(false),
-     "set db type (default=false)")
-    ("iteration,n", po::value<int>(&g_numIter)->default_value(1), 
-     "set the number of iterations")          
-    ;
-
-    po::options_description allDesc("Allowed options");
-    allDesc.add(generalDesc).add(OptionalDesc);
-
-    po::variables_map vm;
-    po::store(po::parse_command_line(argc, argv, allDesc), vm);
-    po::notify(vm);
-
-    if (
-        argc < 2 || (!strcmp(argv[1], "-?") || !strcmp(argv[1], "--?")
-                 || !strcmp(argv[1], "/?") || !strcmp(argv[1], "/h")
-                 || !strcmp(argv[1], "-h") || !strcmp(argv[1], "--h")
-                 || !strcmp(argv[1], "--help") || !strcmp(argv[1], "/help")
-                 || !strcmp(argv[1], "-help")  || !strcmp(argv[1], "help"))) {
-        cout << "MR-MPI Blast\n" << "Author: Seung-Jin Sul (ssul@jcvi.org)\n\n"
-             << allDesc;
-        return 1;
-    }
-    else {
-        if (vm.count("query-file"))
-            g_queryFileName = vm["query-file"].as<string>();
-        else {
-            cerr << "ERROR: query file was not set.\n\n";
-            cout << allDesc;
-            return 1;
-        }
-        if (vm.count("index-file"))
-            g_indexFileName = vm["index-file"].as<string>();
-        else {
-            cerr << "ERROR: index file was not set.\n\n";
-            cout << allDesc;
-            return 1;
-        }
-        if (vm.count("import-search-strategy"))
-            g_strategyFileName = vm["import-search-strategy"].as<string>();
-        else {
-            cerr << "ERROR: option file was not set.\n\n";
-            cout << allDesc;
-            return 1;
-        }
-        if (vm.count("db-list"))
-            g_dbFileName = vm["db-list"].as<string>();
-        else {
-            cerr << "ERROR: DB name list file was not set.\n\n";
-            cout << allDesc;
-            return 1;
-        }
-        if (vm.count("conf-file"))
-            g_configFileName = vm["conf-file"].as<string>();
-        else {
-            cerr << "ERROR: configuration file was not set.\n\n";
-            cout << allDesc;
-            return 1;
-        }
-        if (vm.count("block-size"))
-            g_blockSize = vm["block-size"].as<int>();
-        else {
-            cerr << "ERROR: block size was not set.\n\n";
-            cout << allDesc;
-            return 1;
-        }
-
-        ///
-        /// Read OPTIONAL arguments
-        ///
-        if (vm.count("output-prefix"))
-            g_outFilePrefix = vm["output-prefix"].as<string>();
-        if (vm.count("map-style")) g_mapStyle = vm["map-style"].as<int>();
-        if (vm.count("iteration")) 
-            g_numIter = vm["iteration"].as<int>();
-    }
-
+void CMrMpiBlastApplication::Init(void)
+{
     ///
     /// Read conf file, mrblast.ini and set parameters
     ///
     ifstream config(g_configFileName.c_str(), ios::in);
     if (!config) {
         cerr << "ERROR: configuration file not found" << endl;
-        return 1;
     }
 
     set<string> options;
@@ -370,23 +297,32 @@ int main(int argc, char **argv)
         for (pod::config_file_iterator i(config, options), e ; i != e; ++i) {
             parameters[i->string_key] = i->value[0];
         }
-        g_exclHistFileName = parameters["EXCLHISTFNAME"];
+        g_exclHistFileName   = parameters["EXCLHISTFNAME"];
         try {
-            g_verbosity = boost::lexical_cast<int>(parameters["VERBOSITY"]);
-            g_timer = boost::lexical_cast<int>(parameters["TIMER"]);
-            g_memSize = boost::lexical_cast<int>(parameters["MEMSIZE"]);
-            g_outOfCore = boost::lexical_cast<int>(parameters["OUTOFCORE"]);
+            g_verbosity      = boost::lexical_cast<int>(parameters["VERBOSITY"]);
+            g_timer          = boost::lexical_cast<int>(parameters["TIMER"]);
+            g_memSize        = boost::lexical_cast<int>(parameters["MEMSIZE"]);
+            g_outOfCore      = boost::lexical_cast<int>(parameters["OUTOFCORE"]);
 
-            g_exclEnabled = boost::lexical_cast<int>(parameters["EXCLENABLED"]);
-            g_exclThreshold = boost::lexical_cast<int>(parameters["EXCLTHRESHOLD"]);
+            g_exclEnabled    = boost::lexical_cast<int>(parameters["EXCLENABLED"]);
+            g_exclThreshold  = boost::lexical_cast<int>(parameters["EXCLTHRESHOLD"]);
 
-            g_logEnabled = boost::lexical_cast<int>(parameters["LOGENABLED"]);
-            g_timingEnabled = boost::lexical_cast<int>(parameters["TIMING"]);
+            g_logEnabled     = boost::lexical_cast<int>(parameters["LOGENABLED"]);
+            g_timingEnabled  = boost::lexical_cast<int>(parameters["TIMING"]);
             g_optDumpEnabled = boost::lexical_cast<int>(parameters["OPTDUMP"]);
-            g_logFileName = parameters["LOGFNAME"];
+            g_logFileName    = parameters["LOGFNAME"];
             
-            g_IDENT_CUTOFF = boost::lexical_cast<double>(parameters["IDENTCUTOFF"]);
-            g_COVER_CUTOFF = boost::lexical_cast<double>(parameters["COVERCUTOFF"]);
+            g_IDENT_CUTOFF   = boost::lexical_cast<double>(parameters["IDENTCUTOFF"]);
+            g_COVER_CUTOFF   = boost::lexical_cast<double>(parameters["COVERCUTOFF"]);
+            
+            g_queryFileName  = parameters["QUERYFILENAME"];
+            g_indexFileName  = parameters["INDEXFILENAME"];
+            g_dbFileName     = parameters["DBLISTFILENAME"];
+            g_outFilePrefix  = parameters["OUTFILEPREFIX"];
+            g_blockSize      = boost::lexical_cast<int>(parameters["BLOCKSIZE"]);
+            g_mapStyle       = boost::lexical_cast<int>(parameters["MAPSTYLE"]);
+            g_numIter        = boost::lexical_cast<int>(parameters["NUMITER"]);
+            g_bIsProtein     = boost::lexical_cast<bool>(parameters["ISPROTEIN"]);
         }
         catch (const boost::bad_lexical_cast &) {
             cerr << "Exception: bad_lexical_cast" << endl;
@@ -395,22 +331,28 @@ int main(int argc, char **argv)
     catch (exception& e) {
         cerr << "Exception: " << e.what() << endl;
     }
+     
+    if (g_bIsProtein) g_cmdLineArgs.Reset(new CBlastpAppArgs());
+    else g_cmdLineArgs.Reset(new CBlastnAppArgs());
+    HideStdArgs(fHideLogfile | fHideConffile | fHideFullVersion | 
+                fHideXmlHelp | fHideDryRun);
+    SetupArgDescriptions(g_cmdLineArgs->SetCommandLine());  
+}
 
-
-    ///
-    /// MPI setup
-    ///
-    int MPI_procNameLen;    
-    MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &g_MPI_worldRank);
-    MPI_Comm_size(MPI_COMM_WORLD, &g_MPI_numProcs);
-    MPI_Get_processor_name(g_MPI_procName, &MPI_procNameLen);
-
+int CMrMpiBlastApplication::Run(void) 
+{     
+    const CArgs& args = GetArgs();
+    string allArgs;
+    RecoverSearchStrategy(args, g_cmdLineArgs);
+    CRef<CBlastOptionsHandle> opts_hndl(&*g_cmdLineArgs->SetOptions(args));
+    g_opts_hndl = opts_hndl;
+    //const CBlastOptions& opt = opts_hndl->GetOptions();
+    
     ///
     /// Collect MPI node names and rank number for mapstyle=3 scheduler
     ///
     collect_mpi_node_name(g_MPI_worldRank, g_MPI_numProcs, MPI_COMM_WORLD);
-    
+   
     ///
     /// Creat memory-mapped file for query
     ///
@@ -529,7 +471,7 @@ int main(int argc, char **argv)
     /// Run mr-mpi calls
     ///
     run_mr_mpi_blast(MPI_COMM_WORLD, g_MPI_worldRank); 
-    if (g_MPI_worldRank == 0) cout << "BLAST searching is done!" << endl;
+    if (g_MPI_worldRank == 0) cout << "Done!" << endl;
     
     ///
     /// Clean up
@@ -538,14 +480,35 @@ int main(int argc, char **argv)
     g_vecQueryIndex.clear();
     g_vecBlockBeginLoc.clear();
     g_vecWorkItem.clear();
-    delete g_pTargetDb; 
+    if (!g_searchDatabase.IsNull()) g_searchDatabase.Release();
     if (g_logEnabled || g_timingEnabled) g_logFileStream.close();
-    g_memmapQueryFile.close(); /// close mmapped file    
-    MPI_Finalize();
+    //g_memmapQueryFile.close(); /// close mmapped file  
     
+
     return 0;
 }
  
+ 
+int main(int argc, char** argv)
+{
+    ///
+    /// MPI setup
+    ///
+    int MPI_procNameLen;    
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &g_MPI_worldRank);
+    MPI_Comm_size(MPI_COMM_WORLD, &g_MPI_numProcs);
+    MPI_Get_processor_name(g_MPI_procName, &MPI_procNameLen);
+        
+    /// Execute main application function
+    int ret = CMrMpiBlastApplication().AppMain(argc, argv);    
+    
+    MPI_Finalize();   
+    
+    return ret;
+}
+
+
 /** MapReduce fuction for BLAST search
  * @param mpiComm
  * @param rank
@@ -612,7 +575,7 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
     pMr->timer     = g_timer;
     pMr->memsize   = g_memSize;
     pMr->keyalign  = sizeof(uint32_t); /// The key is GI
-    pMr->mapstyle  = g_mapStyle;       /// master/slave mode=2, custom scheduler=3
+    pMr->mapstyle  = g_mapStyle;       /// master/slave=2, custom scheduler=3
     pMr->outofcore = g_outOfCore;
     MPI_Barrier(mpiComm);
 
@@ -642,7 +605,9 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
         else 
             pMr->map(g_numWorkItems, &mr_run_blast, &toPass);
         /////////////////////////////////////////////////////////////
-
+        
+        g_memmapQueryFile.close(); /// close mmapped file  
+        
         if (g_logEnabled)
             LOG << g_logMsg << "map() ends: " <<  MPI_Wtime() - mapTime << endl;
 
@@ -661,7 +626,8 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
         ///////////////////
 
         if (g_logEnabled)
-            LOG << g_logMsg << "collate() ends: " << MPI_Wtime() - collateTime << endl;
+            LOG << g_logMsg << "collate() ends: " << MPI_Wtime() - collateTime 
+                << endl;
 
         double reduceTime;
         if (g_logEnabled) {
@@ -674,7 +640,8 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
         ///////////////////////////////////////////////////
 
         if (g_logEnabled)
-            LOG << g_logMsg << "reduce() ends: " <<  MPI_Wtime() - reduceTime << endl;
+            LOG << g_logMsg << "reduce() ends: " <<  MPI_Wtime() - reduceTime 
+                << endl;
 
         if (g_timingEnabled) {
             /// Wall-clock time
@@ -708,7 +675,8 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
             LOG << "Total wall-clock time,"
                 << tE - tS << "," << (tE - tS) / 1000000 << endl;
             LOG << "Total process time (user),"
-                << tE_user - tS_user << "," << (tE_user - tS_user) / 1000000 << endl;
+                << tE_user - tS_user << "," << (tE_user - tS_user) / 1000000 
+                << endl;
             LOG << "Total process time (sys),"
                 << tE_sys - tS_sys << "," << (tE_sys - tS_sys) / 1000000 << endl;
             LOG << "Total total process time (user+sys),"
@@ -766,36 +734,16 @@ void mr_run_blast(int itask,
     struct timeval dbLoadingStart_u_Time;
     struct timeval dbLoadingStart_s_Time;
     struct rusage  ru_dbLoading;
-
-    ///
-    /// Load Blast opotions from file
-    ///
-    ifstream strategyFile(g_strategyFileName.c_str(), ios::in);
-    if (!strategyFile.is_open()) {
-        cerr << "ERROR: failed to open a search strategy file" << endl;
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-    CNcbiIstream *pStrategyFileStream = &strategyFile;
-    CRef<CBlast4_request> pBl4Req;
-    try {
-        pBl4Req = ExtractBlast4Request(*pStrategyFileStream);
-    }
-    catch (const CSerialException&) {
-        NCBI_THROW(CInputException, eInvalidInput, "Failed to read search strategy file");
-    }
-    CImportStrategy importStrategy(pBl4Req);
-    CRef<blast::CBlastOptionsHandle> pBlOpts = importStrategy.GetOptionsHandle();
-    pBlOpts->Validate();
-
+     
     if (rank == 1 && g_optDumpEnabled == 1) {
         g_optDumpEnabled = 0;
         ofstream strategyOutFile("search_strategy.txt", ios::out);
-        pBlOpts->GetOptions().DebugDumpText(strategyOutFile, "pBlOpts", 1);
+        g_opts_hndl->GetOptions().DebugDumpText(strategyOutFile, "opts_hndl", 1);
         strategyOutFile.close();
     }
-
+    
     string dbFileName = g_vecDbFile[dbno];
-
+     
     ///
     /// Read a block of sequeces from qBlockStart
     ///
@@ -831,7 +779,6 @@ void mr_run_blast(int itask,
     uint32_t loc = qBlockStart;
     char buff2[MAXSTR];
     size_t buffIdx = 0;
-
     while (loc < qBlockEnd) {
         if ((*c) == '>') {
             numQueries++;
@@ -847,26 +794,24 @@ void mr_run_blast(int itask,
     }
 
     if (g_logEnabled)
-        LOG << g_logMsg << "Number of queries per a Blast call = " << numQueries << endl;
+        LOG << g_logMsg << "Number of queries per a Blast call = " << numQueries 
+            << endl;
 
-    ///
-    /// Set queries as fasta input
-    ///
-    SDataLoaderConfig dataLoaderConf(g_bIsProtein);
-    dataLoaderConf.OptimizeForWholeLargeSequenceRetrieval();
-    CBlastInputSourceConfig blInputSourceConf(dataLoaderConf);
-    /// Assign local query ID like "Query_1" with each query 
-    //blInputSourceConf.SetQueryLocalIdMode();
-
-    CBlastFastaInputSource blFastaInputSource(query, blInputSourceConf);
-    CBlastInput blInput(&blFastaInputSource);
-    CRef<CObjectManager> pObjmgr = CObjectManager::GetInstance();
-    if (!pObjmgr) {
-        throw runtime_error("Could not initialize object manager");
-    }
-    CScope scope(*pObjmgr);
-    TSeqLocVector vecQueryLoc = blInput.GetAllSeqLocs(scope);
-    CRef<IQueryFactory> pQueryFactory(new CObjMgr_QueryFactory(vecQueryLoc));
+    const CBlastOptions& opt = g_opts_hndl->GetOptions();
+    
+    /*** Get the query sequence(s) ***/
+    CRef<CQueryOptionsArgs> query_opts = g_cmdLineArgs->GetQueryOptionsArgs();
+    SDataLoaderConfig dlconfig(query_opts->QueryIsProtein());
+    dlconfig.OptimizeForWholeLargeSequenceRetrieval();
+    CBlastInputSourceConfig iconfig(dlconfig, query_opts->GetStrand(),
+                                 query_opts->UseLowercaseMasks(),
+                                 query_opts->GetParseDeflines(),
+                                 query_opts->GetRange(),
+                                 !g_cmdLineArgs->ExecuteRemotely());
+    iconfig.SetLowercaseMask(true);
+    //iconfig.SetQueryLocalIdMode();
+    CBlastFastaInputSource fasta(query, iconfig);
+    CBlastInput input(&fasta);
 
     ///
     /// Target db name setting
@@ -892,17 +837,73 @@ void mr_run_blast(int itask,
         LOG.flush();
     }
     
-    if (g_pTargetDb == 0 || dbFileName != g_prevDbName) {
-        delete g_pTargetDb;        
-        if (g_bIsProtein) 
-            g_pTargetDb = new CSearchDatabase(dbFileName,
-                                              CSearchDatabase::eBlastDbIsProtein);
-        else
-            g_pTargetDb = new CSearchDatabase(dbFileName,
-                                              CSearchDatabase::eBlastDbIsNucleotide);
+    if (g_searchDatabase.IsNull() || dbFileName != g_prevDbName) {
+        if (!g_searchDatabase.IsNull()) g_searchDatabase.Release();
+        if (g_bIsProtein) {
+            CRef<CSearchDatabase> searchDatabase(new CSearchDatabase(
+                dbFileName, CSearchDatabase::eBlastDbIsProtein));
+            g_searchDatabase = searchDatabase;
+        }
+        else {
+            CRef<CSearchDatabase> searchDatabase(new CSearchDatabase(
+                dbFileName, CSearchDatabase::eBlastDbIsNucleotide));
+            g_searchDatabase = searchDatabase;
+        }
     }
     g_prevDbName = dbFileName;
-
+        
+    /*** Initialize the database/subject ***/
+    CRef<CBlastDatabaseArgs> db_args(g_cmdLineArgs->GetBlastDatabaseArgs());
+    CRef<CLocalDbAdapter> db_adapter;
+    CRef<CScope> scope;
+    db_adapter.Reset();
+    CRef<CSearchDatabase> search_db = g_searchDatabase;
+    if (scope.Empty()) {
+        scope.Reset(new CScope(*CObjectManager::GetInstance()));
+    }
+    _ASSERT(scope.NotEmpty());
+    _ASSERT(search_db.NotEmpty());
+    try { 
+        // Try to open the BLAST database even for remote searches, as if
+        // it is available locally, it will be better to fetch the
+        // sequence data for formatting from this (local) source
+        CRef<CSeqDB> seqdb = search_db->GetSeqDb();
+        db_adapter.Reset(new CLocalDbAdapter(*search_db));
+        scope->AddDataLoader(RegisterOMDataLoader(seqdb));
+    } catch (const CSeqDBException&) {
+            // The BLAST database couldn't be found, report this for local
+            // searches, but for remote searches go on.
+    }
+    _ASSERT(db_adapter && scope);
+        
+    if (opt.GetUseIndex() && !g_cmdLineArgs->ExecuteRemotely()) {
+        BlastSeqSrc* seqsrc = db_adapter->MakeSeqSrc();
+        CRef<CBlastOptions> my_options(&(g_opts_hndl->SetOptions()));
+        CSetupFactory::InitializeMegablastDbIndex(seqsrc, my_options);
+    }
+    
+    /*** Get the formatting options ***/
+    CRef<CFormattingArgs> fmt_args(g_cmdLineArgs->GetFormattingArgs());
+    CBlastFormat formatter(opt, 
+                           *db_adapter,
+                           fmt_args->GetFormattedOutputChoice(),
+                           query_opts->GetParseDeflines(),
+                           g_cmdLineArgs->GetOutputStream(),
+                           fmt_args->GetNumDescriptions(),
+                           fmt_args->GetNumAlignments(),
+                           *scope,
+                           opt.GetMatrixName(),
+                           fmt_args->ShowGis(),
+                           fmt_args->DisplayHtmlOutput(),
+                           opt.GetQueryGeneticCode(),
+                           opt.GetDbGeneticCode(),
+                           opt.GetSumStatisticsMode(),
+                           g_cmdLineArgs->ExecuteRemotely(),
+                           db_adapter->GetFilteringAlgorithm(),
+                           fmt_args->GetCustomOutputFormatSpec(),
+                           g_cmdLineArgs->GetTask() == "megablast",
+                           opt.GetMBIndexLoaded());
+            
     ///
     /// Use the CLocalBlast class to run a BLAST search 
     ///
@@ -925,13 +926,330 @@ void mr_run_blast(int itask,
             << "," << qBlockStart << endl;
         LOG.flush();
     }
+    
+    /*** Process the input ***/
+    for (; !input.End(); formatter.ResetScopeHistory()) {
 
-    ////////////////////////////////////////////////////////////
-    CSearchResultSet results;
-    CLocalBlast lcl_blast(pQueryFactory, pBlOpts, *g_pTargetDb);
-    results = *lcl_blast.Run(); 
-    ////////////////////////////////////////////////////////////
+        CRef<CBlastQueryVector> query_batch(input.GetNextSeqBatch(*scope));
+        CRef<IQueryFactory> queries(new CObjMgr_QueryFactory(*query_batch));
+        CRef<CSearchResultSet> results;
 
+        CLocalBlast lcl_blast(queries, g_opts_hndl, db_adapter);
+        lcl_blast.SetNumberOfThreads(g_cmdLineArgs->GetNumThreads());
+        results = lcl_blast.Run();
+        //ITERATE(CSearchResultSet, result, *results) {
+            //formatter.PrintOneResultSet(**result, query_batch);
+        //}
+        
+        for (size_t i = 0; i < results->GetNumResults(); ++i) {
+            if ((*results)[i].HasAlignments()) {
+                CConstRef<CSeq_align_set> aln_set = (*results)[i].GetSeqAlign();
+                ITERATE(CSeq_align_set::Tdata, itr_res, aln_set->Get()) {   
+                    const CSeq_align& s = **itr_res;
+                    
+                    ///
+                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCSeq__align.html
+                    ///
+                    /// eScore_BitScore: BLAST-specific bit score
+                    /// eScore_EValue: BLAST-specific e-value
+                    /// eScore_AlignLength: not a score per se, but a useful metric nonetheless. This is the sum of all aligned segments and all gaps; this excludes introns and discontinuities
+                    /// eScore_IdentityCount
+                    /// eScore_MismatchCount
+                    /// eScore_PercentIdentity_Gapped
+                    /// eScore_PercentCoverage
+                    /// eScore_PercentIdentity = eScore_PercentIdentity_Gapped 
+                    ///                
+                    string queryID = s.GetSeq_id(QUERY).GetSeqIdString();
+                    string subID   = s.GetSeq_id(SUBJECT).GetSeqIdString();
+                    //uint32_t queryLength = 
+                        //sequence::GetLength(s.GetSeq_id(QUERY), scope);
+                    //uint32_t subjectLength = 
+                        //sequence::GetLength(s.GetSeq_id(SUBJECT), scope);
+ 
+                    int num_ident = -1;
+                    int score = 0, sum_n = 0;
+                    double bit_score = .0, evalue = .0;
+                    list<int> use_this_gi;
+                    CAlignFormatUtil::GetAlnScores(s, score, bit_score, evalue, 
+                                                   sum_n, num_ident, use_this_gi);
+                               
+                    ///
+                    /// Convert Std-seg and Dense-diag alignments to Dense-seg.
+                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/tabular_8cpp-source.html
+                    ///      http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCSeq__id.html
+                    ///
+                    uint32_t queryLength2;
+                    bool query_is_na = false, subject_is_na = false;
+                    bool bioseqs_found = true;
+                    try {
+                        const CBioseq_Handle& query_bh = 
+                            scope->GetBioseqHandle(s.GetSeq_id(0));
+                        //SetQueryId(query_bh);                            
+                        query_is_na = query_bh.IsNa();
+                        queryLength2 = query_bh.GetBioseqLength();
+                    } catch (const CException&) {
+                        list<CRef<CSeq_id> > query_ids;
+                        CRef<CSeq_id> id(new CSeq_id());
+                        id->Assign(s.GetSeq_id(0));
+                        query_ids.push_back(id);
+                        //SetQueryId(query_ids);
+                        bioseqs_found = false;
+                    }                    
+                    
+                    const bool kTranslated = s.GetSegs().IsStd();
+                    CRef<CSeq_align> finalAln(0);                    
+                    if (kTranslated) {
+                        CRef<CSeq_align> densegAln = s.CreateDensegFromStdseg();
+                        if (query_is_na && subject_is_na)
+                            finalAln = densegAln->CreateTranslatedDensegFromNADenseg();
+                        else
+                            finalAln = densegAln;
+                    }
+                    else if (s.GetSegs().IsDendiag()) {
+                        finalAln = CAlignFormatUtil::CreateDensegFromDendiag(s);
+                    }   
+                    const CDense_seg& ds = (finalAln ? finalAln->GetSegs().GetDenseg() :
+                                            s.GetSegs().GetDenseg());
+                    CRef<CAlnVec> alnVec;
+                    if (!kTranslated && ds.IsSetStrands() && 
+                        ds.GetStrands().front() == eNa_strand_minus) {
+                        CRef<CDense_seg> reversed_ds(new CDense_seg);
+                        reversed_ds->Assign(ds);
+                        reversed_ds->Reverse();
+                        alnVec.Reset(new CAlnVec(*reversed_ds, *scope));   
+                    } else {
+                        alnVec.Reset(new CAlnVec(ds, *scope));
+                    }    
+        
+                    int align_length = 0, num_gaps = 0, num_gap_opens = 0;
+                    CAlignFormatUtil::GetAlignLengths(*alnVec, align_length, 
+                                                      num_gaps, num_gap_opens);
+                     
+                    ///
+                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
+                    /// pct_identity = 100.0f * double(*identities) / count_aligned;
+                    ///
+                    double perc_ident = (align_length > 0 ? 
+                        ((double)num_ident)/align_length * 100 : 0);
+
+                    int num_mismatches = align_length - num_ident - num_gaps;
+                    
+                    uint32_t qStart      = s.GetSeqStart(QUERY);
+                    uint32_t qEnd        = s.GetSeqStop(QUERY);
+                    //qEnd += 1;
+                    uint32_t sStart      = s.GetSeqStart(SUBJECT);
+                    uint32_t sEnd        = s.GetSeqStop(SUBJECT);
+                    //sEnd += 1;
+                    //uint32_t alignLen    = s.GetAlignLength();
+                    //uint32_t alignLen2   = s.GetAlignLength(false);
+                    //double orig_perc_cover = (double)(qEnd - qStart)/queryLength;
+                    
+                    ///
+                    /// Retrieve GI and cutting locations    
+                    ///
+                    
+                    /// Get the saved qBlockStart from vBeginOffset
+                    uint32_t bOffset = 
+                        vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
+                    
+                    /// Get GI
+                    string line(pMmapQueryFile + bOffset, 80);
+                    vector<string> vecTokens;
+                    boost::split(vecTokens, line, boost::is_any_of("\n"));
+                    assert(vecTokens.size() == 2);
+                    string defLine = vecTokens[0];
+                    vecTokens.clear();
+                    boost::split(vecTokens, defLine, boost::is_any_of("|"));
+                    uint32_t gi = boost::lexical_cast<uint32_t>(vecTokens[1]);
+                
+                    ///
+                    /// Get cutting coords    
+                    /// Format: orig_header_chunkID_x_u_v_w
+                    ///
+                    ///          lower    upper   lower case
+                    ///         |xxxxxxx|XXXXXXX|xxxxxxx|
+                    ///         x       v       w       y
+                    ///
+                    ///         x: cutStart,   y: cutEnd
+                    ///         v: upperStart, w: upperEnd       
+                    /// 
+                    ///  CID    Type-0: XXX
+                    ///         Type-1: xxxXXX
+                    ///         Type-2: xxxXXXxxx
+                    ///         Type-3: XXXxxx
+                    ///
+                    string coord = vecTokens[vecTokens.size()-1];
+                    vecTokens.clear();
+                    boost::split(vecTokens, coord, boost::is_any_of("_"));
+                    assert(vecTokens.size() == 7);
+                    //int cId 
+                        //= boost::lexical_cast<int>(vecTokens[vecTokens.size()-6]);
+                    //int cType           
+                        //= boost::lexical_cast<int>(vecTokens[vecTokens.size()-5]);
+                    int cutStart        
+                        = boost::lexical_cast<int>(vecTokens[vecTokens.size()-4]);
+                    int cutEnd          
+                        = boost::lexical_cast<int>(vecTokens[vecTokens.size()-3]);
+                    int upperStart      
+                        = boost::lexical_cast<int>(vecTokens[vecTokens.size()-2]);
+                    int upperEnd        
+                        = boost::lexical_cast<int>(vecTokens[vecTokens.size()-1]);                
+                    //int length = cutEnd - cutStart;
+                
+                    ///
+                    /// Doug's filtering
+                    ///
+                    /// "Percent Identity” looks at every position in the aligned sequences 
+                    /// and counts the number that have the same base or amino acid.  
+                    /// This count is then divided by the aligned length and then multiplied by 100.
+                    ///
+                    /// identity = # of identical bases / length of read
+                    /// coverage = (read end – read begin)/ length of read (only uppercase seq)
+                    ///
+                    /// identity > 50%
+                    /// coverage > 90%
+                    ///
+                    double new_perc_cover = 0.0;
+                    uint32_t qStartTemp = qStart + cutStart;
+                    uint32_t qEndTemp = qEnd + cutStart;
+                
+                    //int identityCountTemp = identityCount;                    
+                    if (qStartTemp < upperStart) {
+                        qStartTemp = upperStart; 
+                        //identityCountTemp -= (upperStart - qStartOrig);
+                    }
+                    if (qEndTemp > upperEnd) {
+                        qEndTemp = upperEnd;
+                        //identityCountTemp -= (qEndOrig - upperEnd);
+                    }
+                    
+                    ///
+                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
+                    /// pct_coverage = 100.0f * double(covered_bases) / double(seq_len);
+                    ///
+                    new_perc_cover = double(qEndTemp - qStartTemp) / 
+                                    (upperEnd - upperStart) * 100; 
+                    
+                    ///
+                    /// Add a csv blast result to kv
+                    ///
+                    if (!g_exclEnabled) {  
+                        if (perc_ident >= g_IDENT_CUTOFF && 
+                            new_perc_cover >= g_COVER_CUTOFF) {
+                            structBlRes_t res;
+                            res.subjectId[0] = '\0';
+                            strcpy(res.subjectId, subID.c_str());
+                            res.identity      = perc_ident;
+                            res.alignLen      = align_length;
+                            res.misMatches    = num_mismatches;
+                            res.gapOpens      = num_gap_opens;
+                            res.qStart        = qStart + cutStart;
+                            res.qEnd          = qEnd + cutStart;
+                            res.sStart        = sStart;
+                            res.sEnd          = sEnd;
+                            res.evalue        = evalue;
+                            res.bitScore      = bit_score;
+                            res.cutStart      = cutStart;
+                            res.cutEnd        = cutEnd;
+                            res.doug_identity = perc_ident;
+                            res.doug_coverage = new_perc_cover;
+                            
+                            uint32_t newKey   = gi;
+                            kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
+                                    sizeof(structBlRes_t));     
+                        }     
+                    }  
+                    else {
+                        ///
+                        /// Tokenize query def line
+                        ///
+                        string qHeader =
+                            vecHeader[boost::lexical_cast<uint32_t>(queryID)-1];
+                        vector<string> vecQueryId;
+                        boost::split(vecQueryId, qHeader, boost::is_any_of("|"));
+
+                        ///
+                        /// The below infomation is only for our own simulated
+                        /// sequence data sets which has
+                        /// - origin GI
+                        /// - unique query ID
+                        /// - original sequence length
+                        /// - cut location start
+                        /// - cut location end
+                        ///
+                        
+                        /// GI
+                        string qGi = vecQueryId[1];   
+                        /// cut coordinates - start
+                        int qCutLocStart = boost::lexical_cast<int>(vecQueryId[4]);
+                        /// cut coordinates - end
+                        int qCutLocEnd =   boost::lexical_cast<int>(vecQueryId[5]);
+
+                        if (!check_exclusion(qGi, subID, qCutLocStart, qCutLocEnd,
+                                             sStart, sEnd, g_exclThreshold)) {
+
+                            ///
+                            /// To pass Blast hits using struct, outfmt=6
+                            /// query id, subject id, % identity, alignment length,
+                            /// misMatches, gap opens, q. start, q. end, s. start,
+                            /// s. end, evalue, bit score
+                            ///
+                            structBlRes_t res;
+                            res.subjectId[0] = '\0';
+                            strcpy(res.subjectId, subID.c_str());
+                            res.identity   = perc_ident;
+                            res.alignLen   = align_length;
+                            res.misMatches = num_mismatches;
+                            res.gapOpens   = num_gap_opens;
+                            res.qStart     = qStart;
+                            res.qEnd       = qEnd;
+                            res.sStart     = sStart;
+                            res.sEnd       = sEnd;
+                            res.evalue     = evalue;
+                            res.bitScore   = bit_score;
+                            
+                            ///
+                            /// ADD <KEY = "QUERYID", VALUE="BLASTRESULT">
+                            /// TO KV
+                            ///
+                            uint32_t newKey = boost::lexical_cast<uint32_t>(qGi);
+                            kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
+                                    sizeof(structBlRes_t));
+                        }
+                        ///
+                        /// Found a self hits. Record the hits in a histroy file
+                        ///
+                        else {
+                            string exFileName = g_outFilePrefix + "-"
+                                                + boost::lexical_cast<string>(rank) 
+                                                + "-" + g_exclHistFileName;
+                            ofstream exFile(exFileName.c_str(), ios::out | ios::app);
+
+                            if (!exFile) {
+                                cerr << "ERROR: failed to open a exclusion "
+                                     << "history file" << endl;
+                                MPI_Abort(MPI_COMM_WORLD, 1);
+                            }
+                            else {
+                                /// Format: qGi sGi qCutLocStart qCutLocEnd sStart sEnd
+                                exFile << qGi << "\t"
+                                       << subID << "\t"
+                                       << qCutLocStart << "\t"
+                                       << qCutLocEnd << "\t"
+                                       << sStart << "\t"
+                                       << sEnd << endl;
+                            }
+                            exFile.close();
+                        }
+                    }                          
+                }
+            }            
+        }        
+    }
+    
+    ///
+    /// BLAST call end time
+    ///
     if (g_timingEnabled) {
         double blast_call_etime = MPI_Wtime();
         gettimeofday(&blastcallEndTime, NULL); /// Wall-clock time
@@ -950,237 +1268,7 @@ void mr_run_blast(int itask,
             << "," << qBlockStart << endl;
         LOG.flush();
     }
-
-    ///
-    /// Get warning messages
-    ///
-    for (size_t i = 0; i < results.GetNumResults(); ++i) {
-        TQueryMessages messages = results[i].GetErrors(eBlastSevWarning);
-        if (messages.size() > 0) {
-            CConstRef<CSeq_id> pSeq_id = results[i].GetSeqId();
-            if (pSeq_id.NotEmpty())
-                cerr << "ID: " << pSeq_id->AsFastaString() << endl;
-            else
-                cerr << "ID: " << "Unknown" << endl;
-
-            ITERATE(vector<CRef<CSearchMessage> >, it, messages) {
-                cerr << (*it)->GetMessage() << endl;
-            }
-        }
-    }
-
-    ///
-    /// Get the results and add to kv
-    ///
-    for (size_t i = 0; i < results.GetNumResults(); ++i) {
-
-        CConstRef<CSeq_align_set> pAln_set = results[i].GetSeqAlign();
-        if (results[i].HasAlignments()) {
-            ITERATE(CSeq_align_set::Tdata, itr_res, pAln_set->Get()) {
-                const CSeq_align& seqAlign = **itr_res;
-
-                /// Note: queryID is not unique. It's internal qid in 
-                /// blFastaInputSource.
-                string queryID = seqAlign.GetSeq_id(QUERY).GetSeqIdString();
-                string subID = seqAlign.GetSeq_id(SUBJECT).GetSeqIdString();
-
-                ///
-                /// Refer: 
-                /// http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCSeq__align.html
-                ///
-                /// eScore_Score: generic score, definable by any algorithm; not comparable across algorithms
-                /// eScore_Blast
-                /// eScore_BitScore: BLAST-specific bit score
-                /// eScore_EValue: BLAST-specific e-value
-                /// eScore_AlignLength: not a score per se, but a useful metric nonetheless. This is the sum of all aligned segments and all gaps; this excludes introns and discontinuities
-                /// eScore_IdentityCount
-                /// eScore_PositiveCount
-                /// eScore_NegativeCount
-                /// eScore_MismatchCount
-                /// eScore_PercentIdentity_Gapped
-                /// eScore_PercentIdentity_Ungapped
-                /// eScore_PercentIdentity_GapOpeningOnly
-                /// eScore_PercentCoverage
-                /// eScore_SumEValue
-                /// eScore_CompAdjMethod
-                /// eScore_HighQualityPercentCoverage ?????
-                /// eScore_PercentIdentity = eScore_PercentIdentity_Gapped 
-                ///
-                double pIdentity = 0.0;
-                seqAlign.GetNamedScore(CSeq_align::eScore_PercentIdentity, pIdentity);
- 
-                uint32_t gapOpens    = seqAlign.GetNumGapOpenings();
-                 uint32_t qStart      = seqAlign.GetSeqStart(QUERY);
-                uint32_t qEnd        = seqAlign.GetSeqStop(QUERY);
-                uint32_t sStart      = seqAlign.GetSeqStart(SUBJECT);
-                uint32_t sEnd        = seqAlign.GetSeqStop(SUBJECT);
-                uint32_t alignLen    = seqAlign.GetAlignLength();
- 
-                double eValue = 0.0;
-                int bitScore = 0, misMatches = 0;
-                seqAlign.GetNamedScore(CSeq_align::eScore_EValue, eValue);
-                seqAlign.GetNamedScore(CSeq_align::eScore_BitScore, bitScore);
-                seqAlign.GetNamedScore(CSeq_align::eScore_MismatchCount, misMatches);
-                
-                int identityCount = 0;
-                seqAlign.GetNamedScore(CSeq_align::eScore_IdentityCount, identityCount);
-                
-                ///
-                /// Retrieve GI and cutting locations    
-                ///
-                
-                /// Get the saved qBlockStart from vBeginOffset
-                uint32_t bOffset = vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
-                
-                /// Get GI
-                string line(pMmapQueryFile + bOffset, 80);
-                vector<string> vecTokens;
-                boost::split(vecTokens, line, boost::is_any_of("\n"));
-                assert(vecTokens.size() == 2);
-                string defLine = vecTokens[0];
-                vecTokens.clear();
-                boost::split(vecTokens, defLine, boost::is_any_of("|"));
-                uint32_t gi = boost::lexical_cast<uint32_t>(vecTokens[1]);
-                
-                /// Get cutting coords               
-                string coord = vecTokens[vecTokens.size()-1];
-                vecTokens.clear();
-                boost::split(vecTokens, coord, boost::is_any_of("_"));
-                int cutStart = boost::lexical_cast<int>(vecTokens[vecTokens.size()-2]);
-                int cutEnd   = boost::lexical_cast<int>(vecTokens[vecTokens.size()-1]);
-                int length   = cutEnd - cutStart;
-   
-                ///
-                /// Add a csv blast result to kv
-                ///
-                if (!g_exclEnabled) {
-                    
-                    ///
-                    /// Doug's filtering
-                    ///
-                    /// identity = # of identical bases / length of read
-                    /// coverage = (read end – read begin)/ length of read
-                    ///
-                    /// identity > 50%
-                    /// coverage > 90%
-                    ///
-                    double ident = double(identityCount) / double(length);
-                    double cover = double(qEnd - qStart) / double(length);
-  
-                    if (ident >= g_IDENT_CUTOFF && cover >= g_COVER_CUTOFF) {
-                        structBlRes_t res;
-                        res.subjectId[0] = '\0';
-                        strcpy(res.subjectId, subID.c_str());
-                        res.identity      = pIdentity;
-                        res.alignLen      = alignLen;
-                        res.misMatches    = misMatches;
-                        res.gapOpens      = gapOpens;
-                        res.qStart        = qStart + cutStart;
-                        res.qEnd          = qEnd + cutStart;
-                        res.sStart        = sStart;
-                        res.sEnd          = sEnd;
-                        res.evalue        = eValue;
-                        res.bitScore      = bitScore;
-                        res.cutStart      = cutStart;
-                        res.cutEnd        = cutEnd;
-                        res.doug_identity = ident;
-                        res.doug_coverage = cover;
-                        
-                        uint32_t newKey   = gi;
-                        kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
-                                sizeof(structBlRes_t));     
-                    }               
-                }
-                else {
-                    ///
-                    /// Tokenize query def line
-                    ///
-                    string qHeader =
-                        vecHeader[boost::lexical_cast<uint32_t>(queryID)-1];
-                    vector<string> vecQueryId;
-                    boost::split(vecQueryId, qHeader, boost::is_any_of("|"));
-
-                    ///
-                    /// The below infomation is only for our own simulated
-                    /// sequence data sets which has
-                    /// - origin GI
-                    /// - unique query ID
-                    /// - original sequence length
-                    /// - cut location start
-                    /// - cut location end
-                    ///
-                    /// GI
-                    string qGi = vecQueryId[1];   
-                    /// length of the orig seq
-                    //uint32_t origLen = boost::lexical_cast<uint32_t>(vecQueryId[3]);
-                    /// cut coordinates - start
-                    int qCutLocStart = boost::lexical_cast<int>(vecQueryId[4]);
-                    /// cut coordinates - end
-                    int qCutLocEnd =   boost::lexical_cast<int>(vecQueryId[5]);
-
-                    if (!check_exclusion(qGi, subID, qCutLocStart, qCutLocEnd,
-                                         sStart, sEnd, g_exclThreshold)) {
-
-                        ///
-                        /// To pass Blast hits using struct, outfmt=6
-                        /// query id, subject id, % identity, alignment length,
-                        /// misMatches, gap opens, q. start, q. end, s. start,
-                        /// s. end, evalue, bit score
-                        ///
-                        structBlRes_t res;
-                        res.subjectId[0] = '\0';
-                        strcpy(res.subjectId, subID.c_str());
-                        res.identity   = pIdentity;
-                        res.alignLen   = alignLen;
-                        res.misMatches = misMatches;
-                        res.gapOpens   = gapOpens;
-                        res.qStart     = qStart;
-                        res.qEnd       = qEnd;
-                        res.sStart     = sStart;
-                        res.sEnd       = sEnd;
-                        res.evalue     = eValue;
-                        res.bitScore   = bitScore;
-                        
-                        ///
-                        /// ADD <KEY = "QUERYID", VALUE="BLASTRESULT">
-                        /// TO KV
-                        ///
-                        uint32_t newKey = boost::lexical_cast<uint32_t>(qGi);
-                        kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
-                                sizeof(structBlRes_t));
-                    }
-                    ///
-                    /// Found a self hits. Record the hits in a histroy file
-                    ///
-                    else {
-                        string exFileName = g_outFilePrefix + "-"
-                                            + boost::lexical_cast<string>(rank) 
-                                            + "-" + g_exclHistFileName;
-                        ofstream exFile(exFileName.c_str(), ios::out | ios::app);
-
-                        if (!exFile) {
-                            cerr << "ERROR: failed to open a exclusion "
-                                 << "history file" << endl;
-                            MPI_Abort(MPI_COMM_WORLD, 1);
-                        }
-                        else {
-                            /// Format: qGi sGi qCutLocStart qCutLocEnd sStart sEnd
-                            exFile << qGi << "\t"
-                                   << subID << "\t"
-                                   << qCutLocStart << "\t"
-                                   << qCutLocEnd << "\t"
-                                   << sStart << "\t"
-                                   << sEnd << endl;
-                        }
-                        exFile.close();
-                    }
-                }
-            }
-        }
-    }
-    /// end of processing hits       
 }
-
 
 /** Sort function - Passed to MR-MPI sort_values() for sorting blast result
  * string by bit score.
@@ -1214,7 +1302,7 @@ inline bool evalue_compare(structEValue_t e1,
  * @param ptr
  */
 
-void mr_sort_multivalues_by_evalue(char *key,
+inline void mr_sort_multivalues_by_evalue(char *key,
                                    int keybytes,
                                    char *multivalue,
                                    int nvalues,
@@ -1294,8 +1382,8 @@ void mr_sort_multivalues_by_evalue(char *key,
 
 inline bool check_exclusion(string qGi,
                             string sGi,
-                            int qCutLocStart,
-                            int qCutLocEnd,
+                            int qCutStart,
+                            int qCutEnd,
                             int sStart,
                             int sEnd,
                             int threshold)
@@ -1303,12 +1391,12 @@ inline bool check_exclusion(string qGi,
     ///
     /// To exclude Blast result from the original sequence from which
     /// the input query is originated (sampled). Basically if qGi == sGi
-    /// and qCutLocStart is similar with sStart and qCutLocEnd is similar
+    /// and qCutStart is similar with sStart and qCutEnd is similar
     /// with sEnd in terms of coordinates, the result should be excluded.
     ///
     /// Orig seq: ----------------XXXXXXXXXXXXXXXX----------------------
     ///                           |              |
-    ///                     qCutLocStart      qCutLocEnd
+    ///                     qCutStart      qCutEnd
     ///
     /// Query:                    XXXXXXXXXXXXXXXX
     ///                              |          |
@@ -1321,18 +1409,18 @@ inline bool check_exclusion(string qGi,
     bool bRet = false;
 
     if (qGi == sGi) {
-        if (qCutLocStart < 0) {
+        if (qCutStart < 0) {
             ///
             /// In >gi|222299657|18|3605|-400|3604
             /// -400|3604 means query[-400:3604] in Python.
             ///
-            qCutLocStart = qCutLocEnd + 1 - qCutLocStart;
-            qCutLocEnd += 1;
+            qCutStart = qCutEnd + 1 - qCutStart;
+            qCutEnd += 1;
         }
         if (
-           (qCutLocStart - threshold <= sStart && sStart <= qCutLocStart + threshold)
+           (qCutStart - threshold <= sStart && sStart <= qCutStart + threshold)
            && 
-           (qCutLocEnd - threshold <= sEnd && sEnd <= qCutLocEnd + threshold)
+           (qCutEnd - threshold <= sEnd && sEnd <= qCutEnd + threshold)
            ) 
         {
             bRet = true;
@@ -1348,7 +1436,7 @@ inline bool check_exclusion(string qGi,
  * @param mpiComm
  */
  
-void collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm)
+inline void collect_mpi_node_name(int rank, int numProcs, MPI_Comm mpiComm)
 {
     MPI_Status MPI_status;
     char procName[MAXSTR];

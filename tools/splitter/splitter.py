@@ -45,24 +45,24 @@ for cur_record in SeqIO.parse(seqFile, "fasta") :
         cid += 1
         #print "cid=%d, start=%d, end=%d, cnt=%d, seqLen=%d, sid=%d" % (cid, start, end, cnt, seqLen, sid)
         
-        if start == 0 and end < seqLen:
-            newHeader = ">"+origGI+"_"+str(start)+"_"+str(end)
+        if start == 0 and end < seqLen: ## Type-0: XXXxxx
+            newHeader = ">"+origGI+"_"+str(cid)+"_"+"0"+"_"+str(start)+"_"+str(end)+"_"+str(start)+"_"+str(end-overlapBP)
             print newHeader, sid, cid
             outFile.write(newHeader+"\n")
             upper = cur_record.seq[start:end-overlapBP].upper()
             lower2 = cur_record.seq[end-overlapBP:end].lower()
             outFile.write((upper+lower2).tostring()+"\n")
                         
-        elif start == 0 and end >= seqLen:
-            newHeader =  ">"+origGI+"_"+str(start)+"_"+str(seqLen) 
+        elif start == 0 and end >= seqLen: ## Type-1: XXX
+            newHeader =  ">"+origGI+"_"+str(cid)+"_"+"1"+"_"+str(start)+"_"+str(seqLen)+"_"+str(start)+"_"+str(seqLen) 
             print newHeader, sid, cid
             outFile.write(newHeader+"\n")
             outFile.write(cur_record.seq[start:seqLen].tostring()+"\n")
  
             break
 
-        elif start > 0 and end < seqLen:
-            newHeader = ">"+origGI+"_"+str(start)+"_"+str(end) 
+        elif start > 0 and end < seqLen: ## Type-2: xxxXXXxxx
+            newHeader = ">"+origGI+"_"+str(cid)+"_"+"2"+"_"+str(start)+"_"+str(end)+"_"+str(start+overlapBP)+"_"+str(end-overlapBP)
             print newHeader, sid, cid
             outFile.write(newHeader+"\n")
             lower1 = cur_record.seq[start:start+overlapBP].lower()
@@ -70,8 +70,8 @@ for cur_record in SeqIO.parse(seqFile, "fasta") :
             lower2 = cur_record.seq[end-overlapBP:end].lower()
             outFile.write((lower1+upper+lower2).tostring()+"\n")
  
-        elif start > 0 and end >= seqLen:
-            newHeader =  ">"+origGI+"_"+str(start)+"_"+str(seqLen) 
+        elif start > 0 and end >= seqLen: ## Type-3: XXXxxx
+            newHeader =  ">"+origGI+"_"+str(cid)+"_"+"3"+"_"+str(start)+"_"+str(seqLen)+"_"+str(start+overlapBP)+"_"+str(seqLen) 
             print newHeader, sid, cid
             outFile.write(newHeader+"\n")
             if (seqLen - start > overlapBP):

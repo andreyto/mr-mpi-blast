@@ -1,7 +1,7 @@
 Blast4-request ::= {
   body queue-search {
     program "blastp",
-    service "megablast",
+    service "plain",
     queries bioseq-set {
       seq-set {
         seq {
@@ -29,7 +29,7 @@ Blast4-request ::= {
         }
       }
     },
-    subject database "/usr/local/projects/DB/nr/nr_20110117/nr.00",
+    subject database "/usr/local/projects/DB/nr/nr_current/nr.00",
     algorithm-options {
       {
         name "DbLength",

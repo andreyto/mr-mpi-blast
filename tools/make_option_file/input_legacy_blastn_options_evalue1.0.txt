@@ -1,1 +1,0 @@
-blastall -p blastn -i 1seq_nucl.query -d nt.00 -e 0.1 -F T  -X 30 -I F -q -3 -r 1 -v 500 -b 250 -g T -Q 1 -D 1 -a 1 -J F -z 0 -K 0 -P 1 -Y 0 -S 3 -T F -y 0.0 -Z 0 -n F -w 0 -t 0 -B 0 -V F -C D -s F -A 0 -E 2 -G 5 -I F -J F -m 8 -q -3 -W 11 -y 20 -Y 0 -Z 25 -z 0
