@@ -120,8 +120,12 @@
         - Splitting query and adjusting hits (q.Start and q.End) are done.
     
     06.09.2011
-        - Change program structure to the orig blastn to take advantage of 
-          full feature of command line argument; Now user can use all the blast
-          options; But should set mr-mpi-blast related options in mrblast.ini.
+        - Change program structure to the orig blastn to take advantage of full 
+          feature of command line arguments and make sure all options are applied 
+          with the search; Now user can use all the blast options; But should 
+          set mr-mpi-blast related options in mrblast.ini.
          
+    06.13.2011 
+        - Complete Doug's identity and coverage computing and filtering
+        
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 

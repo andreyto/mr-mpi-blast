@@ -28,7 +28,7 @@ if __name__ == "__main__":
                 print ">"+header1
                 print seq1
                 numShortGenome += 1
-                if (numShortGenome == 10):
+                if (numShortGenome == 2):
                     break
                 
     elif (op_case == 3):
