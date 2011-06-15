@@ -123,71 +123,13 @@ for cur_record in SeqIO.parse(seqFile, "fasta") :
                 outFile.write((lower1+upper+lower2).tostring()+"\n")
                 cutStart += upperPartOverlap
                 upperStart += upperPartOverlap    
-                
-        #if cutStart == 0:
-            #if seqLen <= upperPartLen:
-                #newHeader = ">"+origGI+"_"+str(cid)+"_"+"0"+"_"+str(cutStart)+"_"+str(seqLen)+"_"+str(cutStart)+"_"+str(seqLen)
-                #print newHeader
-                #outFile.write(newHeader+"\n")
-                #upper = cur_record.seq[cutStart:seqLen].upper()
-                #outFile.write((upper).tostring()+"\n")
-                #break
-            #elif seqLen > upperPartLen and seqLen <= upperPartLen + lowerPartLen:
-                #newHeader = ">"+origGI+"_"+str(cid)+"_"+"1"+"_"+str(cutStart)+"_"+str(seqLen)+"_"+str(cutStart)+"_"+str(upperPartLen)
-                #print newHeader
-                #outFile.write(newHeader+"\n")
-                #upper = cur_record.seq[cutStart:upperPartLen].upper()
-                #lower2 = cur_record.seq[upperPartLen:seqLen].lower()
-                #outFile.write((upper+lower2).tostring()+"\n")
-                #break
-            #elif seqLen > upperPartLen + lowerPartLen:
-                #newHeader = ">"+origGI+"_"+str(cid)+"_"+"2"+"_"+str(cutStart)+"_"+str(upperPartLen + lowerPartLen)+"_"+str(cutStart)+"_"+str(upperPartLen)
-                #print newHeader
-                #outFile.write(newHeader+"\n")
-                #upper = cur_record.seq[cutStart:upperPartLen].upper()
-                #lower2 = cur_record.seq[upperPartLen:upperPartLen + lowerPartLen].lower()
-                #outFile.write((upper+lower2).tostring()+"\n")
-            #else:
-                #print "what?"
-                #sys.exit(0)
-
-        #elif cutStart > 0:
-            #if seqLen <= cutStart + upperPartLen:
-                #newHeader = ">"+origGI+"_"+str(cid)+"_"+"3"+"_"+str(cutStart - lowerPartLen)+"_"+str(seqLen)+"_"+str(cutStart)+"_"+str(seqLen)
-                #print newHeader
-                #outFile.write(newHeader+"\n")
-                #lower1 = cur_record.seq[cutStart-lowerPartLen:cutStart].lower()
-                #upper = cur_record.seq[cutStart:seqLen].upper()
-                #outFile.write((lower1+upper).tostring()+"\n")
-                #break
-            #elif seqLen > cutStart + upperPartLen and seqLen <= cutStart + upperPartLen + lowerPartLen:
-                #newHeader = ">"+origGI+"_"+str(cid)+"_"+"4"+"_"+str(cutStart - lowerPartLen)+"_"+str(seqLen)+"_"+str(cutStart)+"_"+str(cutStart+upperPartLen)
-                #print newHeader
-                #outFile.write(newHeader+"\n")
-                #lower1 = cur_record.seq[cutStart-lowerPartLen:cutStart].lower()
-                #upper = cur_record.seq[cutStart:cutStart+upperPartLen].upper()
-                #lower2 = cur_record.seq[cutStart+upperPartLen:seqLen].lower()
-                #outFile.write((lower1+upper+lower2).tostring()+"\n")
-            #elif seqLen > cutStart + upperPartLen + lowerPartLen:
-                #newHeader = ">"+origGI+"_"+str(cid)+"_"+"5"+"_"+str(cutStart - lowerPartLen)+"_"+str(cutStart + upperPartLen + lowerPartLen)+"_"+str(cutStart)+"_"+str(cutStart+upperPartLen)
-                #print newHeader
-                #outFile.write(newHeader+"\n")
-                #lower1 = cur_record.seq[cutStart-lowerPartLen:cutStart].lower()
-                #upper = cur_record.seq[cutStart:cutStart+upperPartLen].upper()
-                #lower2 = cur_record.seq[cutStart+upperPartLen:cutStart + upperPartLen + lowerPartLen].lower()
-                #outFile.write((lower1+upper+lower2).tostring()+"\n")
-            #else:
-                #print "what??"
-                #sys.exit(0)
-                
+        
         else:
             print "What???", seqLen, cutStart, end, cur_record.id
             sys.exit(0)
         
         cnt += 1
-        #cutStart = cutStart + upperPartOverlap
-        #upperStart = 
-        
+         
 outFile.close()
 seqFile.close()
 print "# input sequences = ", sid
@@ -196,3 +138,4 @@ print "overlap = ", lowerPartLen, "bp"
 print "Total %d chunks are saved in %s." % (cid, outFileName)
 
 
+## EOF

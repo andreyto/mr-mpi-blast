@@ -342,6 +342,9 @@ void CMrMpiBlastApplication::Init(void)
 
 int CMrMpiBlastApplication::Run(void) 
 {     
+    // Allow the fasta reader to complain on invalid sequence input
+    SetDiagPostLevel(eDiag_Warning);
+    
     const CArgs& args = GetArgs();
     string allArgs;
     RecoverSearchStrategy(args, g_cmdLineArgs);
@@ -489,7 +492,7 @@ int CMrMpiBlastApplication::Run(void)
     g_vecWorkItem.clear();
     if (!g_searchDatabase.IsNull()) g_searchDatabase.Release();
     if (g_bLogEnabled || g_timingEnabled) g_logFileStream.close();
-    g_memmapQueryFile.close(); /// close mmapped file  
+    if (g_memmapQueryFile.is_open()) g_memmapQueryFile.close(); /// close mmapped file  
     
 
     return 0;
@@ -615,7 +618,10 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
                 
         if (g_bLogEnabled)
             LOG << g_logMsg << "map() ends: " <<  MPI_Wtime() - mapTime << endl;
-         
+        
+        /// close mem mapped file  
+        if (g_memmapQueryFile.is_open()) g_memmapQueryFile.close(); 
+        
         double collateTime;
         if (g_bLogEnabled) {
             collateTime = MPI_Wtime();
@@ -709,8 +715,7 @@ void mr_run_blast(int itask,
     int rank = toPass->rank;
     int iter = toPass->iter;
     
-    uint32_t dbno, qBlockStart, qBlockEnd;
-    
+    uint32_t dbno, qBlockStart, qBlockEnd;    
     if (g_numIter > 1) {
         dbno = g_vecWorkItem[itask + nWorkItemsPerIter * iter].dbNo;
         qBlockStart = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockBegin;
@@ -729,12 +734,10 @@ void mr_run_blast(int itask,
     struct timeval blastcallStart_s_Time;
     struct timeval blastcallEnd_s_Time;
     struct rusage  ru_blastcall;
-
     struct timeval qBuildStartTime;
     struct timeval qBuildStart_u_Time;
     struct timeval qBuildStart_s_Time;
-    struct rusage  ru_qBuild;
-    
+    struct rusage  ru_qBuild;    
     struct timeval dbLoadingStartTime;
     struct timeval dbLoadingStart_u_Time;
     struct timeval dbLoadingStart_s_Time;
@@ -813,8 +816,7 @@ void mr_run_blast(int itask,
                                  query_opts->GetParseDeflines(),
                                  query_opts->GetRange(),
                                  !g_cmdLineArgs->ExecuteRemotely());
-    iconfig.SetLowercaseMask(true);
-    //iconfig.SetQueryLocalIdMode();
+    iconfig.SetLowercaseMask(true); /// Enforce lowercase mask option
     CBlastFastaInputSource fasta(query, iconfig);
     CBlastInput input(&fasta);
 
@@ -869,15 +871,15 @@ void mr_run_blast(int itask,
     _ASSERT(scope.NotEmpty());
     _ASSERT(search_db.NotEmpty());
     try { 
-        // Try to open the BLAST database even for remote searches, as if
-        // it is available locally, it will be better to fetch the
-        // sequence data for formatting from this (local) source
+        /// Try to open the BLAST database even for remote searches, as if
+        /// it is available locally, it will be better to fetch the
+        /// sequence data for formatting from this (local) source
         CRef<CSeqDB> seqdb = search_db->GetSeqDb();
         db_adapter.Reset(new CLocalDbAdapter(*search_db));
         scope->AddDataLoader(RegisterOMDataLoader(seqdb));
     } catch (const CSeqDBException&) {
-            // The BLAST database couldn't be found, report this for local
-            // searches, but for remote searches go on.
+            /// The BLAST database couldn't be found, report this for local
+            /// searches.
     }
     _ASSERT(db_adapter && scope);
         
@@ -953,7 +955,7 @@ void mr_run_blast(int itask,
         for (size_t i = 0; i < results->GetNumResults(); ++i) {
             if ((*results)[i].HasAlignments()) {
                 CConstRef<CSeq_align_set> aln_set = (*results)[i].GetSeqAlign();
-                ITERATE(CSeq_align_set::Tdata, itr_res, aln_set->Get()) {   
+                ITERATE(CSeq_align_set::Tdata, itr_res, aln_set->Get()) {  
                     const CSeq_align& s = **itr_res;
                     
                     ///
@@ -970,15 +972,17 @@ void mr_run_blast(int itask,
                     ///                
                     string queryID      = s.GetSeq_id(QUERY).GetSeqIdString();
                     string subID        = s.GetSeq_id(SUBJECT).GetSeqIdString();
-                    uint32_t qStart      = s.GetSeqStart(QUERY);
-                    uint32_t qEnd        = s.GetSeqStop(QUERY);
-                    qEnd += 1;
-                    uint32_t sStart      = s.GetSeqStart(SUBJECT);
-                    uint32_t sEnd        = s.GetSeqStop(SUBJECT);
+                    uint32_t qStart     = s.GetSeqStart(QUERY);
+                    uint32_t qEnd       = s.GetSeqStop(QUERY);
+                    qEnd += 1;   
+                    uint32_t sStart     = s.GetSeqStart(SUBJECT);
+                    uint32_t sEnd       = s.GetSeqStop(SUBJECT);
                     sEnd += 1;
-                                                                   
+                    //uint32_t alignLenGap   = s.GetAlignLength();
+                    //uint32_t alignLenUngap = s.GetAlignLength(false);
+                    
                     ///
-                    /// Retrieve GI and cutting locations    
+                    /// Retrieve GI 
                     ///
                     
                     /// Get the saved qBlockStart from vBeginOffset
@@ -999,7 +1003,7 @@ void mr_run_blast(int itask,
                     
                     ///
                     /// Get cutting coords    
-                    /// Format: orig_header_chunkID_x_u_v_w
+                    /// Format: orig_header_chunkID_x_y_v_w
                     ///
                     ///          lower    upper   lower case
                     ///         |xxxxxxx|XXXXXXX|xxxxxxx|
@@ -1008,10 +1012,10 @@ void mr_run_blast(int itask,
                     ///         x: cutStart,   y: cutEnd
                     ///         v: upperStart, w: upperEnd       
                     /// 
-                    ///  CID    Type-0: XXX
-                    ///         Type-1: xxxXXX
-                    ///         Type-2: xxxXXXxxx
-                    ///         Type-3: XXXxxx
+                    ///  CID    Type-0:     XXX
+                    ///         Type-2,4,6: xxxXXX
+                    ///         Type-3,5,7: xxxXXXxxx
+                    ///         Type-1:     XXXxxx
                     ///
                     string coord = vecTokens[vecTokens.size()-1];
                     vecTokens.clear();
@@ -1029,152 +1033,226 @@ void mr_run_blast(int itask,
                         = boost::lexical_cast<int>(vecTokens[vecTokens.size()-2]);
                     int upperEnd        
                         = boost::lexical_cast<int>(vecTokens[vecTokens.size()-1]);                
-                    
-                    ///
-                    /// score, bit_score, evalue...
-                    ///
-                    int num_ident = -1;
-                    int score = 0, sum_n = 0;
-                    double bit_score = .0, evalue = .0;
-                    list<int> use_this_gi;
-                    CAlignFormatUtil::GetAlnScores(s, score, bit_score, evalue, 
-                                                   sum_n, num_ident, use_this_gi);
-                                                   
-                    ///
-                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
-                    /// pct_identity = 100.0f * double(*identities) / count_aligned;
-                    ///
-                    //int align_length = 0, num_gaps = 0, num_gap_opens = 0;
-                    //CAlignFormatUtil::GetAlignLengths(*alnVec, align_length, 
-                                                      //num_gaps, num_gap_opens);
-                    //double perc_ident = (align_length > 0 ? 
-                        //((double)num_ident)/align_length * 100 : 0)
-                    //int num_mismatches = align_length - num_ident - num_gaps;
-                    
-                    ///
-                    /// Convert Std-seg and Dense-diag alignments to Dense-seg.
-                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/tabular_8cpp-source.html
-                    ///      http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCSeq__id.html
-                    ///
-                    uint32_t queryLength2;
-                    bool query_is_na = false, subject_is_na = false;
-                    bool bioseqs_found = true;
-                    try {
-                        const CBioseq_Handle& query_bh = 
-                            scope->GetBioseqHandle(s.GetSeq_id(0));
-                        query_is_na = query_bh.IsNa();
-                        queryLength2 = query_bh.GetBioseqLength();
-                    } catch (const CException&) {
-                        list<CRef<CSeq_id> > query_ids;
-                        CRef<CSeq_id> id(new CSeq_id());
-                        id->Assign(s.GetSeq_id(0));
-                        query_ids.push_back(id);
-                        bioseqs_found = false;
-                    }                    
-                    
-                    const bool kTranslated = s.GetSegs().IsStd();
-                    CRef<CSeq_align> finalAln(0);                    
-                    if (kTranslated) {
-                        CRef<CSeq_align> densegAln = s.CreateDensegFromStdseg();
-                        if (query_is_na && subject_is_na)
-                            finalAln = densegAln->CreateTranslatedDensegFromNADenseg();
-                        else
-                            finalAln = densegAln;
-                    }
-                    else if (s.GetSegs().IsDendiag()) {
-                        finalAln = CAlignFormatUtil::CreateDensegFromDendiag(s);
-                    }   
-                    const CDense_seg& ds = (finalAln ? finalAln->GetSegs().GetDenseg() :
-                                            s.GetSegs().GetDenseg());
-                    CRef<CAlnVec> alnVec;
-                    if (!kTranslated && ds.IsSetStrands() && 
-                        ds.GetStrands().front() == eNa_strand_minus) {
-                        CRef<CDense_seg> reversed_ds(new CDense_seg);
-                        reversed_ds->Assign(ds);
-                        reversed_ds->Reverse();
-                        alnVec.Reset(new CAlnVec(*reversed_ds, *scope));   
-                    } else {
-                        alnVec.Reset(new CAlnVec(ds, *scope));
+
+                    if ((qStart + cutStart < upperStart && qEnd + cutStart < upperStart) ||
+                        (qStart + cutStart > upperEnd && qEnd + cutStart > upperEnd)) {
+                        cout << "Warning: A HSP is found in the flank areas!" << endl; 
+                        cout << "cid, gi, sid, qstart, qend, sstart, send, cutstart, cutend, upperstart, upperend\n";
+                        cout << cId << ","
+                             << gi << ","
+                             << subID << ","
+                             << qStart << ","
+                             << qEnd << ","
+                             << sStart << ","
+                             << sEnd << ","
+                             << cutStart << ","
+                             << cutEnd << ","
+                             << upperStart << ","
+                             << upperEnd << endl;
                     }    
-                                        
-                    if (g_bLogEnabled) LOG << g_logMsg << "AlnVec done" << endl;
-                    
-                    ///
-                    /// Doug's filtering
-                    ///
-                    /// "Percent Identity” looks at every position in the aligned sequences 
-                    /// and counts the number that have the same base or amino acid.  
-                    /// This count is then divided by the aligned length and then multiplied by 100.
-                    ///
-                    /// identity = # of identical bases / length of read
-                    /// coverage = (read end – read begin)/ length of read (only uppercase seq)
-                    ///
-                    /// identity > 50%
-                    /// coverage > 90%
-                    ///
-                    /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
-                    /// pct_coverage = 100.0f * double(covered_bases) / double(seq_len);
-                    ///
-                    string querySeq = "";
-                    string subjectSeq = "";
-                    alnVec->SetGapChar('-');
-                    alnVec->GetWholeAlnSeqString(0, querySeq);
-                    alnVec->GetWholeAlnSeqString(1, subjectSeq);
-                    uint32_t qStartOrig = qStart + cutStart;
-                    uint32_t qEndOrig = qEnd + cutStart;                
- 
-                    uint32_t scanStart = 0;
-                    uint32_t scanEnd = min(querySeq.size(), subjectSeq.size());
-                    if (qStartOrig < upperStart) 
-                        scanStart += (upperStart - qStartOrig);
-                    if (qEndOrig > upperEnd)
-                        scanEnd -= (qEndOrig - upperEnd);
-    
-                    int num_ident_upperpart = 0;
-                    assert(scanStart < scanEnd);
-                    
-                    /// Compare aligned query and subject sequences
-                    for (uint32_t i = scanStart; i < scanEnd; ++i) {
-                        if (querySeq[i] == subjectSeq[i]) {
-                              ++num_ident_upperpart;
-                        }
-                    }            
-                    if (g_bLogEnabled) LOG << g_logMsg << "Get num_ident_upperpart done" << endl;
-                    
-                    double doug_perc_ident = double(num_ident_upperpart) / 
-                                            (upperEnd - upperStart) * 100;
-                    double doug_perc_cover = double(scanEnd - scanStart) / 
-                                            (upperEnd - upperStart) * 100;
-                                            
-                    ///
-                    /// Add a csv blast result to kv
-                    ///
-                    if (g_bLogEnabled) LOG << g_logMsg << "Start emitting KV pairs" << endl;
-        
-                    if (doug_perc_ident >= g_IDENT_CUTOFF && 
-                        doug_perc_cover >= g_COVER_CUTOFF) {
-                        structBlRes_t res;
-                        res.subjectId     = boost::lexical_cast<uint32_t>(subID);
-                        res.cId           = cId; 
-                        //res.identity      = perc_ident;
-                        //res.alignLen      = align_length;
-                        //res.misMatches    = num_mismatches;
-                        //res.gapOpens      = num_gap_opens;
-                        res.qStart        = qStart;
-                        res.qEnd          = qEnd;
-                        res.sStart        = sStart;
-                        res.sEnd          = sEnd;
-                        res.eValue        = evalue;
-                        res.bitScore      = bit_score;
-                        res.cutStart      = cutStart;
-                        res.cutEnd        = cutEnd;
-                        res.doug_identity = doug_perc_ident;
-                        res.doug_coverage = doug_perc_cover;
+                    else {
+                        ///
+                        /// score, bit_score, evalue...
+                        ///
+                        int num_ident = -1;
+                        int score = 0, sum_n = 0;
+                        double bit_score = 0.0, evalue = 0.0;
+                        list<int> use_this_gi;
+                        CAlignFormatUtil::GetAlnScores(s, score, bit_score, evalue, 
+                                                       sum_n, num_ident, use_this_gi);
+                                                                
+                        ///
+                        /// Convert Std-seg and Dense-diag alignments to Dense-seg.
+                        /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/tabular_8cpp-source.html
+                        ///      http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCSeq__id.html
+                        ///
+                        bool query_is_na = false, subject_is_na = false;
+                        const CBioseq_Handle& query_bh = 
+                            scope->GetBioseqHandle(s.GetSeq_id(QUERY));
+                        query_is_na = query_bh.IsNa();
+                        const CBioseq_Handle& subject_bh = 
+                            scope->GetBioseqHandle(s.GetSeq_id(SUBJECT));
+                        subject_is_na = subject_bh.IsNa();
                         
-                        uint32_t newKey   = gi;
-                        kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
-                                sizeof(structBlRes_t));     
-                    }
+                        const bool kTranslated = s.GetSegs().IsStd();
+                        CRef<CSeq_align> finalAln(0);                    
+                        if (kTranslated) {
+                            CRef<CSeq_align> densegAln = s.CreateDensegFromStdseg();
+                            if (query_is_na && subject_is_na)
+                                finalAln = densegAln->CreateTranslatedDensegFromNADenseg();
+                            else
+                                finalAln = densegAln;
+                        }
+                        else if (s.GetSegs().IsDendiag()) {
+                            finalAln = CAlignFormatUtil::CreateDensegFromDendiag(s);
+                        }   
+                        const CDense_seg& ds = (finalAln ? finalAln->GetSegs().GetDenseg() :
+                                                s.GetSegs().GetDenseg());
+                                                
+                        CRef<CAlnVec> alnVec;
+                        if (!kTranslated && ds.IsSetStrands() && 
+                            ds.GetStrands().front() == eNa_strand_minus) {
+                            CRef<CDense_seg> reversed_ds(new CDense_seg);
+                            reversed_ds->Assign(ds);
+                            reversed_ds->Reverse();
+                            alnVec.Reset(new CAlnVec(*reversed_ds, *scope));   
+                        } else {
+                            alnVec.Reset(new CAlnVec(ds, *scope));
+                        }    
+                                            
+                        if (g_bLogEnabled) LOG << g_logMsg << "AlnVec done" << endl;
+                        
+                        ///
+                        /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
+                        /// pct_identity = 100.0f * double(*identities) / count_aligned;
+                        ///
+                        //int align_length = 0, num_gaps = 0, num_gap_opens = 0;
+                        //CAlignFormatUtil::GetAlignLengths(*alnVec, align_length, 
+                                                        //num_gaps, num_gap_opens);
+                        //double orig_perc_ident = (align_length > 0 ? 
+                                       //((double)num_ident)/align_length * 100 : 0)
+                        //int num_mismatches = align_length - num_ident - num_gaps;
+                        
+                        ///
+                        /// Doug's filtering
+                        ///
+                        /// "Percent Identity” looks at every position in the aligned sequences 
+                        /// and counts the number that have the same base or amino acid.  
+                        /// This count is then divided by the aligned length and then multiplied by 100.
+                        ///
+                        /// identity = # of identical bases / length of read
+                        /// coverage = (read end – read begin)/ length of read 
+                        ///
+                        /// identity > 50%
+                        /// coverage > 90%
+                        ///
+                        /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
+                        /// pct_coverage = 100.0f * double(covered_bases) / double(seq_len);
+                        ///
+                        string querySeq = "";
+                        string subjectSeq = "";
+                        alnVec->SetGapChar('-');
+                        alnVec->GetWholeAlnSeqString(0, querySeq);
+                        alnVec->GetWholeAlnSeqString(1, subjectSeq);
+                        assert(querySeq.size() > 0 && subjectSeq.size() > 0);
+                        
+                        /// Convert to the original coord in the query sequence
+                        uint32_t qStartOrig = qStart + cutStart;
+                        uint32_t qEndOrig = qEnd + cutStart;               
+                        uint32_t scanStart = 0;
+                                           
+                        ///
+                        ///     q.start                        q.end
+                        ///        |xxxxxxxxxxxxxxxxxxxxxxxxxxxxx|
+                        ///
+                        ///    |xxxxxxxxxxx|XXXXXXXXXXXXXXX|xxxxxxxxxxx|
+                        /// cutStart   upperStart      upperEnd      cutEnd
+                        ///
+                        ///         ------>|               |<-----
+                        ///             scanStart       scanEnd
+                        ///
+                        
+                        /// Why take min()? Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/tabular_8cpp-source.html
+                        uint32_t scanEnd = min(querySeq.size(), subjectSeq.size());
+                        if (qStartOrig < upperStart) 
+                            scanStart += (upperStart - qStartOrig);
+                        if (qEndOrig > upperEnd) 
+                            scanEnd -= (qEndOrig - upperEnd);
+        
+                        ///
+                        /// Compare aligned query and subject sequences
+                        /// Should consider the gaps in the align when counting 
+                        /// num_ident_upperpart and the upperStart and upperEnd 
+                        /// which represents the uppercase bases in the query
+                        ///
+                        int scanStartInAlign = 0;
+                        int charCount = 0;
+                        if (scanStart > 0) {
+                            while (charCount < (upperStart - qStartOrig)) {
+                                if (querySeq[scanStartInAlign] != '-') charCount++;
+                                scanStartInAlign++;
+                            }
+                        }
+                        charCount = 0;
+                        int scanEndInAlign = min(querySeq.size(), subjectSeq.size());
+                        if (scanEnd < min(querySeq.size(), subjectSeq.size())) {
+                            while (charCount < (qEndOrig - upperEnd)) {
+                                if (querySeq[scanEndInAlign-1] != '-') charCount++;
+                                scanEndInAlign--;
+                            }
+                        }
+                        int num_ident_upperpart = 0;                    
+                        for (uint32_t i = scanStartInAlign; i < scanEndInAlign; ++i) {
+                            if (querySeq[i] == subjectSeq[i]) {
+                                  ++num_ident_upperpart;
+                            }
+                        }         
+                        if (g_bLogEnabled) LOG << g_logMsg << "Get num_ident_upperpart done" << endl;
+                        
+                        double doug_perc_ident = double(num_ident_upperpart) / 
+                                                (upperEnd - upperStart) * 100;
+                               
+                        ///                 
+                        /// Adjust qstart and qend for computing coverage
+                        ///
+                        int newQStart = qStartOrig, newQEnd = qEndOrig;
+                        if (qStartOrig < upperStart) newQStart = upperStart;
+                        if (qEndOrig > upperEnd) newQEnd = upperEnd;
+                        double doug_perc_cover = double(newQEnd - newQStart) / 
+                                                (upperEnd - upperStart) * 100;                   
+                        
+                        //cout << "cid,qid,sid,qs,qe,ss,se,cs,ce,us,se,scans,scane,iden all,iden upper,d.ident,d.cover,q.size,s.size  = \n";
+                        //cout << cId << ","
+                             //<< gi << ","
+                             //<< subID << ","
+                             //<< qStart << ","
+                             //<< qEnd << ","
+                             //<< sStart << ","
+                             //<< sEnd << ","
+                             //<< cutStart << ","
+                             //<< cutEnd << ","
+                             //<< upperStart << ","
+                             //<< upperEnd << ","
+                             //<< scanStart << ","
+                             //<< scanEnd << ","
+                             //<< num_ident << ","
+                             //<< num_ident_upperpart << ","    
+                             //<< doug_perc_ident << ","    
+                             //<< doug_perc_cover << "," 
+                             //<< querySeq.size() << "," 
+                             //<< subjectSeq.size() 
+                             //<< endl;
+                             
+                        ///
+                        /// Add a HSP to kv and emit
+                        ///
+                        if (g_bLogEnabled) LOG << g_logMsg << "Start emitting KV pairs" << endl;
+            
+                        if (doug_perc_ident >= g_IDENT_CUTOFF && 
+                            doug_perc_cover >= g_COVER_CUTOFF) {
+                            structBlRes_t res;
+                            res.subjectId     = boost::lexical_cast<uint32_t>(subID);
+                            res.cId           = cId; 
+                            //res.identity      = orig_perc_ident;
+                            //res.alignLen      = align_length;
+                            //res.misMatches    = num_mismatches;
+                            //res.gapOpens      = num_gap_opens;
+                            res.qStart        = qStart;
+                            res.qEnd          = qEnd;
+                            res.sStart        = sStart;
+                            res.sEnd          = sEnd;
+                            res.eValue        = evalue;
+                            res.bitScore      = bit_score;
+                            res.cutStart      = cutStart;
+                            res.cutEnd        = cutEnd;
+                            res.doug_identity = doug_perc_ident;
+                            res.doug_coverage = doug_perc_cover;
+                            
+                            uint32_t newKey   = gi;
+                            kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
+                                    sizeof(structBlRes_t));     
+                        }
+                    } /// else
                 }
             }            
         }    
