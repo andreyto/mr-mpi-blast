@@ -215,7 +215,7 @@ string g_strategyFileName;  /// Input blast search option file
 /// q. start, q. end, s. start, s. end, evalue, bit score
 typedef struct structBlRes {
     uint32_t    subjectId;
-    uint32_t    cId;
+    //uint32_t    cId;
     //double      identity;
     //uint32_t    alignLen;
     //int         misMatches;
@@ -816,7 +816,7 @@ void mr_run_blast(int itask,
                                  query_opts->GetParseDeflines(),
                                  query_opts->GetRange(),
                                  !g_cmdLineArgs->ExecuteRemotely());
-    iconfig.SetLowercaseMask(true); /// Enforce lowercase mask option
+    iconfig.SetLowercaseMask(true); /// Enforce lowercase mask option again
     CBlastFastaInputSource fasta(query, iconfig);
     CBlastInput input(&fasta);
 
@@ -990,7 +990,8 @@ void mr_run_blast(int itask,
                         vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
                     
                     /// Get GI
-                    string line(pMmapQueryFile + bOffset, 80);
+                    /// Assumption: defline.length() < 160
+                    string line(pMmapQueryFile + bOffset, 160);
                     vector<string> vecTokens;
                     boost::split(vecTokens, line, boost::is_any_of("\n"));
                     assert(vecTokens.size() == 2);
@@ -1037,7 +1038,7 @@ void mr_run_blast(int itask,
                     if ((qStart + cutStart < upperStart && qEnd + cutStart < upperStart) ||
                         (qStart + cutStart > upperEnd && qEnd + cutStart > upperEnd)) {
                         cout << "Warning: A HSP is found in the flank areas!" << endl; 
-                        cout << "cid, gi, sid, qstart, qend, sstart, send, cutstart, cutend, upperstart, upperend\n";
+                        //cout << "cid, gi, sid, qstart, qend, sstart, send, cutstart, cutend, upperstart, upperend\n";
                         cout << cId << ","
                              << gi << ","
                              << subID << ","
@@ -1232,7 +1233,7 @@ void mr_run_blast(int itask,
                             doug_perc_cover >= g_COVER_CUTOFF) {
                             structBlRes_t res;
                             res.subjectId     = boost::lexical_cast<uint32_t>(subID);
-                            res.cId           = cId; 
+                            //res.cId           = cId; 
                             //res.identity      = orig_perc_ident;
                             //res.alignLen      = align_length;
                             //res.misMatches    = num_mismatches;
@@ -1346,7 +1347,7 @@ inline void mr_sort_multivalues_by_evalue(char *key,
     for (size_t n = 0; n < (unsigned)nvalues; n++) {
         structBlRes_t* res = (structBlRes_t*)(vecHit[n].pRec);
         outputFile 
-            << res->cId << "\t"
+            //<< res->cId << "\t"
             << *(uint32_t*)key << "\t"
             << res->subjectId << "\t"
             //<< res->identity << "\t"
