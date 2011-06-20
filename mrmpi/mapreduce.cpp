@@ -81,7 +81,7 @@ int compare_strn_reverse(char *, int, char *, int);
 
 enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
-#define MEMORY_DEBUG 1   // set if want debug output from memory requests
+//#define MEMORY_DEBUG 1   // set if want debug output from memory requests
 
 ///
 /// Added by ssul for mr-mpt-blast

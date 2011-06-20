@@ -2,18 +2,18 @@
 from sqlite3 import *
 import sys
 import os
-#import glob
 import struct
 
     
 if __name__ == '__main__':
 
-    if len(sys.argv) != 3:
-        print "python make_sqlitedb.py hitfileprefix(+hits*) dbname"
+    if len(sys.argv) != 4:
+        print "python make_sqlitedb.py hit_file_prefix(+hits-*) 0/1_for_saving_csv"
         sys.exit(1)    
     
     hitFilePrefix = sys.argv[1]    
     dbName = sys.argv[2]
+    makeCSV = int(sys.argv[3])
     
     ### load hit file names from hitfilelist
     vecHitFileName = []
@@ -66,60 +66,71 @@ if __name__ == '__main__':
         sEnd        integer,
         eValue      double,
         bitScore    integer,
-        upperStart    integer,
-        upperEnd      integer,
+        upperStart  integer,
+        upperEnd    integer,
         dIdent      double, 
         dCover      double
        )''')
 
     ###
-    ### Load data
+    ### Load data and insert into db table
     ###
     recNum = 0;
-    csvFileName = dbName + ".csv"
-    csvFile = open(csvFileName, 'w')
+    if makeCSV:
+        csvFileName = dbName + ".csv"
+        csvFile = open(csvFileName, 'w')
+    
+    size = struct.calcsize('IIIIIIdfIIffI')
 
     for i in range(numHitFiles):
-        hitFile = open(vecHitFileName[i], "r")
-        for line in hitFile:
-            s = line.split("\t")
-            cmd = "insert into item values (" \
-                + str(recNum) + "," \
-                + str(s[0]) + "," \
-                + str(s[1]) + "," \
-                + str(s[2]) + "," \
-                + str(s[3]) + "," \
-                + str(s[4]) + "," \
-                + str(s[5]) + "," \
-                + str(s[6]) + "," \
-                + str(s[7]) + "," \
-                + str(s[8]) + "," \
-                + str(s[9]) + "," \
-                + str(s[10]) + "," \
-                + str(s[11]) \
-                + ")" 
-            csvString = str(recNum) + "," \
-                + str(s[0]) + "," \
-                + str(s[1]) + "," \
-                + str(s[2]) + "," \
-                + str(s[3]) + "," \
-                + str(s[4]) + "," \
-                + str(s[5]) + "," \
-                + str(s[6]) + "," \
-                + str(s[7]) + "," \
-                + str(s[8]) + "," \
-                + str(s[9]) + "," \
-                + str(s[10]) + "," \
-                + str(s[11]) 
-            curs.execute(cmd)
-            recNum += 1
-            csvFile.write(csvString)
+        hitFile = open(vecHitFileName[i], "rb")
+        data = hitFile.read(size)
+        while True:
+            try:
+                s = struct.unpack('IIIIIIdfIIffI', data)
+                cmd = "insert into item values (" \
+                    + str(recNum) + "," \
+                    + str(s[0]) + "," \
+                    + str(s[1]) + "," \
+                    + str(s[2]) + "," \
+                    + str(s[3]) + "," \
+                    + str(s[4]) + "," \
+                    + str(s[5]) + "," \
+                    + str(s[6]) + "," \
+                    + str(s[7]) + "," \
+                    + str(s[8]) + "," \
+                    + str(s[9]) + "," \
+                    + str(s[10]) + "," \
+                    + str(s[11]) \
+                    + ")" 
+                curs.execute(cmd)
+                
+                if makeCSV:
+                    csvString = str(recNum) + "," \
+                        + str(s[0]) + "," \
+                        + str(s[1]) + "," \
+                        + str(s[2]) + "," \
+                        + str(s[3]) + "," \
+                        + str(s[4]) + "," \
+                        + str(s[5]) + "," \
+                        + str(s[6]) + "," \
+                        + str(s[7]) + "," \
+                        + str(s[8]) + "," \
+                        + str(s[9]) + "," \
+                        + str(s[10]) + "," \
+                        + str(s[11]) 
+                    csvFile.write(csvString)
+                
+                recNum += 1
+                data = hitFile.read(size)
+            except:
+                break
             
         conn.commit()            
         hitFile.close()
         
-    csvFile.close()    
-    print recNum
+    if makeCSV:
+        csvFile.close()    
     
     ### 
     curs.execute("select count(*) from item")

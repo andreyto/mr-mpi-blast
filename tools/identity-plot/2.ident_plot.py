@@ -45,7 +45,9 @@ if __name__ == '__main__':
 
     ### Get unique subID
     vecSubId = []
-    sql = "select sId, count(*), gi from item where dCover >= %s group by sId order by count(*) desc"  % (coverCutoff)
+    sql = "select sId, count(*), gi from item \
+           where dCover >= %s \
+           group by sId order by count(*) desc"  % (coverCutoff)
     curs.execute(sql)
     for row in curs:
         vecSubId.append(row[0])
@@ -54,16 +56,20 @@ if __name__ == '__main__':
 
     currSubId = vecSubId[subjectIndex]
     
-    print "currSubId = ", currSubId
+    print "subject gi seleceted = ", currSubId
     
     ###
-    sql = "select min(sStart), max(sEnd) from item where sId == %s and dIdent >= %s and dCover >= %s" % (currSubId, identCutoff, coverCutoff)
+    sql = "select min(sStart), max(sEnd) from item \
+           where sId == %s and dIdent >= %s and dCover >= %s" \
+           % (currSubId, identCutoff, coverCutoff)
     curs.execute(sql)
     res = curs.fetchone()
     minSStart = res[0]
     maxSEnd   = res[1]
     print "min s.start, max s.end = ", minSStart, maxSEnd
-    sql = "select count(*) from item where sId == %s and dIdent >= %s and dCover >= %s" % (currSubId, identCutoff, coverCutoff)
+    sql = "select count(*) from item \
+           where sId == %s and dIdent >= %s and dCover >= %s" \
+           % (currSubId, identCutoff, coverCutoff)
     curs.execute(sql)
     res = curs.fetchone()
     numReads = res[0]
@@ -74,7 +80,9 @@ if __name__ == '__main__':
     vecDIdent = npy.zeros((numReads),dtype=float) 
     vecGi     = npy.zeros((numReads),dtype=int) 
     
-    sql = "select sStart, sEnd, dIdent, gi, dCover from item where sId == %s and dIdent >= %s and dCover >= %s order by gi" % (currSubId, identCutoff, coverCutoff)
+    sql = "select sStart, sEnd, dIdent, gi, dCover from item \
+           where sId == %s and dIdent >= %s and dCover >= %s \
+           order by gi" % (currSubId, identCutoff, coverCutoff)
     curs.execute(sql)
     i = 0
     #print "s.start, s.end, identity, coverage, gi, sid"
@@ -93,25 +101,25 @@ if __name__ == '__main__':
     ####
     #### Plotting
     ####
-    pylab.figure(1)
+    fig = pylab.figure(1)
     ax = pylab.subplot(111)
     x = range(maxSEnd)
     c = ['r', 'b', 'g', 'k', 'm', 'y']
     
     print "gi = ", vecGi[0]
+    cIndex = 0
     for i in range(0, len(vecDIdent)):
         xs = vecStart[i]
         xe = vecEnd[i]
         x2 = [xs, xe]
         y2 = [vecDIdent[i], vecDIdent[i]]
-        cIndex = 0
         
         if i > 0 and vecGi[i] != vecGi[i-1]:
             cIndex += 1
-            if cIndex > len(c):
+            if cIndex >= len(c):
                 cIndex = 0
             print "gi, colorIndex =", vecGi[i], cIndex
-        line = lines.Line2D(x2, y2, lw=3., color=c[cIndex], alpha=0.4)
+        line = lines.Line2D(x2, y2, lw=2., color=c[cIndex], alpha=0.4)
         ax.add_line(line)
 
     ax.set_ylim(0.0, 100.0)
@@ -128,14 +136,23 @@ if __name__ == '__main__':
     
     #ax.set_xticklabels(('0', '', '', '', '', '100'))
         
+    ### Set lable font size
     fontsize=16
     for tick in ax.xaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
     for tick in ax.yaxis.get_major_ticks():
         tick.label1.set_fontsize(fontsize)
-        
+    
+    ### Rotate xaxis label
+    #for label in ax.get_xticklabels():
+        #pylab.setp(label, rotation=45)
+    fig.autofmt_xdate()
+    
+    ### Save fig
     #imFileName = dbName + "-indentity-plot.png"
     #pylab.savefig(imFileName, dpi=(300))
+    
+    ### Show fig
     pylab.show()
                 
  
