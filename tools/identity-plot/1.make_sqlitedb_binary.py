@@ -8,7 +8,7 @@ import struct
 if __name__ == '__main__':
 
     if len(sys.argv) != 4:
-        print "python make_sqlitedb.py hit_file_prefix(+hits-*) 0/1_for_saving_csv"
+        print "python make_sqlitedb.py hit_file_prefix(+hits-*) database__name 0/1_for_saving_csv"
         sys.exit(1)    
     
     hitFilePrefix = sys.argv[1]    
@@ -118,7 +118,7 @@ if __name__ == '__main__':
                         + str(s[8]) + "," \
                         + str(s[9]) + "," \
                         + str(s[10]) + "," \
-                        + str(s[11]) 
+                        + str(s[11]) + "\n"
                     csvFile.write(csvString)
                 
                 recNum += 1

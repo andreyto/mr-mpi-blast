@@ -135,7 +135,12 @@ if __name__ == '__main__':
             currLoc += len(line)
         #print "seqLen = ", seqLen
         numSeq += 1
+        
+        ### 
+        ### Save start location of each query def line and the length
+        ###
         outFile.write(str(loc)+","+str(seqLen)+"\n")
     outFile.close()
     print "Total num seqs = ", numSeq
     
+### EOF

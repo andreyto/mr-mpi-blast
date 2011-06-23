@@ -93,8 +93,8 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 using namespace std;
 typedef struct structWorkItem {
     uint32_t dbNo;
-    uint32_t bStart;
-    uint32_t bEnd;
+    uintmax_t blockBegin;
+    uintmax_t blockEnd;
 } structWorkItem_t;
 extern vector<structWorkItem_t> g_vecWorkItem;
 extern multimap<string, int> g_multimapProcNameRank; 
@@ -1449,8 +1449,9 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                         /// ritr->first is the actual count value
                         tempDbNo = ritr->second;
                         nextWorkItemFound = get_next_itask(nAssigned, iproc, 
-                                              tempDbNo, 
-                                              bsWorkItemAssigned, mmDbAssigned);
+                                                           tempDbNo, 
+                                                           bsWorkItemAssigned, 
+                                                           mmDbAssigned);
                         nTrial++;
                         if (nextWorkItemFound != -1) break;
                     }

@@ -2,12 +2,7 @@ import sys
 from Bio import SeqIO
 from Bio.Seq import Seq
 import os,random
-#import numpy as npy
-
-#def chunks(l, n):
-    #return [l[i:i+n] for i in range(0, len(l), n)]
-
-
+ 
 if len(sys.argv) != 6:
     print "USAGE: python splitter.py fasta_file chunksize lowerPartLen outfile"
     print "       - fasta_file: input file"
@@ -16,15 +11,11 @@ if len(sys.argv) != 6:
     print "       - upperPartOverlap: length (bp) of uppercase part overlap"
     print "       - outfile: output file\n"
     sys.exit(0)
-
-###
-###
-###
-
-seqFileName = sys.argv[1]       ## SEQ FILE NAME
-upperPartLen = int(sys.argv[2]) ## upperPart length BP
-lowerPartLen = int(sys.argv[3])   ## lowerPart length BP
-upperPartOverlap = int(sys.argv[4])   ## upperPart overlap length BP
+ 
+seqFileName = sys.argv[1]           ## SEQ FILE NAME
+upperPartLen = int(sys.argv[2])     ## upperPart length BP
+lowerPartLen = int(sys.argv[3])     ## lowerPart length BP
+upperPartOverlap = int(sys.argv[4]) ## upperPart overlap length BP
 outFileName = sys.argv[5]
 seqFile = open(seqFileName, "r")
 outFile = open(outFileName, "w")
@@ -36,16 +27,19 @@ sid = 0         ## seq id
 for cur_record in SeqIO.parse(seqFile, "fasta") :
     sid += 1  
     origGI = cur_record.id.split()[0][0:] 
-    #print origGI
     seqLen = len(cur_record.seq)
     cutStart = 0
     upperStart = 0
     cnt = 0;
 
     while True:
-        #end = cutStart + upperPartLen + (lowerPartLen*2)
         cid += 1
         
+        ###
+        ### Header notation
+        ###   chunkID_chunkType_cutStart_cutEnd_upperStart_upperEnd
+        ###   following the Python notation of [start, end) 
+        ###
         if cutStart == 0 and upperStart == 0:
             if seqLen <= upperPartLen + lowerPartLen:
                 newHeader = ">"+origGI+"_"+str(cid)+"_"+"0"+"_"+str(cutStart)+"_"+str(seqLen)+"_"+str(upperStart)+"_"+str(seqLen)

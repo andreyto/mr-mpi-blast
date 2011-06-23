@@ -5,7 +5,7 @@
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 06/20/2011
+//  Last updated: 06/23/2011
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -73,16 +73,17 @@ using namespace std;
 #include <algo/blast/format/blast_format.hpp>
 #include <algo/blast/blastinput/blastn_args.hpp>
 #include <algo/blast/blastinput/blastp_args.hpp>
- 
+
+/// sequence::GetTitle() for get def line
+#include <objmgr/util/sequence.hpp>
 
 USING_NCBI_SCOPE;
 USING_SCOPE (blast);
-USING_SCOPE (objects);
+//USING_SCOPE (objects);
 USING_SCOPE (align_format);
     
 /// For typedef unsigned long long int uint32_t
 #include <stdint.h>
-
 
 /// 
 /// Boost lib
@@ -106,7 +107,7 @@ namespace pod = boost::program_options::detail;
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/filesystem/operations.hpp> /// for real file size
 boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap query file
-uint32_t g_realFileSize;
+uintmax_t g_realFileSize = 0;
 
 /// For align info
 #include "blast_app_util.hpp"
@@ -120,11 +121,6 @@ int g_verbosity;
 int g_timer;                /// log elapsed time for each mapreduce call
 int g_memSize;              /// page size (in Mbytes)
 int g_outOfCore;
-
-/// Self-Exclusion options
-bool g_bExclEnabled;
-int g_exclThreshold;        /// Exclusion threshold = 100bp
-string g_exclHistFileName;
 
 /// DB options
 string g_dbFileName;
@@ -152,21 +148,22 @@ ofstream g_logFileStream;
 static ostream *g_pLogStream = NULL;
 #define LOG (*g_pLogStream)
 
-
 /// 
 /// New scheduler
 /// 
 typedef struct structIndex {
-    uint32_t qStart;
+    uintmax_t qStart;
     uint32_t qLength;
 } structQueryIndex_t;
+
 typedef struct structWorkItem {
     uint32_t dbNo;
-    uint32_t blockBegin;
-    uint32_t blockEnd;
+    uintmax_t blockBegin;
+    uintmax_t blockEnd;
 } structWorkItem_t;
+
 vector<string> g_vecDbFile;
-vector<uint32_t> g_vecBlockBeginLoc;
+vector<uintmax_t> g_vecBlockBeginLoc;
 vector<structQueryIndex_t> g_vecQueryIndex;
 vector<structWorkItem_t> g_vecWorkItem;
 uint32_t g_numQueries;
@@ -214,6 +211,10 @@ string g_strategyFileName;  /// Input blast search option file
 /// q. start, q. end, s. start, s. end, evalue, bit score
 typedef struct structBlRes {
     uint32_t    subjectId;    
+    //float       identity;
+    //uint32_t    alignLen;
+    //int         misMatches;
+    //uint32_t    gapOpens;
     uint32_t    qStart;
     uint32_t    qEnd;
     uint32_t    sStart;
@@ -252,7 +253,7 @@ typedef struct structEvalue {
 
 /// Multiple iterations
 int g_numIter = 1;   
-uint32_t nSubWorkItemFiles = 0;
+uint32_t nSubWorkItemSets = 0;
 uint32_t nWorkItemsPerIter = 0;
 uint32_t nRemains = 0;
 
@@ -279,8 +280,6 @@ void        mr_run_blast(int itask, KeyValue *kv, void *ptr);
 inline void mpi_collect_node_name(int rank, int numProcs, MPI_Comm mpiComm);
 inline void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
 inline bool compare_evalue(structEValue_t e1, structEValue_t e2);
-inline bool check_exclusion(string qGi, string sGi, uint32_t qCutLocStart, uint32_t qCutLocEnd, uint32_t sStart, uint32_t sEnd, int threshold);                        
-
 
 
 class CMrMpiBlastApplication : public CNcbiApplication
@@ -309,17 +308,13 @@ void CMrMpiBlastApplication::Init(void)
         for (pod::config_file_iterator i(config, options), e ; i != e; ++i) {
             parameters[i->string_key] = i->value[0];
         }
-        g_exclHistFileName   = parameters["EXCLHISTFNAME"];
         try {
             g_verbosity      = boost::lexical_cast<int>(parameters["VERBOSITY"]);
             g_timer          = boost::lexical_cast<int>(parameters["TIMER"]);
             g_memSize        = boost::lexical_cast<int>(parameters["MEMSIZE"]);
             g_outOfCore      = boost::lexical_cast<int>(parameters["OUTOFCORE"]);
 
-            g_bExclEnabled    = boost::lexical_cast<bool>(parameters["EXCLENABLED"]);
-            g_exclThreshold  = boost::lexical_cast<int>(parameters["EXCLTHRESHOLD"]);
-
-            g_bLogEnabled     = boost::lexical_cast<bool>(parameters["LOGENABLED"]);
+            g_bLogEnabled    = boost::lexical_cast<bool>(parameters["LOGENABLED"]);
             g_timingEnabled  = boost::lexical_cast<int>(parameters["TIMING"]);
             g_optDumpEnabled = boost::lexical_cast<int>(parameters["OPTDUMP"]);
             g_logFileName    = parameters["LOGFNAME"];
@@ -355,7 +350,7 @@ void CMrMpiBlastApplication::Init(void)
 
 int CMrMpiBlastApplication::Run(void) 
 {     
-    // Allow the fasta reader to complain on invalid sequence input
+    /// Allow the fasta reader to complain on invalid sequence input
     SetDiagPostLevel(eDiag_Warning);
     
     const CArgs& args = GetArgs();
@@ -368,11 +363,17 @@ int CMrMpiBlastApplication::Run(void)
     /// Collect MPI node names and rank number for mapstyle=3 scheduler
     ///
     mpi_collect_node_name(g_MPI_worldRank, g_MPI_numProcs, MPI_COMM_WORLD);
+    
+    if (g_MPI_worldRank == 0) {
+        for ( multimap<string, int>::const_iterator iter = g_multimapProcNameRank.begin();
+              iter != g_multimapProcNameRank.end(); ++iter )
+            cout << iter->first << '\t' << iter->second << '\n';
+    }
    
     ///
     /// Creat memory-mapped file for query
     ///
-    uint32_t g_realFileSize = boost::filesystem::file_size(g_queryFileName);
+    g_realFileSize = boost::filesystem::file_size(g_queryFileName);
     g_memmapQueryFile.open(g_queryFileName, g_realFileSize, 0);
     if (!g_memmapQueryFile.is_open()) {
         MPI_Finalize();
@@ -409,11 +410,12 @@ int CMrMpiBlastApplication::Run(void)
         exit(4);
     }
     while (!getline(indexFile, line).eof() && line.length() > 0) {
-        vector<string> vecIndexTokens;
-        boost::split(vecIndexTokens, line, boost::is_any_of(","));
+        vector<string> tok;
+        boost::split(tok, line, boost::is_any_of(","));
+        assert(tok.size() == 2);
         structQueryIndex_t queryIndex;
-        queryIndex.qStart  = boost::lexical_cast<uint32_t>(vecIndexTokens[0]);
-        queryIndex.qLength = boost::lexical_cast<uint32_t>(vecIndexTokens[1]);
+        queryIndex.qStart  = boost::lexical_cast<uintmax_t>(tok[0]);
+        queryIndex.qLength = boost::lexical_cast<uint32_t>(tok[1]);
         g_vecQueryIndex.push_back(queryIndex);
     }
     indexFile.close();
@@ -438,11 +440,9 @@ int CMrMpiBlastApplication::Run(void)
     ///
     for (size_t d = 0; d < (unsigned)g_numDbFiles; d++) {
         for (size_t b = 0; b < g_numQueryBlocks - 1; b++) {
-            uint32_t blockBegin = g_vecBlockBeginLoc[b];
-            uint32_t blockEnd = g_vecBlockBeginLoc[b + 1] - 1;
             structWorkItem_t aWorkItem;
-            aWorkItem.blockBegin = blockBegin;
-            aWorkItem.blockEnd   = blockEnd;
+            aWorkItem.blockBegin = g_vecBlockBeginLoc[b];
+            aWorkItem.blockEnd   = g_vecBlockBeginLoc[b + 1] - 1;
             aWorkItem.dbNo       = d;
             g_vecWorkItem.push_back(aWorkItem);
         }
@@ -485,20 +485,20 @@ int CMrMpiBlastApplication::Run(void)
     /// Calculate sub work item size for multiple iterations
     ///
     if (g_numIter != 1) {
-        nSubWorkItemFiles = g_numIter;
+        nSubWorkItemSets = g_numIter;
         nWorkItemsPerIter = (g_numQueryBlocks / g_numIter) * g_numDbFiles;            
         nRemains = (g_numQueryBlocks % g_numIter) * g_numDbFiles;
     }
     else { 
         nWorkItemsPerIter = g_numWorkItems;
         nRemains = 0;
-        nSubWorkItemFiles = 1;
+        nSubWorkItemSets = 1;
     }
     /// for one more added file of remaining work items
-    if (nRemains) nSubWorkItemFiles++; 
+    if (nRemains) nSubWorkItemSets++; 
 
     if (g_MPI_worldRank == 0 && g_numIter != 1) {        
-        cout << "Number of sub work item sets = " << nSubWorkItemFiles << endl;
+        cout << "Number of sub work item sets = " << nSubWorkItemSets << endl;
         cout << "Number of work items per iteration  = " << nWorkItemsPerIter << endl;
         cout << "Number of work items remaining = " << nRemains << endl;
         cout.flush();
@@ -594,36 +594,36 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
     ///
     /// MR-MPI init (MAY2011 version)
     ///
-    /// mapstyle = 0 (chunk) or 1 (stride) or 2 (master/slave)
-    /// all2all = 0 (irregular communication) or 1 (use MPI_Alltoallv)
-    /// verbosity = 0 (none) or 1 (summary) or 2 (histogrammed)
-    /// timer = 0 (none) or 1 (summary) or 2 (histogrammed)
-    /// memsize = N = number of Mbytes per page of memory
-    /// minpage = N = # of pages to pre-allocate per processor
-    /// maxpage = N = max # of pages allocatable per processor
-    /// freepage = 1 if memory pages are freed in between operations, 0 if held
-    /// outofcore = 1 if even 1-page data sets are forced to disk, 0 if not, -1
+    /// mapstyle    = 0 (chunk) or 1 (stride) or 2 (master/slave)
+    /// all2all     = 0 (irregular communication) or 1 (use MPI_Alltoallv)
+    /// verbosity   = 0 (none) or 1 (summary) or 2 (histogrammed)
+    /// timer       = 0 (none) or 1 (summary) or 2 (histogrammed)
+    /// memsize     = N = number of Mbytes per page of memory
+    /// minpage     = N = # of pages to pre-allocate per processor
+    /// maxpage     = N = max # of pages allocatable per processor
+    /// freepage    = 1 if memory pages are freed in between operations, 0 if held
+    /// outofcore   = 1 if even 1-page data sets are forced to disk, 0 if not, -1
     ///               if cannot write to disk
-    /// zeropage = 1 if zero out every allocated page, 0 if not
-    /// keyalign = N = byte-alignment of keys
-    /// valuealign = N = byte-alignment of values
-    /// fpath = string
+    /// zeropage    = 1 if zero out every allocated page, 0 if not
+    /// keyalign    = N = byte-alignment of keys
+    /// valuealign  = N = byte-alignment of values
+    /// fpath       = string
     ///
     MapReduce *pMr = new MapReduce(mpiComm);
     pMr->verbosity = g_verbosity;
     pMr->timer     = g_timer;
     pMr->memsize   = g_memSize;
-    pMr->keyalign  = sizeof(uint32_t); /// The key is GI
-    pMr->mapstyle  = g_mapStyle;       /// master/slave=2, custom scheduler=3
-    pMr->outofcore = g_outOfCore;
+    pMr->keyalign  = sizeof(uint32_t);  /// The key is query GI
+    pMr->mapstyle  = g_mapStyle;        /// master/slave=2, custom scheduler=3
+    pMr->outofcore = g_outOfCore;       /// "-1" to disable out-of-core operation
     MPI_Barrier(mpiComm);
 
-    for (int iter = 0; iter < nSubWorkItemFiles; iter++) {
+    for (int iter = 0; iter < nSubWorkItemSets; iter++) {
         if (g_MPI_worldRank == 0) cout << "Iteration: " << iter << endl;
         if (g_bLogEnabled) LOG << g_logMsg << "Iteration: " << iter << endl;
         
         ///
-        /// map, collate reduce
+        /// map, collate, reduce
         ///
         double mapTime;
         if (g_bLogEnabled) {
@@ -634,10 +634,10 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
         structToPass_t toPass;
         toPass.rank = rank;
         toPass.iter = iter;
-    
+        
         /////////////////////////////////////////////////////////////
         if (g_numIter != 1)
-            if (nRemains != 0 && iter == nSubWorkItemFiles - 1)
+            if (nRemains != 0 && iter == nSubWorkItemSets - 1)
                 pMr->map(nRemains, &mr_run_blast, &toPass);
             else 
                 pMr->map(nWorkItemsPerIter, &mr_run_blast, &toPass);
@@ -740,8 +740,11 @@ void mr_run_blast(int itask,
     structToPass_t *toPass = (structToPass_t *) ptr;
     int rank = toPass->rank;
     int iter = toPass->iter;
-    
-    uint32_t dbno, qBlockStart, qBlockEnd;    
+    if (g_bLogEnabled)
+        LOG << g_logMsg << "Start processing itask = " << itask << endl;
+            
+    uint32_t dbno;
+    uintmax_t qBlockStart, qBlockEnd;    
     if (g_numIter > 1) {
         dbno = g_vecWorkItem[itask + nWorkItemsPerIter * iter].dbNo;
         qBlockStart = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockBegin;
@@ -750,7 +753,7 @@ void mr_run_blast(int itask,
     else {
         dbno = g_vecWorkItem[itask].dbNo;
         qBlockStart = g_vecWorkItem[itask].blockBegin;
-        qBlockEnd = g_vecWorkItem[itask].blockEnd;
+        qBlockEnd   = g_vecWorkItem[itask].blockEnd;
     }
 
     struct timeval blastcallStartTime;
@@ -806,32 +809,10 @@ void mr_run_blast(int itask,
     assert(g_memmapQueryFile.is_open());
     const char *pMmapQueryFile = (char*)g_memmapQueryFile.data();
     ////////////////////////////////////////////////////////////////////
-    string query(pMmapQueryFile + qBlockStart, qBlockEnd - qBlockStart);
+    string query(pMmapQueryFile + qBlockStart, qBlockEnd - qBlockStart);    
     ////////////////////////////////////////////////////////////////////
-    vector<string> vecHeader;        /// For collecting def lines of queries
-    vector<uint32_t> vecBeginOffset; /// For collecting beginoffsets of queries
-    uint32_t numQueries = 0;
-    char *c = (char*)(pMmapQueryFile + qBlockStart);
-    uint32_t loc = qBlockStart;
-    char buff2[MAXSTR];
-    size_t buffIdx = 0;
-    while (loc < qBlockEnd) {
-        if ((*c) == '>') {
-            numQueries++;
-            vecBeginOffset.push_back(loc);
-            buffIdx = 0;
-        }
-        if (g_bExclEnabled && (*c) != '\n' && buffIdx < (unsigned)MAXSTR)
-            buff2[buffIdx++] = (*c);
-        else if (g_bExclEnabled && (*c) == '\n')
-            vecHeader.push_back(string(buff2));
-        c++;
-        loc++;
-    }
-
-    if (g_bLogEnabled)
-        LOG << g_logMsg << "Number of queries per a Blast call = " << numQueries 
-            << endl;
+    assert(query.length() > 0);
+    assert(query[0] == '>');
 
     const CBlastOptions& opt = g_opts_hndl->GetOptions();
     
@@ -961,10 +942,9 @@ void mr_run_blast(int itask,
             << "," << qBlockStart << endl;
         LOG.flush();
     }
-        
+    
     /*** Process the input ***/
     for (; !input.End(); formatter.ResetScopeHistory()) {
-
         CRef<CBlastQueryVector> query_batch(input.GetNextSeqBatch(*scope));
         CRef<IQueryFactory> queries(new CObjMgr_QueryFactory(*query_batch));
         CRef<CSearchResultSet> results;
@@ -982,8 +962,7 @@ void mr_run_blast(int itask,
             if ((*results)[i].HasAlignments()) {
                 CConstRef<CSeq_align_set> aln_set = (*results)[i].GetSeqAlign();
                 ITERATE(CSeq_align_set::Tdata, itr_res, aln_set->Get()) {  
-                    const CSeq_align& s = **itr_res;
-                    
+                    const CSeq_align& s = **itr_res;                    
                     ///
                     /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/classCSeq__align.html
                     ///
@@ -1000,29 +979,23 @@ void mr_run_blast(int itask,
                     string subID        = s.GetSeq_id(SUBJECT).GetSeqIdString();
                     uint32_t qStart     = s.GetSeqStart(QUERY);
                     uint32_t qEnd       = s.GetSeqStop(QUERY);
-                    qEnd += 1;   
                     uint32_t sStart     = s.GetSeqStart(SUBJECT);
                     uint32_t sEnd       = s.GetSeqStop(SUBJECT);
+                    qEnd += 1;   
                     sEnd += 1;
+                    
                     //uint32_t alignLenGap   = s.GetAlignLength();
-                    //uint32_t alignLenUngap = s.GetAlignLength(false);
+                    //uint32_t alignLenUngap = s.GetAlignLength(false);                    
                     
                     ///
-                    /// Retrieve GI 
+                    /// Retrieve def line 
                     ///
+                    const CBioseq_Handle& query_bh2 = 
+                        scope->GetBioseqHandle(s.GetSeq_id(QUERY));
+                    string defLine = sequence::GetTitle(query_bh2);
                     
-                    /// Get the saved qBlockStart from vBeginOffset
-                    uint32_t bOffset = 
-                        vecBeginOffset[boost::lexical_cast<uint32_t>(queryID)-1];
-                    
-                    /// Get GI
-                    /// Assumption: defline.length() < 160
-                    string line(pMmapQueryFile + bOffset, 160);
+                    /// Get GI    
                     vector<string> vecTokens;
-                    boost::split(vecTokens, line, boost::is_any_of("\n"));
-                    assert(vecTokens.size() == 2);
-                    string defLine = vecTokens[0];
-                    vecTokens.clear();
                     boost::split(vecTokens, defLine, boost::is_any_of("|"));
                     uint32_t gi = boost::lexical_cast<uint32_t>(vecTokens[1]);
                     
@@ -1037,10 +1010,10 @@ void mr_run_blast(int itask,
                     ///         x: cutStart,   y: cutEnd
                     ///         v: upperStart, w: upperEnd       
                     /// 
-                    ///  CID    Type-0:     XXX
-                    ///         Type-2,4,6: xxxXXX
-                    ///         Type-3,5,7: xxxXXXxxx
-                    ///         Type-1:     XXXxxx
+                    ///  chunkID Type-0:     XXX
+                    ///          Type-2,4,6: xxxXXX
+                    ///          Type-3,5,7: xxxXXXxxx
+                    ///          Type-1:     XXXxxx
                     ///
                     string coord = vecTokens[vecTokens.size()-1];
                     vecTokens.clear();
@@ -1048,7 +1021,7 @@ void mr_run_blast(int itask,
                     if (vecTokens.size() != 7) {
                         MPI_Finalize();
                         cerr << "ERROR: the number of tokens in coords string != 7\n";
-                        cerr << "read line = " << line << endl;
+                        cerr << "read line = " << defLine << endl;
                         cerr << "coord = " << coord << endl;
                         cerr.flush();                        
                         exit(5);
@@ -1065,8 +1038,8 @@ void mr_run_blast(int itask,
                     uint32_t upperStart      
                         = boost::lexical_cast<uint32_t>(vecTokens[vecTokens.size()-2]);
                     uint32_t upperEnd        
-                        = boost::lexical_cast<uint32_t>(vecTokens[vecTokens.size()-1]);                       
-                                            
+                        = boost::lexical_cast<uint32_t>(vecTokens[vecTokens.size()-1]);
+                    
                     /// Just in case, remove out the hits in the lowercase parts
                     if ((qStart + cutStart < upperStart && qEnd + cutStart < upperStart) ||
                         (qStart + cutStart > upperEnd && qEnd + cutStart > upperEnd)) {
@@ -1108,7 +1081,7 @@ void mr_run_blast(int itask,
                         const CBioseq_Handle& subject_bh = 
                             scope->GetBioseqHandle(s.GetSeq_id(SUBJECT));
                         subject_is_na = subject_bh.IsNa();
-                        
+                                        
                         const bool kTranslated = s.GetSegs().IsStd();
                         CRef<CSeq_align> finalAln(0);                    
                         if (kTranslated) {
@@ -1136,6 +1109,17 @@ void mr_run_blast(int itask,
                         }    
                         
                         ///
+                        /// Ref: http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/doxyhtml/score__builder_8cpp-source.html
+                        /// pct_identity = 100.0f * float(*identities) / count_aligned;
+                        ///
+                        //int align_length = 0, num_gaps = 0, num_gap_opens = 0;
+                        //CAlignFormatUtil::GetAlignLengths(*alnVec, align_length, 
+                                                        //num_gaps, num_gap_opens);
+                        //float orig_perc_ident = (align_length > 0 ? 
+                                       //((float)num_ident)/align_length * 100 : 0)
+                        //int num_mismatches = align_length - num_ident - num_gaps;
+                        
+                        ///
                         /// Doug's filtering
                         ///
                         /// "Percent Identity” looks at every position in the aligned sequences 
@@ -1154,8 +1138,8 @@ void mr_run_blast(int itask,
                         string querySeq = "";
                         string subjectSeq = "";
                         alnVec->SetGapChar('-');
-                        alnVec->GetWholeAlnSeqString(0, querySeq);
-                        alnVec->GetWholeAlnSeqString(1, subjectSeq);
+                        alnVec->GetWholeAlnSeqString(QUERY, querySeq);
+                        alnVec->GetWholeAlnSeqString(SUBJECT, subjectSeq);
                         assert(querySeq.size() > 0 && subjectSeq.size() > 0);
                         
                         /// Convert to the original coord in the query sequence
@@ -1219,7 +1203,7 @@ void mr_run_blast(int itask,
                         if (qEndOrig > upperEnd) newQEnd = upperEnd;
                         float doug_perc_cover = float(newQEnd - newQStart) / 
                                                 (upperEnd - upperStart) * 100;                   
-                                             
+                        
                         ///
                         /// Add a HSP to kv and emit
                         ///
@@ -1227,7 +1211,6 @@ void mr_run_blast(int itask,
                             doug_perc_cover >= g_COVER_CUTOFF) {
                             structBlRes_t res;
                             res.subjectId     = boost::lexical_cast<uint32_t>(subID);
-                            //res.cId           = cId; 
                             //res.identity      = orig_perc_ident;
                             //res.alignLen      = align_length;
                             //res.misMatches    = num_mismatches;
@@ -1331,96 +1314,62 @@ inline void mr_sort_multivalues_by_evalue(char *key,
     sort(vecHit.begin(), vecHit.end(), compare_evalue);
     ///////////////////////////////////////////////////
     
- 
+    ///
+    /// After sorting, each worker saves the set of results into a file.
+    /// Note: The file open option is "a".
+    /// Note: outfmt = 6 in Blast
+    ///                       
+    //ofstream outputFile(g_hitFileName.c_str(), ios::out | ios::app);
+    //for (size_t n = 0; n < (unsigned)nvalues; n++) {
+        //structBlRes_t* res = (structBlRes_t*)(vecHit[n].pRec);
+        //outputFile 
+            ////<< res->cId << "\t"
+            //<< *(uint32_t*)key << "\t"
+            //<< res->subjectId << "\t"
+            ////<< res->identity << "\t"
+            ////<< res->alignLen << "\t"
+            ////<< res->misMatches << "\t"
+            ////<< res->gapOpens << "\t"
+            //<< res->qStart << "\t"
+            //<< res->qEnd << "\t"
+            //<< res->sStart << "\t"
+            //<< res->sEnd << "\t"
+            //<< res->eValue << "\t"
+            //<< res->bitScore << "\t"
+            //<< res->upperStart << "\t"
+            //<< res->upperEnd << "\t"
+            //<< res->doug_identity << "\t"
+            //<< res->doug_coverage
+            //<< endl;
+    //}
+    //outputFile.close();
     
-    /// Write in binary file
-    /// Ref: http://stackoverflow.com/questions/5506645/how-to-read-write-a-struct-in-binary-files
+    ///
+    /// Write to file in binary format
+    ///
     ofstream outputBinFile((g_hitFileName+".bin").c_str(), ios::binary | ios::app);
     for (size_t n = 0; n < (unsigned)nvalues; n++) {
         structBlRes_t* res = (structBlRes_t*)(vecHit[n].pRec);
         structBlRes2_t hit;
-            hit.qId           = *(uint32_t*)key;
-            hit.subjectId     = res->subjectId;
-            hit.qStart        = res->qStart;
-            hit.qEnd          = res->qEnd;
-            hit.sStart        = res->sStart;
-            hit.sEnd          = res->sEnd;
-            hit.eValue        = res->eValue;
-            hit.bitScore      = res->bitScore;
-            hit.upperStart    = res->upperStart;
-            hit.upperEnd      = res->upperEnd;
-            hit.doug_identity = res->doug_identity;
-            hit.doug_coverage = res->doug_coverage;
-            
-            outputBinFile.write((char*)&hit, sizeof(hit));
+        hit.qId            = *(uint32_t*)key;
+        hit.subjectId      = res->subjectId;
+        hit.qStart         = res->qStart;
+        hit.qEnd           = res->qEnd;
+        hit.sStart         = res->sStart;
+        hit.sEnd           = res->sEnd;
+        hit.eValue         = res->eValue;
+        hit.bitScore       = res->bitScore;
+        hit.upperStart     = res->upperStart;
+        hit.upperEnd       = res->upperEnd;
+        hit.doug_identity  = res->doug_identity;
+        hit.doug_coverage  = res->doug_coverage;
+        
+        outputBinFile.write((char*)&hit, sizeof(hit));
     }
     outputBinFile.close();
     vecHit.clear();
 }
 
-
-/** Check exclusion - Based on the coordinates of query and subject, decide
- * whether the result should be included in the final result or not.
- * @param qGi: query ID
- * @param sGi: subject ID
- * @param qCutLocStart: Cutting start location of the query from original
- * refseq_genomic fasta input.
- * @param qCutLocEnd: Cutting end location of the query from original
- * refseq_genomic fasta input.
- * @param sStart: subject alignment start location.
- * @param sEnd: subject alignemnt end location.
- * @param threshold: overlap threshold (default = 100bp).
- */
-
-inline bool check_exclusion(string qGi,
-                            string sGi,
-                            uint32_t qCutStart,
-                            uint32_t qCutEnd,
-                            uint32_t sStart,
-                            uint32_t sEnd,
-                            int threshold)
-{
-    ///
-    /// To exclude Blast result from the original sequence from which
-    /// the input query is originated (sampled). Basically if qGi == sGi
-    /// and qCutStart is similar with sStart and qCutEnd is similar
-    /// with sEnd in terms of coordinates, the result should be excluded.
-    ///
-    /// Orig seq: ----------------XXXXXXXXXXXXXXXX----------------------
-    ///                           |              |
-    ///                     qCutStart      qCutEnd
-    ///
-    /// Query:                    XXXXXXXXXXXXXXXX
-    ///                              |          |
-    ///                           qStart       qEnd
-    ///
-    /// Subject:   ------------------XXXXXXXXXXXX-----------------------
-    ///                              |          |
-    ///                           sStart      sEnd
-    ///
-    bool bRet = false;
-
-    if (qGi == sGi) {
-        if (qCutStart < 0) {
-            ///
-            /// In >gi|222299657|18|3605|-400|3604
-            /// -400|3604 means query[-400:3604] in Python.
-            ///
-            qCutStart = qCutEnd + 1 - qCutStart;
-            qCutEnd += 1;
-        }
-        if (
-           (qCutStart - threshold <= sStart && sStart <= qCutStart + threshold)
-           && 
-           (qCutEnd - threshold <= sEnd && sEnd <= qCutEnd + threshold)
-           ) 
-        {
-            bRet = true;
-        }
-    }
-
-    return bRet;
-}
 
 /** Collect MPI node names and ranks
  * @param rank

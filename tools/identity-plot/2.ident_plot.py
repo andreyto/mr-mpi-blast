@@ -12,18 +12,14 @@ from matplotlib import pyplot, lines
   #( recId       integer primary key, 
     #gi          integer,
     #sId         integer,
-    ##pIdent      double,
-    ##alignLen    integer,
-    ##misMatches  integer, 
-    ##gapOpens    integer,
     #qStart      integer,
     #qEnd        integer,
     #sStart      integer, 
     #sEnd        integer,
     #eValue      double,
     #bitScore    integer,
-    #cutStart    integer,
-    #cutEnd      integer,
+    #upperStart  integer,
+    #upperEnd    integer,
     #dIdent      double, 
     #dCover      double
    #)''')
@@ -46,8 +42,9 @@ if __name__ == '__main__':
     ### Get unique subID
     vecSubId = []
     sql = "select sId, count(*), gi from item \
-           where dCover >= %s \
-           group by sId order by count(*) desc"  % (coverCutoff)
+           where dIdent >= %s and dCover >= %s \
+           group by sId order by count(*) desc" \
+           % (identCutoff, coverCutoff)
     curs.execute(sql)
     for row in curs:
         vecSubId.append(row[0])
@@ -56,7 +53,7 @@ if __name__ == '__main__':
 
     currSubId = vecSubId[subjectIndex]
     
-    print "subject gi seleceted = ", currSubId
+    print "subject gi selected = ", currSubId
     
     ###
     sql = "select min(sStart), max(sEnd) from item \
