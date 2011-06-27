@@ -22,4 +22,5 @@ mrmpi-old/*
 .#lock-map
 backup/
 backup/*
- 
+Obj_mpicc/
+Obj_mpicc/*

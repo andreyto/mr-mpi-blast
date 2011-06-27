@@ -83,6 +83,8 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
 //#define MEMORY_DEBUG 1   // set if want debug output from memory requests
 
+//#define MEMORY_DEBUG 1   // set if want debug output from memory requests
+
 ///
 /// Added by ssul for mr-mpt-blast
 ///
@@ -97,15 +99,14 @@ typedef struct structWorkItem {
     uintmax_t blockEnd;
 } structWorkItem_t;
 extern vector<structWorkItem_t> g_vecWorkItem;
-extern multimap<string, int> g_multimapProcNameRank; 
+extern multimap<string, int> g_multimapProcNameRank;
 extern map<int, string> g_mapRankProcName;
 extern int g_numDbFiles;
 extern int g_numWorkItems;
-extern int g_MPI_myRank;         
+extern int g_MPI_myRank;
 typedef multimap<string, vector<int> > multimapSVI_t;
 typedef pair<string, vector<int> > pairVI_t;
-typedef multimap<int,int> multimapII_t;
-
+typedef multimap<int, int> multimapII_t;
 
 
 /* ----------------------------------------------------------------------
@@ -1072,64 +1073,63 @@ uint64_t MapReduce::map(int nstr, char **strings,
     return nkeyall;
 }
 
-/** 
+
+/**
  * @param iproc
  * @param itaskDone
  * @param mmdba
  */
-inline void delete_db_assigned(int iproc, 
-                               int itaskDone, 
-                               multimapSVI_t &mmDbAssigned) 
+inline void decrease_db_assign_cnt(int iproc,
+                               int itaskDone,
+                               multimapSVI_t &mmDbAssigned)
 {
+    /// mmDbAssigned: to save node name and assigned db index
+    ///
+    /// data structure: <node_name, {0, 0, 0, ... ,0}>
+    ///                             -----------------
+    ///                               db name index 
+    ///
     string nodeName = g_mapRankProcName[iproc];
     assert(nodeName.length() > 0);
-    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair 
-        = mmDbAssigned.equal_range(nodeName);
+    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair
+    = mmDbAssigned.equal_range(nodeName);
     multimapSVI_t::iterator itr = mmDbAssignedPair.first;
     assert(itr != mmDbAssigned.end());
     (itr->second)[g_vecWorkItem[itaskDone].dbNo]--;
-    
-    /// debug print bit string
-    //itr = mmDbAssigned.begin();
-    //cout << "mmDbAssigned deleted: " << mmDbAssigned.size() << "\n";
-    //for (; itr != mmDbAssigned.end(); ++itr) {
-        //for (size_t j = 0; j < g_numDbFiles; j++)
-            //cout << (itr->second)[j] << ",";
-        //cout << endl;
-    //}
 }
-            
+
 /** 
  * @param iproc
  * @param itask
  * @param mmdba
- */            
-inline void save_db_assigned(int iproc, 
-                             int itask, 
+ */
+inline void increase_db_assign_cnt(int iproc,
+                             int itask,
                              multimapSVI_t &mmDbAssigned)
 {
+    /// mmDbAssigned: to save node name and assigned db index
+    ///
+    /// data structure: <node_name, {0, 0, 0, ... ,0}>
+    ///                             -----------------
+    ///                               db name index 
+    ///
     string nodeName = g_mapRankProcName[iproc];
     assert(nodeName.length() > 0);
-    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair 
+    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair
         = mmDbAssigned.equal_range(nodeName);
     multimapSVI_t::iterator itr = mmDbAssignedPair.first;
-    if (itr == mmDbAssigned.end() ) {
+    if (itr == mmDbAssigned.end()) {
+        /// There is no node name so make a new <node_name, {0, 0, 0, ... ,0}>
+        /// and increase the value at the db name index
         vector<int> vDbAssigned(g_numDbFiles, 0);
         vDbAssigned[g_vecWorkItem[itask].dbNo]++;
         mmDbAssigned.insert(pairVI_t(nodeName, vDbAssigned));
     }
     else {
+        /// if there is the node name, just increase the value at the db name index
+        vector<int> vDbAssigned(g_numDbFiles, 0);
         (itr->second)[g_vecWorkItem[itask].dbNo]++;
     }
-    
-    /// debug print bit string
-    //itr = mmDbAssigned.begin();
-    //cout << "mmDbAssigned saved: " << mmDbAssigned.size() << "\n";
-    //for (; itr != mmDbAssigned.end(); ++itr) {
-        //for (size_t j = 0; j < g_numDbFiles; j++)
-            //cout << (itr->second)[j] << ",";
-        //cout << endl;
-    //}
 }
 
 /** Sort by max. count and found the ranking of max count.
@@ -1137,64 +1137,55 @@ inline void save_db_assigned(int iproc,
  * @param mmSortedDbMaxCount
  * @param mmDbAssigned
  */
-inline void get_sorted_dbcount(int iproc, 
-                               multimapII_t &mmSortedDbMaxCount, 
+inline void get_sorted_dbcount(int iproc,
+                               multimapII_t &mmSortedDbMaxCount,
                                multimapSVI_t &mmDbAssigned)
 {
     /// get a vector<int> db_assigned_count of the node for iproc
     string nodeName = g_mapRankProcName[iproc];
     assert(nodeName.length() > 0);
-    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair 
-        = mmDbAssigned.equal_range(nodeName);
+    pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair
+    = mmDbAssigned.equal_range(nodeName);
     multimapSVI_t::iterator itr = mmDbAssignedPair.first;
     assert(itr != mmDbAssigned.end());
-    
+
     /// now we need to get the ranks of the count and the index
-    /// just copy the count to map<int, int>, where first=count, second=index    
+    /// just copy the count to map<int, int>, where first=count, second=index
     vector<size_t> v(g_numDbFiles);
-    for (size_t iDb = 0; iDb < g_numDbFiles; iDb++) v[iDb] = iDb;
-    std::transform ((itr->second).begin(), (itr->second).end(), v.begin(),
-                    std::inserter(mmSortedDbMaxCount, mmSortedDbMaxCount.begin()),
-                    std::make_pair<int,int>);
-    //for (size_t iDb = 0; iDb < g_numDbFiles; iDb++) {
-        //mmSortedDbMaxCount.insert(pair<int, int>((itr->second)[iDb], iDb));
-    //}
-    
-    /// debug
-    //multimapII_t::const_iterator itr_sdba = mmSortedDbMaxCount.begin();
-    //cout << "mmSortedDbCount: " << mmSortedDbMaxCount.size() << "\n";
-    //for (; itr_sdba != mmSortedDbMaxCount.end(); ++itr_sdba)
-        //cout << itr_sdba->first << "," << itr_sdba->second << endl;
-    //cout << endl;
+    for (size_t iDb = 0; iDb < g_numDbFiles; ++iDb) v[iDb] = iDb;
+    std::transform((itr->second).begin(), (itr->second).end(), v.begin(),
+                   std::inserter(mmSortedDbMaxCount, mmSortedDbMaxCount.begin()),
+                   std::make_pair<int, int>);
 }
 
-/** 
+/**
  * @param nAassigned
  * @param iproc
  * @param prevDbNo
  * @param bsWorkItemAssigned
  * @param mmDbAssigned
  */
-inline int get_next_itask(int nAassigned,
-                          int iproc, 
+inline int get_next_workitem(int nAassigned,
+                          int iproc,
                           int prevDbNo,
-                          boost::dynamic_bitset<> &bsWorkItemAssigned, 
+                          boost::dynamic_bitset<> &bsWorkItemAssigned,
                           multimapSVI_t &mmDbAssigned)
 {
     int nextWorkItemNo = -1;
-    for (size_t iWi = nAassigned; iWi < g_numWorkItems; iWi++) {
+    for (size_t iWi = nAassigned; iWi < g_numWorkItems; ++iWi) {
         if (!bsWorkItemAssigned[iWi]) {
             if (g_vecWorkItem[iWi].dbNo == prevDbNo) {
                 bsWorkItemAssigned[iWi] = true;
-                save_db_assigned(iproc, iWi, mmDbAssigned);
+                increase_db_assign_cnt(iproc, iWi, mmDbAssigned);
                 nextWorkItemNo = iWi;
                 break;
             }
         }
     }
- 
+
     return nextWorkItemNo;
 }
+
 
 
 /* ----------------------------------------------------------------------
@@ -1350,7 +1341,16 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
             ///
             /// Initial distribution //////////////////////////////////////////
             ///
+            
+            /// bsWorkItemAssigned data structure
+            /// [00000000000...] bit set, size = # work items
+            /// to save which work item is done
             boost::dynamic_bitset<> bsWorkItemAssigned(g_numWorkItems, false);
+            
+            /// mmDbAssigned data structure: to save node and db index assigned
+            ///                 <node_name, {0, 0, 0, ... ,0}>
+            ///                             -----------------
+            ///                               db name index 
             multimapSVI_t mmDbAssigned;
             int newProcNo;
             int nAssigned = 0;
@@ -1361,28 +1361,37 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
             /// per node. i.e. node 0 has rank {0,3,6,9}
             ///
             multimap<string, int>::iterator itr = g_multimapProcNameRank.begin();
-            for (int iproc = 1; iproc < nprocs; iproc++, ++itr) {
+            for (int iproc = 1; iproc < nprocs; ++iproc, ++itr) {
                 if (itask < ntask) {                    
                     ///Orig: MPI_Send(&itask, 1, MPI_INT, iproc, 0, comm);
+                    /// Get a new iproc
                     newProcNo = itr->second;
+                    
+                    /// Record this work item is assigned
                     bsWorkItemAssigned[itask] = true;
-                    save_db_assigned(iproc, itask, mmDbAssigned);
-                    //cout << "SEND1: rank,dbname,workitem," << newProcNo
-                        //<< "," << g_vecWorkItem[itask].dbNo
-                        //<< "," << itask << endl;
+                    
+                    /// Save this node name and assigned dn index
+                    /// This is to track which and how many dbs are assigned 
+                    /// to the given node.
+                    increase_db_assign_cnt(iproc, itask, mmDbAssigned);
+                    
+                    /// Send workder a work item by itask
                     MPI_Send(&itask, 1, MPI_INT, newProcNo, 0, comm);
-                    itask++;                    
+                    ++itask;                    
                 }
-                else {
+                else {  /// when nmap < nprocs
+                        /// there are fewer work items than nprocs thus kill 
+                        /// other workders by sending done flag
+                        
                     ///Orig: MPI_Send(&doneFlag, 1, MPI_INT, iproc, 0, comm);
                     newProcNo = itr->second;
                     MPI_Send(&doneFlag, 1, MPI_INT, newProcNo, 0, comm);
-                    nDone++;
+                    ++nDone;
                 }
             }
+            
             /// Save the current "itask" to ignore the work items assigned
             nAssigned = itask; 
-            
             
             ///
             /// Load-balancing stage //////////////////////////////////////////
@@ -1394,50 +1403,48 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                                 
                 MPI_Recv(&itaskDone, 1, MPI_INT, MPI_ANY_SOURCE, 0, comm, &status);
                 iproc = status.MPI_SOURCE;
-                                
-                /// Pick a work item that maintains the db name on a given rank                
-                int dbNo;
-                if (newDbNo == -1) dbNo = g_vecWorkItem[itaskDone].dbNo;                
-                else dbNo = newDbNo;
                 
-                nextWorkItemFound = get_next_itask(nAssigned, iproc, 
-                                                   dbNo, 
+                /// Now we've got which work item is done (=itaskDone) from which
+                /// proc (=iproc = status.MPI_SOURCE)
+                                
+                /// Find a work item that maintains the db name on a given rank 
+                int dbNo;
+                if (newDbNo == -1) 
+                    dbNo = g_vecWorkItem[itaskDone].dbNo;                
+                else 
+                    dbNo = newDbNo;
+                
+                /// get_next_workitem() tries to find a work item which has the 
+                /// same db name
+                /// if found, nextWorkItemFound != -1
+                /// if not, nextWorkItemFound == -1
+                ///
+                /// nAssigned is to make the search fast by skipping the front
+                /// "nAssigned" items in bsWorkItemAssigned
+                nextWorkItemFound = get_next_workitem(nAssigned, iproc, dbNo, 
                                                    bsWorkItemAssigned, 
                                                    mmDbAssigned);
                 
                 bool bIsMiss1 = false;
-                //if (nextWorkItemFound != -1) {
-                    //cout << "HIT1: rank,prevdbname,newdbname,nextworkitem," << iproc 
-                        //<< "," << g_vecWorkItem[itaskDone].dbNo 
-                        //<< "," << g_vecWorkItem[nextWorkItemFound].dbNo 
-                        //<< "," << nextWorkItemFound << "," 
-                        //<< endl;
-                    //cout.flush();
-                //}
-                //else { 
-                    //bIsMiss1 = true;
-                    //cout << "MISS1: rank,prevdbname,newdbname,nextworkitem," << iproc 
-                        //<< "," << g_vecWorkItem[itaskDone].dbNo 
-                        //<< "," << dbNo
-                        //<< "," << nextWorkItemFound << "," 
-                        //<< endl;
-                    //cout.flush();
-                //}
+                /// If there is no work item with the same db name associated,
+                /// mark this 
                 if (nextWorkItemFound == -1) bIsMiss1 = true;
                     
                 ///
-                /// If such is not available, pick a work item that matches 
-                /// the db with the max. count currently active on the node.
+                /// If such work item is not available, pick a work item that 
+                /// matches the db with the max. assign count currently active 
+                /// on the node. 
                 /// Then try the 2nd largest max. count and so on.
                 ///
                 int tempDbNo;
                 int nTrial = 0;
                 if (nextWorkItemFound == -1) {
-                    /// Decrease the db count 
-                    delete_db_assigned(iproc, itaskDone, mmDbAssigned);
+                    /// Decrease the db assign count in mmDbAssigned
+                    /// because there is no work item with the same db name.
+                    decrease_db_assign_cnt(iproc, itaskDone, mmDbAssigned);
                                         
-                    /// Get the active max db count from mmDbAssigned and 
-                    /// save the counts in asc order in mmSortedDbCount
+                    /// Get the active max db assign count from mmDbAssigned and 
+                    /// save the count in asc order in mmSortedDbCount
                     multimapII_t mmSortedDbMaxCount;
                     get_sorted_dbcount(iproc, mmSortedDbMaxCount, mmDbAssigned);                    
                     
@@ -1448,57 +1455,56 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                         /// ritr->second is the db num index and
                         /// ritr->first is the actual count value
                         tempDbNo = ritr->second;
-                        nextWorkItemFound = get_next_itask(nAssigned, iproc, 
+                        nextWorkItemFound = get_next_workitem(nAssigned, iproc, 
                                                            tempDbNo, 
                                                            bsWorkItemAssigned, 
                                                            mmDbAssigned);
-                        nTrial++;
+                        ++nTrial;
                         if (nextWorkItemFound != -1) break;
                     }
                 }   
                 
                 /// Set new DB num for assigning the next work item(s)
-                //if (bIsMiss1) {
-                    //if (nextWorkItemFound != -1) {
-                        //newDbNo = tempDbNo;
-                        //cout << "db num changed to=" << newDbNo << endl;
-                        //cout << "HIT2: rank,newdbname,nextworkitem,ntrial," << iproc 
-                            //<< "," << tempDbNo
-                            //<< "," << nextWorkItemFound << "," << nTrial 
-                            //<< endl;
-                        //cout.flush();
-                    //}
-                    //else { 
-                        //newDbNo = -1;
-                        //cout << "MISS2: rank,dbname,workitem,ntrial," << iproc 
-                            //<< "," << tempDbNo
-                            //<< "," << nextWorkItemFound << "," << nTrial 
-                            //<< endl;
-                        //cout.flush();
-                    //}
-                //}
                 if (bIsMiss1) {
+                    /// If the next work item is selected, save the db 
                     if (nextWorkItemFound != -1) newDbNo = tempDbNo;
+                    /// This is the case there is no work item left
                     else newDbNo = -1;
-                }
+                }                
                 
                 if (itask < ntask) {
+                    ///
+                    /// If nextWorkItemFound != -1, send the work item (=itask)
+                    /// to iproc
+                    /// If nextWorkItemFound == -1, no work item is left. Thus,
+                    /// kill the worker.
+                    ///
                     MPI_Send(&nextWorkItemFound, 1, MPI_INT, iproc, 0, comm);
-                    itask++;
+                    ++itask;
                 }
+                ///
+                /// If all work items are processed, kill all workers.
+                ///
                 else {
                     MPI_Send(&doneFlag, 1, MPI_INT, iproc, 0, comm);
-                    nDone++;
+                    ++nDone;
                 }
             }
         }
         else { /// worker
             while (1) {
                 int itask;
+                /// Get the directive from the master
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
+                
+                /// If itask == -1, terminate itself
                 if (itask < 0) break;                
+                
+                /// Else process the assigned work item (=itask)
                 if (files) appmapfile(itask, files[itask], kv, appptr);
                 else appmaptask(itask, kv, appptr);
+                                
+                /// If done, let the master know by sending the work item number
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
             }
         }
@@ -1507,11 +1513,10 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
 
     kv->complete();
     if (freepage) mem_cleanup();
-
     stats("Map", 0);
-
     uint64_t nkeyall;
     MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
+    
     return nkeyall;
 }
 
@@ -3638,6 +3643,9 @@ void MapReduce::allocate_page(int n)
     char *ptr = (char *) memory->smalloc_align(n * pagesize, ALIGNFILE, "MR:page");
     if (zeropage) memset(ptr, 0, n * pagesize);
 
+    // set memcount = N for 1st allocated page, 0 for others
+    // set memusage = 0 for all allocated pages (caller will reset)
+
     for (int i = 0; i < n; i++) {
         memptr[npage+i] = ptr + i * pagesize;
         memusage[npage+i] = 0;
@@ -3662,7 +3670,7 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
 
 #ifdef MEMORY_DEBUG
     printf("MEMORY REQUEST for %d pages on proc %d\n", n, me);
-    mem_debug(me);
+    memory_debug(me);
 #endif
 
     // satisfy request out of first unused chunk of exactly size N
@@ -3678,7 +3686,7 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
         }
     }
 
-    // else first unused chunk of size N (even if within larger chunk)
+    // else first unused chunk of size N, even if within larger chunk
 
     if (i == npage) {
         for (i = 0; i < npage; i++) {
@@ -3690,7 +3698,7 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
         }
     }
 
-    // else allocate new page(s) if maxpage allows
+    // else allocate N new pages if maxpage allows
     // else throw error
 
     if (i == npage) {
@@ -3699,12 +3707,14 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
         allocate_page(n);
     }
 
+    // mark all N pages with same memusage flag = returned tag
+
     tagmax++;
     for (j = 0; j < n; j++) memusage[i+j] = tagmax;
 
 #ifdef MEMORY_DEBUG
     printf("MEMORY RETURN with %d pages on proc %d\n", n, me);
-    mem_debug(me);
+    memory_debug(me);
 #endif
 
     tag = tagmax;
@@ -3719,14 +3729,12 @@ char *MapReduce::mem_request(int n, uint64_t &size, int &tag)
 void MapReduce::mem_unmark(int tag)
 {
     for (int i = 0; i < npage; i++)
-        if (memusage[i] == tag) {
-            for (int j = 0; j < memcount[i]; j++) memusage[i+j] = 0;
-            break;
-        }
+        if (memusage[i] == tag) memusage[i] = 0;
 }
 
 /* ----------------------------------------------------------------------
    free unused pages and compact page lists
+   cannot free/compact if unused pages are subset of contiguous allocation
 ------------------------------------------------------------------------- */
 
 void MapReduce::mem_cleanup()
@@ -3739,16 +3747,19 @@ void MapReduce::mem_cleanup()
 
         if (memusage[i]) continue;
 
-        // ok = 1 if no page in contiguous chunk is in use
-        // if not ok, do not free
-        // else free and compact remaining pages
+        // check if unused page is part of larger contiguous allocation chunk
+        // ok = 1 if ok to free
+        // if it is not 1st page, previous pages are in use, so cannot free it
+        // if it is 1st page of chunk, and no other pages are used, can free chunk
+        // if free, then compact remaining pages
 
         ok = 1;
         n = memcount[i];
+        if (n == 0) ok = 0;
         for (j = i + 1; j < i + n; j++)
             if (memusage[j]) ok = 0;
-        if (!ok) i += n - 1;
-        else {
+
+        if (ok) {
             memory->sfree(memptr[i]);
             msize -= n * pagesize;
             for (j = i + n; j < npage; j++) {
@@ -3796,7 +3807,7 @@ int MapReduce::mem_query(int &maxcontig, int &max)
    else only iproc prints
 ------------------------------------------------------------------------- */
 
-void MapReduce::mem_debug(int iproc)
+void MapReduce::memory_debug(int iproc)
 {
     if (iproc >= 0 && iproc != me) return;
     printf("MEMORY PAGES: %d on proc %d\n", npage, me);

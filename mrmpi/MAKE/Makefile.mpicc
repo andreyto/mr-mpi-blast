@@ -10,7 +10,7 @@ BOOST_INCLUDE = -I/home/ssul/work/packages2/include
 
 CC =		mpic++
 #CCFLAGS =	-O2
-CCFLAGS =   -O2 $(BOOST_INCLUDE) 
+CCFLAGS =    -O2 $(BOOST_INCLUDE) 
 DEPFLAGS =	-M
 ARCHIVE =	ar
 ARFLAGS =	-rc

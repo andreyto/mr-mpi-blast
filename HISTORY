@@ -131,4 +131,10 @@
     06.20.2011
         - Final working version for BLAST searching of RefSeq Microbial
         
+    06.27.2011 
+        - Def line can be retrieved by sequence::GetTitle()
+        - Upgrade MR-MPI to 20JUN2011 (fix mem page alloc bug)
+        - MPI_Finalize() -> MPI_Abort()
+        
+        
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### 

@@ -37,8 +37,8 @@ while fileNum < numDir:
         subFile.write(seqLine)    
     subFile.close()
     fileNum += 1
-    #cmd = "python /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py  " + subFileName + " " + subFileName + ".idx2"
-    cmd = "python ../../../../../src/tools/seqindexer/seqindexer.py " + subFileName + " " + subFileName + ".idx2"
+    cmd = "python /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py  " + subFileName + " " + subFileName + ".idx2"
+    #cmd = "python ../../../../../src/tools/seqindexer/seqindexer.py " + subFileName + " " + subFileName + ".idx2"
     os.system(cmd)
     cmd = "cp ./mrblast.ini " + dirName
     os.system(cmd)
@@ -58,8 +58,8 @@ if remain > 0:
         subFile.write(defLine)
         subFile.write(seqLine)    
     subFile.close()
-    #cmd = "python /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py  " + subFileName + " " + subFileName + ".idx2"
-    cmd = "python ../../../../../src/tools/seqindexer/seqindexer.py " + subFileName + " " + subFileName + ".idx2"
+    cmd = "python /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py  " + subFileName + " " + subFileName + ".idx2"
+    #cmd = "python ../../../../../src/tools/seqindexer/seqindexer.py " + subFileName + " " + subFileName + ".idx2"
     os.system(cmd)
     cmd = "cp ./mrblast.ini " + dirName
     os.system(cmd)
