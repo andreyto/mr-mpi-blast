@@ -1,281 +1,18 @@
 ////////////////////////////////////////////////////////////////////////////////
 //
-//  MR-MPI-BLAST: Parallelizing BLAST with MR-MPI
+//  MR-MPI-BLAST: Parallelizing BLAST with MapReduce-MPI
 //
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 06/27/2011
+//  Last updated: 06/28/2011
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-/*
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA 02110-1301, USA.
- */
+#include "mrblast.hpp"
 
-/*
- *                            PUBLIC DOMAIN NOTICE
- *               National Center for Biotechnology Information
- *
- *  This software/database is a "United States Government Work" under the
- *  terms of the United States Copyright Act.  It was written as part of
- *  the author's official duties as a United States Government employee and
- *  thus cannot be copyrighted.  This software/database is freely available
- *  to the public for use. The National Library of Medicine and the U.S.
- *  Government have not placed any restriction on its use or reproduction.
- *
- *  Although all reasonable efforts have been taken to ensure the accuracy
- *  and reliability of the software and data, the NLM and the U.S.
- *  Government do not and cannot warrant the performance or results that
- *  may be obtained by using this software or data. The NLM and the U.S.
- *  Government disclaim all warranties, express or implied, including
- *  warranties of performance, merchantability or fitness for any particular
- *  purpose.
- *
- *  Please cite the author in any work or product based on this material.
- */
-
-/// MPI AND MR-MPI
-#include "mpi.h"
-#include "mrmpi/mapreduce.h"
-#include "mrmpi/keyvalue.h"
-
-using namespace MAPREDUCE_NS;
-using namespace std;
-
-/// 
-/// NCBI C++ Toolkit
-/// 
-#include <algo/blast/api/local_blast.hpp>
-#include <algo/blast/api/objmgr_query_data.hpp>
-#include <algo/blast/blastinput/blast_fasta_input.hpp>
-#include <algo/blast/api/blast_nucl_options.hpp>
-#include <algo/blast/api/blast_prot_options.hpp>
-
-/// Import search strategy
-#include <objects/blast/Blast4_request.hpp>
-#include <algo/blast/api/search_strategy.hpp>
-
-/// Tabular
-#include <algo/blast/format/blast_format.hpp>
-#include <algo/blast/blastinput/blastn_args.hpp>
-#include <algo/blast/blastinput/blastp_args.hpp>
-
-/// sequence::GetTitle() for get def line
-#include <objmgr/util/sequence.hpp>
-
-USING_NCBI_SCOPE;
-USING_SCOPE (blast);
-USING_SCOPE (align_format);
-    
-/// For typedef unsigned long long int uint32_t
-#include <stdint.h>
-
-/// 
-/// Boost lib
-/// 
-
-/// For tokenizer
-#include <boost/algorithm/string.hpp>
-
-/// For str -> int, int -> str
-#include <boost/lexical_cast.hpp>
-
-/// For processing command line arguments
-#include <boost/program_options.hpp>
-namespace po = boost::program_options;
-
-/// For processing configuration file
-#include <boost/program_options/detail/config_file.hpp>
-namespace pod = boost::program_options::detail;
-
-/// For Boost memory mapped file
-#include <boost/iostreams/device/mapped_file.hpp>
-#include <boost/filesystem/operations.hpp> /// for real file size
-boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap query file
-uintmax_t g_realFileSize = 0;
-
-/// For align info
-#include "blast_app_util.hpp"
-
-/// 
-/// Settings from mrblast.ini conf file
-/// 
-
-/// MR-MPI options
-int g_verbosity;
-int g_timer;                /// log elapsed time for each mapreduce call
-int g_memSize;              /// page size (in Mbytes)
-int g_outOfCore;
-
-/// DB options
-string g_dbFileName;
-string g_configFileName = "mrblast.ini";
-int g_numDbFiles;
-const int MAXSTR = 80;      /// For mpi proc name and query header
-
-/// Filtering
-float g_IDENT_CUTOFF = 0.0; /// Doug's identity for filtering
-float g_COVER_CUTOFF = 0.0; /// Doug's coverage for filtering
-
-/// 
-/// Log
-/// 
-#include <sys/time.h>
-#include <sys/resource.h>
-//#define NDEBUG 1
-int g_bLogEnabled = 0;
-int g_timingEnabled = 0;
-int g_optDumpEnabled = 0;   /// For dumping Blast opts_hndl out
-int g_mapCallNo = 0;        /// Serial no of map calls in each rank
-string g_logFileName;
-string g_logMsg;
-ofstream g_logFileStream;
-static ostream *g_pLogStream = NULL;
-#define LOG (*g_pLogStream)
-
-/// 
-/// New scheduler
-/// 
-typedef struct structIndex {
-    uintmax_t qStart;
-    uint32_t qLength;
-} structQueryIndex_t;
-
-typedef struct structWorkItem {
-    uint32_t dbNo;
-    uintmax_t blockBegin;
-    uintmax_t blockEnd;
-} structWorkItem_t;
-
-vector<string> g_vecDbFile;
-vector<uintmax_t> g_vecBlockBeginLoc;
-vector<structQueryIndex_t> g_vecQueryIndex;
-vector<structWorkItem_t> g_vecWorkItem;
-uint32_t g_numQueries;
-uint32_t g_numQueryBlocks;
-uint32_t g_numWorkItems;
-uint32_t g_blockSize; /// block size in base-pair
-multimap<string, int> g_multimapProcNameRank; /// dict of rank by proc name
-map<int, string> g_mapRankProcName;           /// dict of proc name by rank 
- 
- 
-/// 
-/// Misc.
-/// 
-const int QUERY = 0;        /// To retireve query info from CSeq_align
-const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
-string g_outFilePrefix;     /// Prefix string for output file names
-string g_indexFileName;
-string g_queryFileName;
-int g_mapStyle;
-int g_MPI_worldRank;         /// MPI rank
-char g_MPI_procName[MAXSTR]; /// MPI procname
-int g_MPI_numProcs;
-
-/// For nucl or prot DB setting
-bool g_bIsProtein = false;
-
-/// Blast target DB setting
-CRef<CSearchDatabase> g_searchDatabase;
-string g_prevDbName = "";
-
-/// Output file to store BLAST hits
-string g_hitFileName = "";
-
-/// Import search strategy
-string g_strategyFileName;  /// Input blast search option file
-
-/// For syncronized timing
-#ifndef MPI_WTIME_IS_GLOBAL
-#define MPI_WTIME_IS_GLOBAL 1
-#endif
-
-
-/// To pass Blast hits following outfmt=6 format.
-/// subject id, % identity, alignment length, nMismatches, gap opens,
-/// q. start, q. end, s. start, s. end, evalue, bit score
-typedef struct structBlRes {
-    uint32_t    subjectId;    
-    //float       identity;
-    //uint32_t    alignLen;
-    //int         misMatches;
-    //uint32_t    gapOpens;
-    uint32_t    qStart;
-    uint32_t    qEnd;
-    uint32_t    sStart;
-    uint32_t    sEnd;
-    double      eValue;
-    float       bitScore;
-    uint32_t    upperStart;
-    uint32_t    upperEnd;
-    float       doug_identity;
-    float       doug_coverage;
-} structBlRes_t;
-
-/// For saving hits in ban format
-typedef struct structBlRes2 {
-    uint32_t    qId;
-    uint32_t    subjectId;
-    uint32_t    qStart;
-    uint32_t    qEnd;
-    uint32_t    sStart;
-    uint32_t    sEnd;
-    double      eValue;
-    float       bitScore;
-    uint32_t    upperStart;
-    uint32_t    upperEnd;
-    float       doug_identity;
-    float       doug_coverage;
-} structBlRes2_t;
-
-/// To sort Blast hits by evalue
-typedef struct structEvalue {
-    structBlRes_t *pRec;
-    uint32_t       subjectId;
-    double         eValue;
-    float          bitScore;
-} structEValue_t;
-
-/// Multiple iterations
-int g_numIter = 1;   
-uint32_t nSubWorkItemSets = 0;
-uint32_t nWorkItemsPerIter = 0;
-uint32_t nRemains = 0;
-
-/// To pass info to map() and reduce()
-typedef struct structToPass {
-    int rank;
-    int iter;
-} structToPass_t;
-
-/// HSP tiling
-typedef struct subrange {
-    uint32_t ss, se;
-} subRange_t;
-        
-/// For NcbiApp
-CRef<CBlastOptionsHandle> g_opts_hndl;
-CRef<CBlastAppArgs> g_cmdLineArgs;
-
-///
-/// Function declarations
-///
-void        run_mr_mpi_blast(MPI_Comm mpiComm, int rank); 
-void        mr_run_blast(int itask, KeyValue *kv, void *ptr);
+void mrmpi_blast(); 
+void mr_run_blast(int itask, KeyValue *kv, void *ptr);
 inline void mpi_collect_node_name(int rank, int numProcs, MPI_Comm mpiComm);
 inline void mr_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
 inline bool compare_evalue(structEValue_t e1, structEValue_t e2);
@@ -301,7 +38,7 @@ void CMrMpiBlastApplication::Init(void)
     }
 
     set<string> options;
-    map<string, string> parameters;
+    mapSS_t parameters;
     options.insert("*");
 
     try {
@@ -326,7 +63,7 @@ void CMrMpiBlastApplication::Init(void)
             g_indexFileName  = parameters["INDEXFILENAME"];
             g_dbFileName     = parameters["DBLISTFILENAME"];
             g_outFilePrefix  = parameters["OUTFILEPREFIX"];
-            g_blockSize      = boost::lexical_cast<int>(parameters["BLOCKSIZE"]);
+            g_blockSize      = boost::lexical_cast<uint32_t>(parameters["BLOCKSIZE"]);
             g_mapStyle       = boost::lexical_cast<int>(parameters["MAPSTYLE"]);
             g_numIter        = boost::lexical_cast<int>(parameters["NUMITER"]);
             g_bIsProtein     = boost::lexical_cast<bool>(parameters["ISPROTEIN"]);
@@ -365,8 +102,8 @@ int CMrMpiBlastApplication::Run(void)
     mpi_collect_node_name(g_MPI_worldRank, g_MPI_numProcs, MPI_COMM_WORLD);
     
     if (g_MPI_worldRank == 0) {
-        for ( multimap<string, int>::const_iterator iter = g_multimapProcNameRank.begin();
-              iter != g_multimapProcNameRank.end(); ++iter )
+        for (multimapSI_t::const_iterator iter = g_multimapProcNameRank.begin();
+             iter != g_multimapProcNameRank.end(); ++iter )
             cout << iter->first << '\t' << iter->second << '\n';
     }
    
@@ -422,7 +159,7 @@ int CMrMpiBlastApplication::Run(void)
     ///
     uint32_t qSizeCurr = g_blockSize;
     for (size_t q = 0; q < g_numQueries; ++q) {
-        if (qSizeCurr >= (unsigned)g_blockSize) {
+        if (qSizeCurr >= g_blockSize) {
             g_vecBlockBeginLoc.push_back(g_vecQueryIndex[q].qStart);
             qSizeCurr = 0;
         }
@@ -434,7 +171,7 @@ int CMrMpiBlastApplication::Run(void)
     /// Create work items
     /// Here we iterate query block ID with fixing each DB partition name
     ///
-    for (size_t d = 0; d < (unsigned)g_numDbFiles; ++d) {
+    for (size_t d = 0; d < g_numDbFiles; ++d) {
         for (size_t b = 0; b < g_numQueryBlocks - 1; ++b) {
             structWorkItem_t aWorkItem;
             aWorkItem.blockBegin = g_vecBlockBeginLoc[b];
@@ -505,7 +242,7 @@ int CMrMpiBlastApplication::Run(void)
     ///
     /// Run mr-mpi calls
     ///
-    run_mr_mpi_blast(MPI_COMM_WORLD, g_MPI_worldRank); 
+    mrmpi_blast(); 
     if (g_MPI_worldRank == 0) cout << "Done!" << endl;
     
     ///
@@ -545,12 +282,12 @@ int main(int argc, char** argv)
 
 
 /** MapReduce fuction for BLAST search
- * @param mpiComm
- * @param rank
  */
 
-void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
+void mrmpi_blast()
 {
+    int rank = g_MPI_worldRank;
+    
     ///
     /// Log file init
     ///
@@ -605,21 +342,23 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
     /// valuealign  = N = byte-alignment of values
     /// fpath       = string
     ///
-    MapReduce *pMr = new MapReduce(mpiComm);
+    MapReduce *pMr = new MapReduce(MPI_COMM_WORLD);
     pMr->verbosity = g_verbosity;
     pMr->timer     = g_timer;
     pMr->memsize   = g_memSize;
     pMr->keyalign  = sizeof(uint32_t);  /// The key is query GI
     pMr->mapstyle  = g_mapStyle;        /// master/slave=2, custom scheduler=3
     pMr->outofcore = g_outOfCore;       /// "-1" to disable out-of-core operation
-    MPI_Barrier(mpiComm);
+    MPI_Barrier(MPI_COMM_WORLD);
 
-    for (int iter = 0; iter < nSubWorkItemSets; ++iter) {
+    for (size_t iter = 0; iter < nSubWorkItemSets; ++iter) {
         if (g_MPI_worldRank == 0) cout << "Iteration: " << iter << endl;
         if (g_bLogEnabled) { 
             LOG << g_logMsg << "Iteration: " << iter << endl;
             LOG.flush();
         }
+        
+        g_currIter = iter;
         
         ///
         /// map, collate, reduce
@@ -630,19 +369,15 @@ void run_mr_mpi_blast(MPI_Comm mpiComm, int rank)
             LOG << g_logMsg << "map() starts: " <<  mapTime << endl;
             LOG.flush();
         }
-    
-        structToPass_t toPass;
-        toPass.rank = rank;
-        toPass.iter = iter;
-        
+ 
         /////////////////////////////////////////////////////////////
         if (g_numIter != 1)
             if (nRemains != 0 && iter == nSubWorkItemSets - 1)
-                pMr->map(nRemains, &mr_run_blast, &toPass);
+                pMr->map(nRemains, &mr_run_blast, NULL);
             else 
-                pMr->map(nWorkItemsPerIter, &mr_run_blast, &toPass);
+                pMr->map(nWorkItemsPerIter, &mr_run_blast, NULL);
         else 
-            pMr->map(g_numWorkItems, &mr_run_blast, &toPass);
+            pMr->map(g_numWorkItems, &mr_run_blast, NULL);
         /////////////////////////////////////////////////////////////
                 
         if (g_bLogEnabled) {
@@ -745,9 +480,8 @@ void mr_run_blast(int itask,
                   KeyValue *kv,
                   void *ptr)
 {
-    structToPass_t *toPass = (structToPass_t *) ptr;
-    int rank = toPass->rank;
-    int iter = toPass->iter;
+    int rank = g_MPI_worldRank;
+    int iter = g_currIter;
            
     uint32_t dbno;
     uintmax_t qBlockStart, qBlockEnd;    
@@ -968,7 +702,7 @@ void mr_run_blast(int itask,
                 //formatter.PrintOneResultSet(**result, query_batch);
             //}
             
-            for (size_t i = 0; i < results->GetNumResults(); ++i) {
+            for (uint32_t i = 0; i < results->GetNumResults(); ++i) {
                 if ((*results)[i].HasAlignments()) {
                     CConstRef<CSeq_align_set> aln_set = (*results)[i].GetSeqAlign();
                     assert(!aln_set->IsEmpty());
@@ -1186,8 +920,8 @@ void mr_run_blast(int itask,
                             /// num_ident_upperpart and the upperStart and upperEnd 
                             /// which represents the uppercase bases in the query
                             ///
-                            int scanStartInAlign = 0;
-                            int charCount = 0;
+                            uint32_t scanStartInAlign = 0;
+                            uint32_t charCount = 0;
                             if (scanStart > 0) {
                                 while (charCount < (upperStart - qStartOrig)) {
                                     if (querySeq[scanStartInAlign] != '-') ++charCount;
@@ -1195,14 +929,14 @@ void mr_run_blast(int itask,
                                 }
                             }
                             charCount = 0;
-                            int scanEndInAlign = min(querySeq.size(), subjectSeq.size());
+                            uint32_t scanEndInAlign = min(querySeq.size(), subjectSeq.size());
                             if (scanEnd < min(querySeq.size(), subjectSeq.size())) {
                                 while (charCount < (qEndOrig - upperEnd)) {
                                     if (querySeq[scanEndInAlign-1] != '-') ++charCount;
                                     --scanEndInAlign;
                                 }
                             }
-                            int num_ident_upperpart = 0;                    
+                            uint32_t num_ident_upperpart = 0;                    
                             for (uint32_t i = scanStartInAlign; i < scanEndInAlign; ++i) {
                                 if (querySeq[i] == subjectSeq[i]) ++num_ident_upperpart;
                             }         
@@ -1213,7 +947,7 @@ void mr_run_blast(int itask,
                             ///                 
                             /// Adjust qstart and qend for computing coverage
                             ///
-                            int newQStart = qStartOrig, newQEnd = qEndOrig;
+                            uint32_t newQStart = qStartOrig, newQEnd = qEndOrig;
                             if (qStartOrig < upperStart) newQStart = upperStart;
                             if (qEndOrig > upperEnd) newQEnd = upperEnd;
                             float doug_perc_cover = float(newQEnd - newQStart) / 
@@ -1226,10 +960,6 @@ void mr_run_blast(int itask,
                                 doug_perc_cover >= g_COVER_CUTOFF) {
                                 structBlRes_t res;
                                 res.subjectId     = boost::lexical_cast<uint32_t>(subID);
-                                //res.identity      = orig_perc_ident;
-                                //res.alignLen      = align_length;
-                                //res.misMatches    = num_mismatches;
-                                //res.gapOpens      = num_gap_opens;
                                 res.qStart        = qStart;
                                 res.qEnd          = qEnd;
                                 res.sStart        = sStart;
@@ -1317,7 +1047,7 @@ inline void mr_sort_multivalues_by_evalue(char *key,
     /// and sort by evalue
     ///
     vector<structEValue_t> vecHit;
-    for (size_t n = 0; n < (unsigned)nvalues; ++n) {
+    for (size_t n = 0; n < nvalues; ++n) {
         structBlRes_t* res = (structBlRes_t*)multivalue;
         structEValue_t strctEvalue;
         strctEvalue.pRec = res;
@@ -1373,7 +1103,7 @@ inline void mpi_collect_node_name(int rank, int numProcs, MPI_Comm mpiComm)
     int tag = 12345;
     if (rank != MPI_UNDEFINED) { /// if not -32766
         if (rank == 0) {
-            for (size_t src = 1; src < (unsigned)numProcs; ++src) {
+            for (int src = 1; src < numProcs; ++src) {
                 MPI_Recv(&rankNo, 1, MPI_INT, src, tag, mpiComm, &MPI_status);
                 MPI_Recv(&procName, MAXSTR, MPI_CHAR, src, tag, mpiComm, &MPI_status);
                 g_multimapProcNameRank.insert(pair<string, int>(procName, rankNo));

@@ -63,6 +63,8 @@ if remain > 0:
     os.system(cmd)
     cmd = "cp ./mrblast.ini " + dirName
     os.system(cmd)
+    #cmd = "cp ./mrblast " + dirName
+    #os.system(cmd)
 
 seqFile.close()
 

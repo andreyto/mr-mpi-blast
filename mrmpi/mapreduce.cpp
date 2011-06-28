@@ -83,8 +83,6 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 
 //#define MEMORY_DEBUG 1   // set if want debug output from memory requests
 
-//#define MEMORY_DEBUG 1   // set if want debug output from memory requests
-
 ///
 /// Added by ssul for mr-mpt-blast
 ///
@@ -92,21 +90,27 @@ enum {KVFILE, KMVFILE, SORTFILE, PARTFILE, SETFILE};
 #include <vector>
 #include <map>
 #include <boost/dynamic_bitset.hpp>
+
 using namespace std;
+
+typedef multimap<string, int> multimapSI_t;
+typedef multimap<string, vector<int> > multimapSVI_t;
+typedef pair<string, vector<int> > pairSVI_t;
+typedef multimap<int, int> multimapII_t;
+typedef map<int, string> mapIS_t;
+typedef map<string, string> mapSS_t;
+
 typedef struct structWorkItem {
     uint32_t dbNo;
     uintmax_t blockBegin;
     uintmax_t blockEnd;
 } structWorkItem_t;
+
 extern vector<structWorkItem_t> g_vecWorkItem;
-extern multimap<string, int> g_multimapProcNameRank;
-extern map<int, string> g_mapRankProcName;
+extern multimapSI_t g_multimapProcNameRank;
+extern mapIS_t g_mapRankProcName;
 extern int g_numDbFiles;
-extern int g_numWorkItems;
-extern int g_MPI_myRank;
-typedef multimap<string, vector<int> > multimapSVI_t;
-typedef pair<string, vector<int> > pairVI_t;
-typedef multimap<int, int> multimapII_t;
+extern uint32_t g_numWorkItems;
 
 
 /* ----------------------------------------------------------------------
@@ -1092,7 +1096,7 @@ inline void decrease_db_assign_cnt(int iproc,
     string nodeName = g_mapRankProcName[iproc];
     assert(nodeName.length() > 0);
     pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair
-    = mmDbAssigned.equal_range(nodeName);
+        = mmDbAssigned.equal_range(nodeName);
     multimapSVI_t::iterator itr = mmDbAssignedPair.first;
     assert(itr != mmDbAssigned.end());
     (itr->second)[g_vecWorkItem[itaskDone].dbNo]--;
@@ -1123,7 +1127,7 @@ inline void increase_db_assign_cnt(int iproc,
         /// and increase the value at the db name index
         vector<int> vDbAssigned(g_numDbFiles, 0);
         vDbAssigned[g_vecWorkItem[itask].dbNo]++;
-        mmDbAssigned.insert(pairVI_t(nodeName, vDbAssigned));
+        mmDbAssigned.insert(pairSVI_t(nodeName, vDbAssigned));
     }
     else {
         /// if there is the node name, just increase the value at the db name index
@@ -1145,14 +1149,14 @@ inline void get_sorted_dbcount(int iproc,
     string nodeName = g_mapRankProcName[iproc];
     assert(nodeName.length() > 0);
     pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair
-    = mmDbAssigned.equal_range(nodeName);
+        = mmDbAssigned.equal_range(nodeName);
     multimapSVI_t::iterator itr = mmDbAssignedPair.first;
     assert(itr != mmDbAssigned.end());
 
     /// now we need to get the ranks of the count and the index
     /// just copy the count to map<int, int>, where first=count, second=index
-    vector<size_t> v(g_numDbFiles);
-    for (size_t iDb = 0; iDb < g_numDbFiles; ++iDb) v[iDb] = iDb;
+    vector<int> v(g_numDbFiles);
+    for (int iDb = 0; iDb < g_numDbFiles; ++iDb) v[iDb] = iDb;
     std::transform((itr->second).begin(), (itr->second).end(), v.begin(),
                    std::inserter(mmSortedDbMaxCount, mmSortedDbMaxCount.begin()),
                    std::make_pair<int, int>);

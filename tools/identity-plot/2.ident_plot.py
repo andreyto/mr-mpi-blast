@@ -8,6 +8,17 @@ import pylab
 
 from matplotlib import pyplot, lines 
 
+import random
+
+def random_color():
+    COLOR_RANGE = (50, 255)
+    rgb = list()
+    for c in range(0, 3):
+        rgb.append(random.randrange(COLOR_RANGE[0], COLOR_RANGE[1]))
+    return "".join([hex(c)[2:].upper() for c in rgb])
+    
+    
+    
 #curs.execute('''CREATE TABLE IF NOT EXISTS item
   #( recId       integer primary key, 
     #gi          integer,
@@ -101,7 +112,7 @@ if __name__ == '__main__':
     fig = pylab.figure(1)
     ax = pylab.subplot(111)
     x = range(maxSEnd)
-    c = ['r', 'b', 'g', 'k', 'm', 'y']
+    #c = ['r', 'b', 'g', 'k', 'm', 'y']
     
     print "gi = ", vecGi[0]
     cIndex = 0
