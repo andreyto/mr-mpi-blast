@@ -60,28 +60,29 @@ if __name__ == '__main__':
     print "num distinct subID = ", len(vecSubId)
 
     #currSubId = vecSubId[subjectIndex]
-    #currSubId = 225851546
-    #currGi = 116249766
+    currGi = 116249766
+
     #currSubId = 116249766 #1
     #currSubId = 190889639 #2
-    #currSubId = 319779749 #3
+    currSubId = 319779749 #3
     #currSubId = 312112794 #4
-    currSubId = 217976200 #5
+    #currSubId = 217976200 #5
     
-    print "subject gi selected = ", currSubId
+    print "gi selected = ", currGi
+    print "subject id selected = ", currSubId
     
     ###
     sql = "select min(sStart), max(sEnd) from item \
-           where sId == %s and dIdent >= %s and dCover >= %s" \
-           % (currSubId, identCutoff, coverCutoff)
+           where sId == %s and gi == %s and dIdent >= %s and dCover >= %s" \
+           % (currSubId, currGi, identCutoff, coverCutoff)
     curs.execute(sql)
     res = curs.fetchone()
     minSStart = res[0]
     maxSEnd   = res[1]
     print "min s.start, max s.end = ", minSStart, maxSEnd
     sql = "select count(*) from item \
-           where sId == %s and dIdent >= %s and dCover >= %s" \
-           % (currSubId, identCutoff, coverCutoff)
+           where sId == %s and gi == %s and dIdent >= %s and dCover >= %s" \
+           % (currSubId, currGi, identCutoff, coverCutoff)
     curs.execute(sql)
     res = curs.fetchone()
     numReads = res[0]
@@ -93,8 +94,8 @@ if __name__ == '__main__':
     vecGi     = npy.zeros((numReads),dtype=int) 
     
     sql = "select sStart, sEnd, dIdent, gi, dCover from item \
-           where sId == %s and dIdent >= %s and dCover >= %s \
-           order by gi" % (currSubId, identCutoff, coverCutoff)
+           where sId == %s and gi == %s and dIdent >= %s and dCover >= %s" \
+           % (currSubId, currGi, identCutoff, coverCutoff)
     curs.execute(sql)
     
     i = 0
@@ -116,12 +117,12 @@ if __name__ == '__main__':
     ####
     fig = pylab.figure(1)
     ax = pylab.subplot(111)
-    x = range(maxSEnd)
+    #x = range(maxSEnd)
     c = ['r', 'b', 'g', 'k', 'm', 'y']
     
     print "gi = ", vecGi[0]
     cIndex = 0
-    for i in range(0, len(vecDIdent)):
+    for i in range(0, len(vecDIdent), 1):
         xs = vecStart[i]
         xe = vecEnd[i]
         x2 = [xs, xe]
@@ -132,8 +133,12 @@ if __name__ == '__main__':
             #if cIndex >= len(c):
                 #cIndex = 0
             #print "gi, colorIndex =", vecGi[i], cIndex
-        line = lines.Line2D(x2, y2, lw=2., color=c[cIndex], alpha=0.4)
+        
+        #ax.plot(x2, y2, 'r-', linewidth=3, markersize=2, alpha=0.5)
+        line = lines.Line2D(x2, y2, lw=2., color=c[cIndex], alpha=0.5)
         ax.add_line(line)
+        if i % 1000 == 0:
+            print i
 
     ax.set_ylim(0.0, 100.0)
     ax.set_xlim(0, 5057142)
@@ -162,8 +167,8 @@ if __name__ == '__main__':
     #fig.autofmt_xdate()
     
     ### Save fig
-    imFileName = str(currSubId) + ".png"
-    pylab.savefig(imFileName, dpi=(600))
+    #imFileName = str(currSubId) + ".png"
+    #pylab.savefig(imFileName, dpi=(600))
     
     ### Show fig
     pylab.show()

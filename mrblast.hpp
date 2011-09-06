@@ -1,3 +1,10 @@
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//#
+//#   See COPYING file distributed along with the MGTAXA package for the
+//#   copyright and license terms.
+//#
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 #ifndef MRBLAST_H
 #define MRBLAST_H
 
@@ -49,7 +56,7 @@ const int QUERY = 0;        /// To retireve query info from CSeq_align
 const int SUBJECT = 1;      /// To retireve suject info from CSeq_align
 
 /// For NcbiApp
-CRef<CBlastOptionsHandle> g_opts_hndl;
+CRef<CBlastOptionsHandle> g_optsHndl;
 CRef<CBlastAppArgs> g_cmdLineArgs;
 
 /// Blast target DB setting
@@ -90,13 +97,13 @@ int g_outOfCore;
 
 /// DB options
 string g_dbFileName;
-string g_configFileName = "mrblast.ini";
-int g_numDbFiles;
+string CONF_FILE_NAME = "mrblast.ini";
+int g_nDbFiles;
 const int MAXSTR = 80;      /// For mpi proc name 
 
 /// Filtering
-float g_IDENT_CUTOFF = 0.0; /// Doug's identity for filtering
-float g_COVER_CUTOFF = 0.0; /// Doug's coverage for filtering
+float g_identCutoff = 0.0; /// Doug's identity for filtering
+float g_coverCutoff = 0.0; /// Doug's coverage for filtering
 
 /// ----------------------------------------------------------------------------
 /// Log
@@ -139,9 +146,9 @@ vector<string> g_vecDbFile;
 vector<uintmax_t> g_vecBlockBeginLoc;
 vector<structQueryIndex_t> g_vecQueryIndex;
 vector<structWorkItem_t> g_vecWorkItem;
-uint32_t g_numQueries;
-uint32_t g_numQueryBlocks;
-uint32_t g_numWorkItems;
+uint32_t g_nQueries;
+uint32_t g_nQueryBlocks;
+uint32_t g_nWorkItems;
 uint32_t g_blockSize;                         /// block size in base-pair
 multimapSI_t g_multimapProcNameRank; /// dict of rank by proc name
 mapIS_t g_mapRankProcName;           /// dict of proc name by rank 
@@ -155,13 +162,13 @@ string g_queryFileName;
 int g_mapStyle;
 int g_MPI_worldRank;         /// MPI rank
 char g_MPI_procName[MAXSTR]; /// MPI procname
-int g_MPI_numProcs;
+int g_MPI_nProcs;
 
 /// For nucl or prot DB setting
 bool g_bIsProtein = false;
 
 /// Output file to store BLAST hits
-string g_hitFileName = "";
+string g_hitFileName;
  
 /// To pass Blast hits following outfmt=6 format.
 /// subject id, % identity, alignment length, nMismatches, gap opens,
@@ -176,13 +183,25 @@ typedef struct structBlRes {
     float       bitScore;
     uint32_t    upperStart;
     uint32_t    upperEnd;
-    float       doug_identity;
-    float       doug_coverage;
+    float       identity;
+    float       coverage;
 } structBlRes_t;
 
+typedef struct structBlResMason {
+    uint32_t    subjectId;    
+    uint32_t    qStart;
+    uint32_t    qEnd;
+    uint32_t    sStart;
+    uint32_t    sEnd;
+    double      eValue;
+    float       bitScore;
+    float       identity;
+    float       coverage;
+} structBlResMason_t;
+
 /// For saving hits in bin format
-typedef struct structBlRes2 {
-    uint32_t    qId;
+typedef struct structBlResToSaveHits {
+    uint32_t    gi;
     uint32_t    subjectId;
     uint32_t    qStart;
     uint32_t    qEnd;
@@ -192,9 +211,28 @@ typedef struct structBlRes2 {
     float       bitScore;
     uint32_t    upperStart;
     uint32_t    upperEnd;
-    float       doug_identity;
-    float       doug_coverage;
-} structBlRes2_t;
+    float       identity;
+    float       coverage;
+} structBlResToSaveHits_t;
+
+/// KV key = gi_readid_cutX_cutY_F/R_P0/P1
+typedef struct structBlResToSaveHitsMason {
+    uint32_t    gi;
+    uint32_t    readId;
+    char        readStrand;
+    char        readPairId;    
+    uint32_t    subjectId;
+    uint32_t    qStart;
+    uint32_t    qEnd;
+    uint32_t    sStart;
+    uint32_t    sEnd;
+    double      eValue;
+    float       bitScore;
+    uint32_t    upperStart;
+    uint32_t    upperEnd;
+    float       identity;
+    float       coverage;    
+} structBlResToSaveHitsMason_t;
 
 /// To sort Blast hits by evalue & bitscore
 typedef struct structEvalue {
@@ -205,7 +243,7 @@ typedef struct structEvalue {
 } structEValue_t;
 
 /// For multiple iterations
-uint16_t g_numIter = 1;   
+uint16_t g_nIter = 1;   
 uint16_t g_currIter = 0;
 uint32_t nSubWorkItemSets = 0;
 uint32_t nWorkItemsPerIter = 0;

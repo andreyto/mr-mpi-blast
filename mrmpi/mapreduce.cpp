@@ -109,8 +109,8 @@ typedef struct structWorkItem {
 extern vector<structWorkItem_t> g_vecWorkItem;
 extern multimapSI_t g_multimapProcNameRank;
 extern mapIS_t g_mapRankProcName;
-extern int g_numDbFiles;
-extern uint32_t g_numWorkItems;
+extern int g_nDbFiles;
+extern uint32_t g_nWorkItems;
 
 
 /* ----------------------------------------------------------------------
@@ -1108,8 +1108,8 @@ inline void decrease_db_assign_cnt(int iproc,
  * @param mmdba
  */
 inline void increase_db_assign_cnt(int iproc,
-                             int itask,
-                             multimapSVI_t &mmDbAssigned)
+                                   int itask,
+                                   multimapSVI_t &mmDbAssigned)
 {
     /// mmDbAssigned: to save node name and assigned db index
     ///
@@ -1122,16 +1122,17 @@ inline void increase_db_assign_cnt(int iproc,
     pair<multimapSVI_t::iterator, multimapSVI_t::iterator> mmDbAssignedPair
         = mmDbAssigned.equal_range(nodeName);
     multimapSVI_t::iterator itr = mmDbAssignedPair.first;
+    
     if (itr == mmDbAssigned.end()) {
         /// There is no node name so make a new <node_name, {0, 0, 0, ... ,0}>
         /// and increase the value at the db name index
-        vector<int> vDbAssigned(g_numDbFiles, 0);
+        vector<int> vDbAssigned(g_nDbFiles, 0);
         vDbAssigned[g_vecWorkItem[itask].dbNo]++;
         mmDbAssigned.insert(pairSVI_t(nodeName, vDbAssigned));
     }
     else {
         /// if there is the node name, just increase the value at the db name index
-        vector<int> vDbAssigned(g_numDbFiles, 0);
+        vector<int> vDbAssigned(g_nDbFiles, 0);
         (itr->second)[g_vecWorkItem[itask].dbNo]++;
     }
 }
@@ -1155,8 +1156,9 @@ inline void get_sorted_dbcount(int iproc,
 
     /// now we need to get the ranks of the count and the index
     /// just copy the count to map<int, int>, where first=count, second=index
-    vector<int> v(g_numDbFiles);
-    for (int iDb = 0; iDb < g_numDbFiles; ++iDb) v[iDb] = iDb;
+    vector<int> v(g_nDbFiles);
+    
+    for (int d = 0; d < g_nDbFiles; ++d) v[d] = d;
     std::transform((itr->second).begin(), (itr->second).end(), v.begin(),
                    std::inserter(mmSortedDbMaxCount, mmSortedDbMaxCount.begin()),
                    std::make_pair<int, int>);
@@ -1176,12 +1178,12 @@ inline int get_next_workitem(int nAassigned,
                           multimapSVI_t &mmDbAssigned)
 {
     int nextWorkItemNo = -1;
-    for (size_t iWi = nAassigned; iWi < g_numWorkItems; ++iWi) {
-        if (!bsWorkItemAssigned[iWi]) {
-            if (g_vecWorkItem[iWi].dbNo == prevDbNo) {
-                bsWorkItemAssigned[iWi] = true;
-                increase_db_assign_cnt(iproc, iWi, mmDbAssigned);
-                nextWorkItemNo = iWi;
+    for (size_t w = nAassigned; w < g_nWorkItems; ++w) {
+        if (!bsWorkItemAssigned[w]) {
+            if (g_vecWorkItem[w].dbNo == prevDbNo) {
+                bsWorkItemAssigned[w] = true;
+                increase_db_assign_cnt(iproc, w, mmDbAssigned);
+                nextWorkItemNo = w;
                 break;
             }
         }
@@ -1349,7 +1351,7 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
             /// bsWorkItemAssigned data structure
             /// [00000000000...] bit set, size = # work items
             /// to save which work item is done
-            boost::dynamic_bitset<> bsWorkItemAssigned(g_numWorkItems, false);
+            boost::dynamic_bitset<> bsWorkItemAssigned(g_nWorkItems, false);
             
             /// mmDbAssigned data structure: to save node and db index assigned
             ///                 <node_name, {0, 0, 0, ... ,0}>
@@ -1401,6 +1403,7 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
             /// Load-balancing stage //////////////////////////////////////////
             /// 
             int newDbNo = -1;
+            
             while (nDone < nprocs - 1) {
                 int iproc, itaskDone;
                 int nextWorkItemFound = -1;
@@ -1413,6 +1416,7 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                                 
                 /// Find a work item that maintains the db name on a given rank 
                 int dbNo;
+                
                 if (newDbNo == -1) 
                     dbNo = g_vecWorkItem[itaskDone].dbNo;                
                 else 
@@ -1441,7 +1445,7 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 /// Then try the 2nd largest max. count and so on.
                 ///
                 int tempDbNo;
-                int nTrial = 0;
+                
                 if (nextWorkItemFound == -1) {
                     /// Decrease the db assign count in mmDbAssigned
                     /// because there is no work item with the same db name.
@@ -1460,10 +1464,10 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                         /// ritr->first is the actual count value
                         tempDbNo = ritr->second;
                         nextWorkItemFound = get_next_workitem(nAssigned, iproc, 
-                                                           tempDbNo, 
-                                                           bsWorkItemAssigned, 
-                                                           mmDbAssigned);
-                        ++nTrial;
+                                                              tempDbNo, 
+                                                              bsWorkItemAssigned, 
+                                                              mmDbAssigned);
+
                         if (nextWorkItemFound != -1) break;
                     }
                 }   

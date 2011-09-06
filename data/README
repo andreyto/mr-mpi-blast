@@ -1,5 +1,0 @@
-Example of running MR-MPI Blast
-
-> mpirun -np 4 ./mrblast -db -  
-
-in/out file and other options should be set in "mrblast.ini" file 

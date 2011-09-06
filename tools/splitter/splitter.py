@@ -4,7 +4,7 @@ from Bio.Seq import Seq
 import os,random
  
 if len(sys.argv) != 6:
-    print "USAGE: python splitter.py fasta_file chunksize lowerPartLen outfile"
+    print "USAGE: python splitter.py fasta_file upperPartLen lowerPartLen upperPartOverlap outfile"
     print "       - fasta_file: input file"
     print "       - upperPartLen: length (bp) of uppercase sequences"
     print "       - lowerPartLen: length (bp) of lowercase overlap"

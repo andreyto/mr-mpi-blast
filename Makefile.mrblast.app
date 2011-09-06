@@ -4,7 +4,6 @@
 
 APP = mrblast
 SRC = mrblast blast_app_util
-#SRC = mrblast blast_app_util
 
 
 ### MPI ########################################################################

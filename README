@@ -1,5 +1,22 @@
-Parallezed blast search using NCBI C++ Toolkit on MR-MPI framework.
-This should reside in the NCBI C++ Toolkit source tree.
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-Ex)
-ncbi_cxx--Jun_15_2010/src/app/mrblast/
+* mr-mpi-blastn-classifier
+
+  Parallezed BLAST search using NCBI C++ Toolkit on MR-MPI framework.
+  This should reside in the NCBI C++ Toolkit source tree. 
+  ex) ncbi_cxx--Jun_15_2010/src/app/mrblast/
+
+
+* Example of running MR-MPI BLAST
+
+  > mpirun -np 4 ./mrblast -db - -evalue 1e-4 -word_size 11 -penalty -5 -reward 4 -num_descriptions 50 -num_alignments 100
+
+  Note
+  - Other mr-mpir-blast related options including the input FASTA sequence file, 
+  database names, output file names, etc., should be set in the "mrblast.ini" file.
+  - Example data files are in src/data.
