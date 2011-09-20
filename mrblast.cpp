@@ -19,14 +19,6 @@
 #include "mrblast.hpp"
 
 
-void mrmpi_blast(); 
-void mr_map_run_blast(int itask, KeyValue *kv, void *ptr);
-inline void mpi_collect_node_name(int rank, int nProcs, MPI_Comm mpiComm);
-inline void mr_reduce_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
-inline void mr_reduce_save_hits(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
-inline bool compare_evalue(structEValue_t e1, structEValue_t e2);
-
-
 class CMrMpiBlastApplication : public CNcbiApplication
 {
 private:
@@ -158,8 +150,9 @@ int CMrMpiBlastApplication::Run(void)
         assert(tok.size() == 2);
         
         structQueryIndex_t queryIndex;
-        queryIndex.qStart  = boost::lexical_cast<uintmax_t>(tok[0]);
+        queryIndex.qStart  = boost::lexical_cast<uint64_t>(tok[0]);
         queryIndex.qLength = boost::lexical_cast<uint32_t>(tok[1]);
+        queryIndex.uniqQueryId = boost::lexical_cast<uint64_t>(tok[2]);
         g_vecQueryIndex.push_back(queryIndex);
     }
     indexFile.close();
@@ -360,7 +353,7 @@ void mrmpi_blast()
     pMr->verbosity = g_verbosity;
     pMr->timer     = g_timer;
     pMr->memsize   = g_memSize;
-    pMr->keyalign  = sizeof(uint32_t);  /// The key is query GI
+    pMr->keyalign  = sizeof(uint64_t);  /// The key is query GI
     pMr->mapstyle  = g_mapStyle;        /// master/slave=2, custom scheduler=3
     pMr->outofcore = g_outOfCore;       /// "-1" to disable out-of-core operation
     MPI_Barrier(MPI_COMM_WORLD);
@@ -498,8 +491,8 @@ void mr_map_run_blast(int itask,
     int rank = g_MPI_worldRank;
     int iter = g_currIter;
            
-    uint32_t dbno;
-    uintmax_t qBlockStart, qBlockEnd;    
+    int dbno;
+    uint64_t qBlockStart, qBlockEnd;    
     if (g_nIter > 1) {
         dbno = g_vecWorkItem[itask + nWorkItemsPerIter * iter].dbNo;
         qBlockStart = g_vecWorkItem[itask + nWorkItemsPerIter * iter].blockBegin;
@@ -762,7 +755,7 @@ void mr_map_run_blast(int itask,
                         /// Get GI    
                         vector<string> vecTokens;
                         boost::split(vecTokens, defLine, boost::is_any_of("|"));
-                        uint32_t intGi = boost::lexical_cast<uint32_t>(vecTokens[1]);
+                        uint64_t intGi = boost::lexical_cast<uint64_t>(vecTokens[1]);
                         string strGi = vecTokens[1];
 
                         ///
@@ -997,8 +990,8 @@ void mr_map_run_blast(int itask,
                                 //res.identity      = percIdent;
                                 //res.coverage      = percCover;
                                 
-                                //uint32_t newKey   = intGi;
-                                //kv->add((char*)&newKey, sizeof(uint32_t), (char*)&res,
+                                //uint64_t newKey   = intGi;
+                                //kv->add((char*)&newKey, sizeof(uint64_t), (char*)&res,
                                         //sizeof(structBlRes_t));   
                                     
                                 /// KV key = gi_readid_cutX_cutY_F/R_P0/P1
@@ -1013,7 +1006,7 @@ void mr_map_run_blast(int itask,
                                                 cPairId;
                                 
                                 structBlResMason_t res;
-                                res.subjectId = boost::lexical_cast<uint32_t>(subID);
+                                res.subjectId = boost::lexical_cast<uint64_t>(subID);
                                 res.qStart    = qStart;
                                 res.qEnd      = qEnd;   /// remember this value was increased by one for following Python ( ] range
                                 res.sStart    = sStart; 
@@ -1098,8 +1091,8 @@ inline void mr_reduce_save_hits( char *key,
         assert(vecTokens.size() == 6);
         //cout << key << endl;
         structBlResToSaveHitsMason_t hit;
-        hit.gi         = boost::lexical_cast<uint32_t>(vecTokens[0]);
-        hit.readId     = boost::lexical_cast<uint32_t>(vecTokens[1]); 
+        hit.gi         = boost::lexical_cast<uint64_t>(vecTokens[0]);
+        hit.readId     = boost::lexical_cast<uint64_t>(vecTokens[1]); 
         hit.readStrand = boost::lexical_cast<char>(vecTokens[4]);     /// 'f' or 'r'
         hit.readPairId = boost::lexical_cast<char>(vecTokens[5]);	  /// '0' or '1'
         hit.subjectId  = res->subjectId;
@@ -1164,7 +1157,7 @@ inline void mr_reduce_sort_multivalues_by_evalue(char *key,
     for (size_t n = 0; n < (unsigned)nvalues; ++n) {
         structBlRes_t* res = (structBlRes_t*)(vecHit[n].pRec);
         structBlResToSaveHits_t hit;
-        hit.gi            = *(uint32_t*)key;
+        hit.gi            = *(uint64_t*)key;
         hit.subjectId      = res->subjectId;
         hit.qStart         = res->qStart;
         hit.qEnd           = res->qEnd;

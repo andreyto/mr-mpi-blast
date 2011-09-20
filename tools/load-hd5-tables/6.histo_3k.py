@@ -23,8 +23,7 @@ if sys.platform == "win32":
      default_timer = time.clock
 else:    
     # On most other platforms the best timer is time.time()    
-    default_timer = time.time
- 
+    default_timer = time.time 
         
 #class BlHits(t.IsDescription):
     #gi         = t.UInt32Col()
@@ -43,7 +42,7 @@ else:
 if __name__ == '__main__':
      
     if len(sys.argv) != 2:
-        print "python 5.identity_plot.py fileName"
+        print "python 6.histo_3k.py fileName"
         sys.exit(1)  
         
     fileName = sys.argv[1]
@@ -63,7 +62,7 @@ if __name__ == '__main__':
     #colSid = table.cols.sId 
     #currSubId = table.cols.sId[subjectIndex]
     
-    currGi = 116249766     
+    currGi = 116249766    
     currSubId = 116249766 #1
     #currSubId = 190889639 #2
     #currSubId = 319779749 #3
@@ -75,20 +74,19 @@ if __name__ == '__main__':
     
     ###
     ### Get min, max and read columns
-    ###
-    
+    ###    
     vec = [ [x['sStart'],x['sEnd'],x['dIdent'],x['gi'] ] \
         for x in table.where('(gi == currGi) & (sId == currSubId)') ]
     print "num records = ", len(vec)
     minSStart = min([r[0] for r in vec])
     maxSEnd = max([r[1] for r in vec])
     print "min s.start, max s.end = ", minSStart, maxSEnd
-
+    
     ###
     ### histogram
     ###
-    query_len = 100
-    num_queries = 101185
+    query_len = 1000
+    num_queries = 10114
     total_query_len = num_queries * query_len
      
     numbins = 6

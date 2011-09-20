@@ -98,12 +98,11 @@ typedef multimap<string, vector<int> > multimapSVI_t;
 typedef pair<string, vector<int> > pairSVI_t;
 typedef multimap<int, int> multimapII_t;
 typedef map<int, string> mapIS_t;
-typedef map<string, string> mapSS_t;
 
 typedef struct structWorkItem {
-    uint32_t dbNo;
-    uintmax_t blockBegin;
-    uintmax_t blockEnd;
+    int dbNo;
+    uint64_t blockBegin;
+    uint64_t blockEnd;
 } structWorkItem_t;
 
 extern vector<structWorkItem_t> g_vecWorkItem;
@@ -1084,8 +1083,8 @@ uint64_t MapReduce::map(int nstr, char **strings,
  * @param mmdba
  */
 inline void decrease_db_assign_cnt(int iproc,
-                               int itaskDone,
-                               multimapSVI_t &mmDbAssigned)
+                                   int itaskDone,
+                                   multimapSVI_t &mmDbAssigned)
 {
     /// mmDbAssigned: to save node name and assigned db index
     ///

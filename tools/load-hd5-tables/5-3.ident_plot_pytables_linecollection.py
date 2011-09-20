@@ -50,7 +50,7 @@ def iter5(tbl):
 if __name__ == '__main__':
      
     if len(sys.argv) != 3:
-        print "python 5.identity_plot.py fileName subjectIndex"
+        print "python 5-3.ident_plot_pytables_linecollection.py fileName subjectIndex"
         sys.exit(1)  
         
     fileName = sys.argv[1]

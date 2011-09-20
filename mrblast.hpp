@@ -5,8 +5,8 @@
 //#
 //### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-#ifndef MRBLAST_H
-#define MRBLAST_H
+#ifndef MRBLAST_HPP
+#define MRBLAST_HPP
 
 /// For typedef unsigned long long int uint32_t
 #include <stdint.h>
@@ -84,7 +84,7 @@ namespace pod = boost::program_options::detail;
 #include <boost/iostreams/device/mapped_file.hpp>
 #include <boost/filesystem/operations.hpp> /// for real file size
 boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap query file
-uintmax_t g_realFileSize = 0;
+uint64_t g_realFileSize = 0;
 
 /// ----------------------------------------------------------------------------
 /// Settings from mrblast.ini conf file
@@ -132,24 +132,25 @@ typedef map<int, string> mapIS_t;
 typedef map<string, string> mapSS_t;
 
 typedef struct structIndex {
-    uintmax_t qStart;
+    uint64_t qStart;
     uint32_t qLength;
+    uint64_t uniqQueryId;
 } structQueryIndex_t;
 
 typedef struct structWorkItem {
-    uint32_t dbNo;
-    uintmax_t blockBegin;
-    uintmax_t blockEnd;
+    int dbNo;
+    uint64_t blockBegin;
+    uint64_t blockEnd;
 } structWorkItem_t;
 
 vector<string> g_vecDbFile;
-vector<uintmax_t> g_vecBlockBeginLoc;
+vector<uint64_t> g_vecBlockBeginLoc;
 vector<structQueryIndex_t> g_vecQueryIndex;
 vector<structWorkItem_t> g_vecWorkItem;
 uint32_t g_nQueries;
 uint32_t g_nQueryBlocks;
 uint32_t g_nWorkItems;
-uint32_t g_blockSize;                         /// block size in base-pair
+uint32_t g_blockSize;                /// block size in base-pair
 multimapSI_t g_multimapProcNameRank; /// dict of rank by proc name
 mapIS_t g_mapRankProcName;           /// dict of proc name by rank 
  
@@ -174,7 +175,7 @@ string g_hitFileName;
 /// subject id, % identity, alignment length, nMismatches, gap opens,
 /// q. start, q. end, s. start, s. end, evalue, bit score
 typedef struct structBlRes {
-    uint32_t    subjectId;    
+    uint64_t    subjectId;    
     uint32_t    qStart;
     uint32_t    qEnd;
     uint32_t    sStart;
@@ -188,7 +189,7 @@ typedef struct structBlRes {
 } structBlRes_t;
 
 typedef struct structBlResMason {
-    uint32_t    subjectId;    
+    uint64_t    subjectId;    
     uint32_t    qStart;
     uint32_t    qEnd;
     uint32_t    sStart;
@@ -201,8 +202,8 @@ typedef struct structBlResMason {
 
 /// For saving hits in bin format
 typedef struct structBlResToSaveHits {
-    uint32_t    gi;
-    uint32_t    subjectId;
+    uint64_t    gi;
+    uint64_t    subjectId;
     uint32_t    qStart;
     uint32_t    qEnd;
     uint32_t    sStart;
@@ -217,11 +218,11 @@ typedef struct structBlResToSaveHits {
 
 /// KV key = gi_readid_cutX_cutY_F/R_P0/P1
 typedef struct structBlResToSaveHitsMason {
-    uint32_t    gi;
-    uint32_t    readId;
+    uint64_t    gi;
+    uint64_t    readId;
     char        readStrand;
     char        readPairId;    
-    uint32_t    subjectId;
+    uint64_t    subjectId;
     uint32_t    qStart;
     uint32_t    qEnd;
     uint32_t    sStart;
@@ -237,17 +238,25 @@ typedef struct structBlResToSaveHitsMason {
 /// To sort Blast hits by evalue & bitscore
 typedef struct structEvalue {
     structBlRes_t *pRec;
-    uint32_t       subjectId;
+    uint64_t       subjectId;
     double         eValue;
     float          bitScore;
 } structEValue_t;
 
 /// For multiple iterations
-uint16_t g_nIter = 1;   
-uint16_t g_currIter = 0;
+int g_nIter = 1;   
+int g_currIter = 0;
 uint32_t nSubWorkItemSets = 0;
 uint32_t nWorkItemsPerIter = 0;
 uint32_t nRemains = 0;
+
+
+void mrmpi_blast(); 
+void mr_map_run_blast(int itask, KeyValue *kv, void *ptr);
+inline void mpi_collect_node_name(int rank, int nProcs, MPI_Comm mpiComm);
+inline void mr_reduce_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
+inline void mr_reduce_save_hits(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
+inline bool compare_evalue(structEValue_t e1, structEValue_t e2);
 
 
 #endif

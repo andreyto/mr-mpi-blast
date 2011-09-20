@@ -6,37 +6,61 @@ import struct
 from numpy import *
 import tables as t
 print 'tables.__version__',t.__version__
-#from numexpr import *
 from sqlite3 import *
 
-
+##
+## Read all bin files from all sub directories and save the hits in a HD5 file
+## While saving, the cut
+##
 if __name__ == '__main__':
 
     if len(sys.argv) != 4:
-        print "python make_sqlitedb.py topDir out_file_name 0/1_for_saving_csv"
+        print "python 4-3.load_tables_mason_for_upperEnd.py topDir out_file_name 0/1_for_saving_csv"
+        print "Example:"
+        print "python ./4-3.load_tables_mason_for_upperEnd.py . output.hd5 1"
         sys.exit(1)    
     
     topDir = sys.argv[1]    
     filename = sys.argv[2]
     bMakeCSV = int(sys.argv[3])
-    #numDir = int(sys.argv[4])
-    
-    #dirName = [ "div"+str(x) for x in range(numDir) ]
+
+    ##
     ## Get the dir list under topDir
+    ##
     dirName = []
     dirList = os.listdir(topDir)
-    #print dirList
     for na in dirList:
 		if os.path.isdir(na):
 			dirName.append(na)
-
     print dirName, len(dirName)
     numDir = len(dirName)
 
-    ###
-    ### Define a user record to characterize some kind of particles
-    ###
-    class BlHits(t.IsDescription):
+    ##
+    ## Define a user record to characterize some kind of particles
+    ##
+    
+    ## Orig struct in mrblast.cpp 
+    """
+    structBlResToSaveHitsMason {
+        uint32_t    gi;
+        uint32_t    readId;
+        char        readStrand;     /// 'f' or 'r'
+        char        readPairId;     /// '0' or '1'
+        uint32_t    subjectId;
+        uint32_t    qStart;
+        uint32_t    qEnd;
+        uint32_t    sStart;
+        uint32_t    sEnd;
+        double      eValue;
+        float       bitScore;
+        uint32_t    upperStart;
+        uint32_t    upperEnd;
+        float       identity;
+        float       coverage;    
+    }
+    """
+    
+    class BlHits(t.IsDescription):  
         gi         = t.UInt32Col()
         readId     = t.UInt32Col()
         readStrand = t.StringCol(1)
@@ -46,16 +70,16 @@ if __name__ == '__main__':
         qEnd       = t.UInt32Col()
         sStart     = t.UInt32Col()
         sEnd       = t.UInt32Col()        
-        eValue     = t.FloatCol()
-        bitScore   = t.UInt32Col()        
+        eValue     = t.FloatCol()       ## double-precision ==> 'd'
+        bitScore   = t.UInt32Col()      ## single-precision ==> 'f'
         upperStart = t.UInt32Col()
         upperEnd   = t.UInt32Col()
-        dIdent     = t.Float32Col() 
-        dCover     = t.Float32Col() 
+        dIdent     = t.Float32Col()     ## single-precision ==> 'f'
+        dCover     = t.Float32Col()     ## single-precision ==> 'f'
             
-    ###
-    ### Load recordData and insert into db table
-    ###
+    ##
+    ## Load recordData and insert into db table
+    ##
     
     ## Open a file in "w"rite mode
     h5file = t.openFile(filename, mode = "w", title = "BLAST hits")
@@ -67,54 +91,35 @@ if __name__ == '__main__':
     ## Fill the table with 10 particles
     BlHits = table.row
 
-
-
-
     if bMakeCSV:
         csvFileName = filename + ".csv"
         csvFile = open(csvFileName, 'w')
-    
     totalHits = 0
     for j in range(numDir):
-        ###
-        ### load hit file names from hitfilelist
-        ###
+        ##
+        ## load hit file names from hitfilelist
+        ##
         vecHitFileName = []
         fastaFileName = ""
         subDir = topDir+"/"+dirName[j]
         for f in os.listdir(subDir):
             if f.find(".bin") > -1: 
                 vecHitFileName.append(f)
-            #if f.find(".fasta") > -1: 
-                #fastaFileName = f
-        #print "fasta file = ", fastaFileName 
-
         numHitFiles = len(vecHitFileName)
         
         ##
-        ## Connect deflines.sqlite
+        ## Connect deflines.hd5 to update cutEnd
         ##
         dbName = topDir+"/"+dirName[j]+"/deflines.hd5"
-        #print "DB name = ", dbName
-        #conn = connect(dbName)
-        #curs = conn.cursor()
         deflines_h5file = t.openFile(dbName)
         ## Create a new group under "/" (root)
-        #deflines_root = deflines_h5file.root
         deflines_table = deflines_h5file.root.deflines.deflinetab
         
-        ###
-        ### Read bin files and append to tables
-        ###
+        ##
+        ## Read bin files and append to tables
+        ##
         structSize = struct.calcsize('IIccIIIIIdfIIffI')
         print "dir name = ", dirName[j]
-        
-        #temp_cutStart = 0
-        #temp_cutEnd = 0
-        #temp_gi = 0
-        #temp_readId = 0
-        #temp_pairId = 0
-        
         for i in range(numHitFiles):
             subFileName = subDir+"/"+vecHitFileName[i]
             hitFile = open(subFileName, "rb")
@@ -124,6 +129,7 @@ if __name__ == '__main__':
                 try:
                     s = struct.unpack('IIccIIIIIdfIIffI', recordData)
                     
+                    ## SQL version
                     #curs.execute('''CREATE TABLE IF NOT EXISTS item
                                   #( gi          integer,
                                     #readId      integer, 
@@ -143,16 +149,14 @@ if __name__ == '__main__':
                         #print curs.fetchone()[0], curs.fetchone()[1]
                         #temp_cutStart = curs.fetchone()[0]
                         #temp_cutEnd   = curs.fetchone()[1] 
-                        
-                    #names = [ x['cutEnd'] for x in deflines_table.where("""(gi > 3)  & (20 <= pressure) & (pressure < 50)""") ]
+                    
+                    ## HD5 version
                     mycond = "(gi == " + str(s[0]) + ") & (readId == " + str(s[1]) + ") & (pairId == " + str(s[3]) + ")"
-                    #print mycond
                     new_cutStart = [ x['cutStart'] for x in deflines_table.where(mycond)]
                     new_cutEnd = [ x['cutEnd'] for x in deflines_table.where(mycond)]
-                    print new_cutStart, new_cutEnd, s[11], s[12]
-                    #assert len(new_curEnd) == 1
+                    assert len(new_cutStart) == 1
+                    assert len(new_cutEnd) == 1
                     
-                    #print s[0], s[1], s[2], s[3]
                     BlHits['gi']         = s[0]
                     BlHits['readId']     = s[1]
                     BlHits['readStrand'] = s[2]
@@ -164,12 +168,11 @@ if __name__ == '__main__':
                     BlHits['sEnd']       = s[8]
                     BlHits['eValue']     = s[9]
                     BlHits['bitScore']   = s[10]
-                    BlHits['upperStart'] = s[11] 
-                    BlHits['upperEnd']   = s[12]
+                    BlHits['upperStart'] = int(new_cutStart[0])
+                    BlHits['upperEnd']   = int(new_cutEnd[0])
                     BlHits['dIdent']     = s[13]
                     BlHits['dCover']     = s[14]
                     BlHits.append()
-                    #totalHits += 1
                     numHits += 1
                     
                     if bMakeCSV:
@@ -200,9 +203,9 @@ if __name__ == '__main__':
         deflines_h5file.close()
         totalHits += numHits
         
-        ###
-        ### flush recordData
-        ###
+        ##
+        ## flush recordData
+        ##
         table.flush()   # flush recordData in the table
         h5file.flush()  # flush all pending recordData
         print "%d hits in %s" %(totalHits, dirName[j])
@@ -214,11 +217,13 @@ if __name__ == '__main__':
     ## Create index
     table.cols.gi.createIndex()
     table.cols.sId.createIndex()    
- 
+    table.cols.readId.createIndex()
+    table.cols.readPairId.createIndex()
     
     h5file.close()
     
-"""    
+""" Read Test
+
     ## HDF5 file info
     print h5file
     
@@ -251,6 +256,7 @@ if __name__ == '__main__':
     table.cols.sId.createIndex()
     print h5file 
     
+    h5file.close()
 """
     
-### EOF
+## EOF

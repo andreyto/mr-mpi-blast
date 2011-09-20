@@ -11,7 +11,7 @@ print 'tables.__version__',t.__version__
 if __name__ == '__main__':
 
     if len(sys.argv) != 5:
-        print "python make_sqlitedb.py topDir out_file_name 0/1_for_saving_csv num_div"
+        print "python 4-2.load_tables_mason.py topDir out_file_name 0/1_for_saving_csv num_div"
         sys.exit(1)    
     
     topDir = sys.argv[1]    

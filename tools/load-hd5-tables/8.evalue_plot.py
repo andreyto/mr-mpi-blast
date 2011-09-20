@@ -23,8 +23,7 @@ if sys.platform == "win32":
      default_timer = time.clock
 else:    
     # On most other platforms the best timer is time.time()    
-    default_timer = time.time
- 
+    default_timer = time.time 
         
 #class BlHits(t.IsDescription):
     #gi         = t.UInt32Col()
@@ -42,12 +41,13 @@ else:
         
 if __name__ == '__main__':
      
-    if len(sys.argv) != 2:
-        print "python 5.identity_plot.py fileName"
+    if len(sys.argv) != 3:
+        print "python 8.evalue_plot.py fileName queryLen"
         sys.exit(1)  
         
     fileName = sys.argv[1]
     #subjectIndex = int(sys.argv[2])
+    queryLen = int(sys.argv[2])   
     coverCutoff = 0
     identCutoff = 0
     
@@ -62,55 +62,66 @@ if __name__ == '__main__':
     ### 
     #colSid = table.cols.sId 
     #currSubId = table.cols.sId[subjectIndex]
- 
     
-    currGi = 116249766     
-    #currSubId = 116249766 #1
+    currGi = 116249766    
+    currSubId = 116249766 #1
     #currSubId = 190889639 #2
     #currSubId = 319779749 #3
     #currSubId = 312112794 #4
-    currSubId = 217976200 #5
-    
+    #currSubId = 217976200 #5import matplotlib as plt    
     print "gi selected = ", currGi
     print "subject id selected = ", currSubId
     
     ###
     ### Get min, max and read columns
     ###    
-    vec = [ [x['sStart'],x['sEnd'],x['dIdent'],x['gi'] ] \
-        for x in table.where('(gi == currGi) & (sId == currSubId)') ]
+    #vec = [ [x['sStart'],x['sEnd'],x['dIdent'],x['gi'] ] \
+    vec = [ [ x['dIdent'],x['bitScore'],x['eValue'] ] \
+    #vec = [ [ x['dIdent'],x['bitScore'] ] \
+            for x in table.where('(gi == currGi) & (sId == currSubId)') ]
     print "num records = ", len(vec)
-    minSStart = min([r[0] for r in vec])
-    maxSEnd = max([r[1] for r in vec])
-    print "min s.start, max s.end = ", minSStart, maxSEnd
+    #minSStart = min([r[0] for r in vec])
+    #maxSEnd = max([r[1] for r in vec])
+    #print "min s.start, max s.end = ", minSStart, maxSEnd
+    
+    ### 
+    ### 
+    ###
+    print "query len = ", queryLen
+    yy = [r[0]*queryLen/100 for r in vec] ## # identical bases
+    #yy = [r[0] for r in vec]              ## perc identity
+    #xx = [r[1] for r in vec]              ## bitscore
+    xx2 = [r[2] for r in vec]             ## evalue
+    #print yy
+    
+    ###
+    ###
+    ###
+    f = figure()
+    ax = gca()
+    #ax.plot(xx, yy, 'ro', markersize=1)
+    ax.plot(xx2, yy, 'ro', markersize=1)
+    ax.set_ylim(0, queryLen)
+    ax.set_xlim(-0.000002, )
+    ax.set_xlabel('evalue', fontsize=16)
+    ax.set_ylabel('Number of identical bases', fontsize=16)
+    fontsize=16
+    for tick in ax.xaxis.get_major_ticks():
+        tick.label1.set_fontsize(fontsize)
+    for tick in ax.yaxis.get_major_ticks():
+        tick.label1.set_fontsize(fontsize)
+    ax.grid(color='k', linestyle='-.', linewidth=0.5)
+    ax.yaxis.grid(True, linestyle='-.', which='minor')
+    ax.xaxis.grid(True, linestyle='-.', which='minor')
+    f.autofmt_xdate()
+    #savefig(str(queryLen)+"bp-evalue-identbases.png", dpi=(300))                
+    show() 
+    draw()  
 
-    
-    ###
-    ### histogram
-    ###
-    query_len = 1000
-    num_queries = 10118
-    total_query_len = num_queries * query_len
-     
-    numbins = 6
-    mybins = np.linspace(0, 100, numbins)
-    htemp, jnk = np.histogram([r[2] for r in vec], mybins)
-    #print htemp
-    for x in htemp:
-        print '%d'%x,
-    print ""
-    
-    hist_query_length = htemp * query_len / float(total_query_len)
-    hist_num_query = htemp / float(num_queries)
-    #print [float(x) for x in hist_query_length]
-    #print hist_num_query
-    for x in hist_query_length:
-        print '%.3f'%x,
-        print '%.3f'%x,
-    
-    
     
     h5file.close()
     
 ### EOF
     
+ 
+

@@ -12,7 +12,7 @@ from sqlite3 import *
 if __name__ == '__main__':
 
     if len(sys.argv) != 2:
-        print "python make_sqlitedb.py topDir "
+        print "python 4-4.make_defline_sqldb_for_update_upperend.py topDir "
         sys.exit(1)    
     
     topDir = sys.argv[1]    
@@ -37,7 +37,7 @@ if __name__ == '__main__':
         fastaFileName = ""
         subDir = topDir+"/"+dirName[j]
         for f in os.listdir(subDir):
-            if f.find(".fasta") > -1: 
+            if f.find(".fasta") > -1 and f.find(".idx") <= -1: 
                 fastaFileName = f
         print fastaFileName 
         
