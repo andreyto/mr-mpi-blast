@@ -19,7 +19,8 @@ MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 
 ### dir setting ################################################################
 ## For me
-MRMPI_HOME = /home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi
+#MRMPI_HOME = /home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mrblast/mrmpi
+MRMPI_HOME=/home/ssul/work/distros2/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/mrmpi
 BOOST_HOME = /home/ssul/work/packages2
 
 ## For Ranger

@@ -6,7 +6,6 @@ import struct
 from numpy import *
 import tables as t
 print 'tables.__version__',t.__version__
-#from numexpr import *
     
 if __name__ == '__main__':
 
@@ -64,7 +63,6 @@ if __name__ == '__main__':
         vecHitFileName = []
         subDir = topDir+"/"+dirName[j]
         for f in os.listdir(subDir):
-            #if f.find(hitFilePrefix+"hits-") > -1: 
             if f.find(".bin") > -1: 
                 vecHitFileName.append(f)
         numHitFiles = len(vecHitFileName)
@@ -97,7 +95,6 @@ if __name__ == '__main__':
                     BlHits['dIdent']     = s[10]
                     BlHits['dCover']     = s[11]
                     BlHits.append()
-                    #totalHits += 1
                     numHits += 1
                     
                     if bMakeCSV:

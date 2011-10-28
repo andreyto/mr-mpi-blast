@@ -140,6 +140,7 @@ if __name__ == '__main__':
         ### Save start location of each query def line and the length
         ###
         outFile.write(str(loc)+","+str(seqLen)+"\n")
+        
     outFile.close()
     print "Total num seqs = ", numSeq
     

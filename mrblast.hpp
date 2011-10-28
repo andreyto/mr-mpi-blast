@@ -5,6 +5,17 @@
 //#
 //### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
+////////////////////////////////////////////////////////////////////////////////
+//
+//  MR-MPI-BLAST: Parallelizing BLAST using MapReduce-MPI
+//
+//  Author: Seung-Jin Sul
+//         (ssul@jcvi.org)
+//
+//  Last updated: 10/24/2011
+//
+////////////////////////////////////////////////////////////////////////////////
+
 #ifndef MRBLAST_HPP
 #define MRBLAST_HPP
 
@@ -99,11 +110,7 @@ int g_outOfCore;
 string g_dbFileName;
 string CONF_FILE_NAME = "mrblast.ini";
 int g_nDbFiles;
-const int MAXSTR = 80;      /// For mpi proc name 
-
-/// Filtering
-float g_identCutoff = 0.0; /// Doug's identity for filtering
-float g_coverCutoff = 0.0; /// Doug's coverage for filtering
+const int MAXSTR = 80;      /// For mpi proc name and subject id string
 
 /// ----------------------------------------------------------------------------
 /// Log
@@ -131,20 +138,26 @@ typedef multimap<int, int> multimapII_t;
 typedef map<int, string> mapIS_t;
 typedef map<string, string> mapSS_t;
 
-typedef struct structIndex {
-    uint64_t qStart;
-    uint32_t qLength;
-    uint64_t uniqQueryId;
+typedef struct structQueryIndex {
+    uint64_t qStart;                /// query start loc in orig query file
+    uint32_t qLength;               /// quety len in bp
+    uint64_t uniqQueryId;           /// unique query id (gi or serial num)
 } structQueryIndex_t;
 
+typedef struct structBlockBeginLoc {
+    uint64_t blockBeginLoc;         /// query start loc of a work item block
+    uint64_t qIdStart;              /// starting query id
+} structBlockBeginLoc_t;
+
 typedef struct structWorkItem {
-    int dbNo;
-    uint64_t blockBegin;
-    uint64_t blockEnd;
+    int      dbNo;                  /// db id
+    uint64_t blockBegin;            /// query start loc of a work item block
+    uint64_t blockEnd;              /// query end loc of a work item block
+    uint64_t qIdStart;              /// starting query id
 } structWorkItem_t;
 
 vector<string> g_vecDbFile;
-vector<uint64_t> g_vecBlockBeginLoc;
+vector<structBlockBeginLoc_t> g_vecBlockBeginLoc; /// for generic version
 vector<structQueryIndex_t> g_vecQueryIndex;
 vector<structWorkItem_t> g_vecWorkItem;
 uint32_t g_nQueries;
@@ -153,7 +166,7 @@ uint32_t g_nWorkItems;
 uint32_t g_blockSize;                /// block size in base-pair
 multimapSI_t g_multimapProcNameRank; /// dict of rank by proc name
 mapIS_t g_mapRankProcName;           /// dict of proc name by rank 
- 
+
 /// ----------------------------------------------------------------------------
 /// Misc.
 /// ----------------------------------------------------------------------------
@@ -168,80 +181,52 @@ int g_MPI_nProcs;
 /// For nucl or prot DB setting
 bool g_bIsProtein = false;
 
+/// The unique query id in the index file is gi or not
+bool g_bIsQidGi = false;
+
 /// Output file to store BLAST hits
 string g_hitFileName;
  
 /// To pass Blast hits following outfmt=6 format.
-/// subject id, % identity, alignment length, nMismatches, gap opens,
+/// query id, subject id, % identity, alignment length, nMismatches, gap opens,
 /// q. start, q. end, s. start, s. end, evalue, bit score
-typedef struct structBlRes {
-    uint64_t    subjectId;    
+typedef struct structBlResGeneric {
+    char        subjectId[80];
+    double      identity;
+    uint32_t    alignLen;
+    uint32_t    nMismatches;
+    uint32_t    nGaps;
     uint32_t    qStart;
     uint32_t    qEnd;
     uint32_t    sStart;
     uint32_t    sEnd;
     double      eValue;
-    float       bitScore;
-    uint32_t    upperStart;
-    uint32_t    upperEnd;
-    float       identity;
-    float       coverage;
-} structBlRes_t;
-
-typedef struct structBlResMason {
-    uint64_t    subjectId;    
-    uint32_t    qStart;
-    uint32_t    qEnd;
-    uint32_t    sStart;
-    uint32_t    sEnd;
-    double      eValue;
-    float       bitScore;
-    float       identity;
-    float       coverage;
-} structBlResMason_t;
-
-/// For saving hits in bin format
-typedef struct structBlResToSaveHits {
-    uint64_t    gi;
-    uint64_t    subjectId;
-    uint32_t    qStart;
-    uint32_t    qEnd;
-    uint32_t    sStart;
-    uint32_t    sEnd;
-    double      eValue;
-    float       bitScore;
-    uint32_t    upperStart;
-    uint32_t    upperEnd;
-    float       identity;
-    float       coverage;
-} structBlResToSaveHits_t;
-
-/// KV key = gi_readid_cutX_cutY_F/R_P0/P1
-typedef struct structBlResToSaveHitsMason {
-    uint64_t    gi;
-    uint64_t    readId;
-    char        readStrand;
-    char        readPairId;    
-    uint64_t    subjectId;
-    uint32_t    qStart;
-    uint32_t    qEnd;
-    uint32_t    sStart;
-    uint32_t    sEnd;
-    double      eValue;
-    float       bitScore;
-    uint32_t    upperStart;
-    uint32_t    upperEnd;
-    float       identity;
-    float       coverage;    
-} structBlResToSaveHitsMason_t;
+    double      bitScore;
+} structBlResGeneric_t;
 
 /// To sort Blast hits by evalue & bitscore
 typedef struct structEvalue {
-    structBlRes_t *pRec;
-    uint64_t       subjectId;
-    double         eValue;
-    float          bitScore;
+    structBlResGeneric_t *pRec;
+    char                  subjectId[80];
+    double                eValue;
+    float                 bitScore;
 } structEValue_t;
+
+/// For saving hits in bin format
+typedef struct structBlResToSaveHits {
+    uint64_t    queryId;
+    char        subjectId[80];
+    double      identity;
+    uint32_t    alignLen;
+    uint32_t    nMismatches;
+    uint32_t    nGaps;
+    uint32_t    qStart;
+    uint32_t    qEnd;
+    uint32_t    sStart;
+    uint32_t    sEnd;
+    double      eValue;
+    double      bitScore;
+} structBlResToSaveHits_t;
 
 /// For multiple iterations
 int g_nIter = 1;   
@@ -250,13 +235,12 @@ uint32_t nSubWorkItemSets = 0;
 uint32_t nWorkItemsPerIter = 0;
 uint32_t nRemains = 0;
 
-
+/// prototypes
 void mrmpi_blast(); 
 void mr_map_run_blast(int itask, KeyValue *kv, void *ptr);
 inline void mpi_collect_node_name(int rank, int nProcs, MPI_Comm mpiComm);
-inline void mr_reduce_sort_multivalues_by_evalue(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
-inline void mr_reduce_save_hits(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
-inline bool compare_evalue(structEValue_t e1, structEValue_t e2);
+inline void mr_reduce_sort_and_save_generic(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
+inline bool compare_evalue_generic(structEValue_t e1, structEValue_t e2);
 
 
 #endif

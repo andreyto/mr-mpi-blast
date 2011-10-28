@@ -100,9 +100,10 @@ typedef multimap<int, int> multimapII_t;
 typedef map<int, string> mapIS_t;
 
 typedef struct structWorkItem {
-    int dbNo;
-    uint64_t blockBegin;
-    uint64_t blockEnd;
+    int      dbNo;                  /// db id
+    uint64_t blockBegin;            /// query start loc of a work item block
+    uint64_t blockEnd;              /// query end loc of a work item block
+    uint64_t qIdStart;              /// starting query id
 } structWorkItem_t;
 
 extern vector<structWorkItem_t> g_vecWorkItem;
@@ -1077,7 +1078,7 @@ uint64_t MapReduce::map(int nstr, char **strings,
 }
 
 
-/**
+/** decrease_db_assign_cnt
  * @param iproc
  * @param itaskDone
  * @param mmdba
@@ -1101,7 +1102,7 @@ inline void decrease_db_assign_cnt(int iproc,
     (itr->second)[g_vecWorkItem[itaskDone].dbNo]--;
 }
 
-/** 
+/** increase_db_assign_cnt
  * @param iproc
  * @param itask
  * @param mmdba
@@ -1163,7 +1164,7 @@ inline void get_sorted_dbcount(int iproc,
                    std::make_pair<int, int>);
 }
 
-/**
+/** get_next_workitem
  * @param nAassigned
  * @param iproc
  * @param prevDbNo
@@ -1171,10 +1172,10 @@ inline void get_sorted_dbcount(int iproc,
  * @param mmDbAssigned
  */
 inline int get_next_workitem(int nAassigned,
-                          int iproc,
-                          int prevDbNo,
-                          boost::dynamic_bitset<> &bsWorkItemAssigned,
-                          multimapSVI_t &mmDbAssigned)
+                             int iproc,
+                             int prevDbNo,
+                             boost::dynamic_bitset<> &bsWorkItemAssigned,
+                             multimapSVI_t &mmDbAssigned)
 {
     int nextWorkItemNo = -1;
     for (size_t w = nAassigned; w < g_nWorkItems; ++w) {
@@ -1203,8 +1204,7 @@ inline int get_next_workitem(int nAassigned,
 
 uint64_t MapReduce::map_tasks(int ntask, char **files,
                               void (*appmaptask)(int, KeyValue *, void *),
-                              void (*appmapfile)(int, char *,
-                                      KeyValue *, void *),
+                              void (*appmapfile)(int, char *, KeyValue *, void *),
                               void *appptr, int addflag, int selfflag)
 {
     MPI_Status status;
@@ -1418,7 +1418,7 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 
                 if (newDbNo == -1) 
                     dbNo = g_vecWorkItem[itaskDone].dbNo;                
-                else 
+                else               
                     dbNo = newDbNo;
                 
                 /// get_next_workitem() tries to find a work item which has the 
@@ -1429,13 +1429,14 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 /// nAssigned is to make the search fast by skipping the front
                 /// "nAssigned" items in bsWorkItemAssigned
                 nextWorkItemFound = get_next_workitem(nAssigned, iproc, dbNo, 
-                                                   bsWorkItemAssigned, 
-                                                   mmDbAssigned);
+                                                      bsWorkItemAssigned, 
+                                                      mmDbAssigned);
                 
                 bool bIsMiss1 = false;
                 /// If there is no work item with the same db name associated,
                 /// mark this 
-                if (nextWorkItemFound == -1) bIsMiss1 = true;
+                if (nextWorkItemFound == -1) 
+                    bIsMiss1 = true;
                     
                 ///
                 /// If such work item is not available, pick a work item that 
@@ -1467,16 +1468,19 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                                                               bsWorkItemAssigned, 
                                                               mmDbAssigned);
 
-                        if (nextWorkItemFound != -1) break;
+                        if (nextWorkItemFound != -1)    
+                            break;
                     }
                 }   
                 
                 /// Set new DB num for assigning the next work item(s)
                 if (bIsMiss1) {
                     /// If the next work item is selected, save the db 
-                    if (nextWorkItemFound != -1) newDbNo = tempDbNo;
+                    if (nextWorkItemFound != -1) 
+                        newDbNo = tempDbNo;
                     /// This is the case there is no work item left
-                    else newDbNo = -1;
+                    else 
+                        newDbNo = -1;
                 }                
                 
                 if (itask < ntask) {
@@ -1505,11 +1509,14 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
                 MPI_Recv(&itask, 1, MPI_INT, 0, 0, comm, &status);
                 
                 /// If itask == -1, terminate itself
-                if (itask < 0) break;                
+                if (itask < 0) 
+                    break;                
                 
                 /// Else process the assigned work item (=itask)
-                if (files) appmapfile(itask, files[itask], kv, appptr);
-                else appmaptask(itask, kv, appptr);
+                if (files) 
+                    appmapfile(itask, files[itask], kv, appptr);
+                else 
+                    appmaptask(itask, kv, appptr);
                                 
                 /// If done, let the master know by sending the work item number
                 MPI_Send(&itask, 1, MPI_INT, 0, 0, comm);
@@ -1519,7 +1526,8 @@ uint64_t MapReduce::map_tasks(int ntask, char **files,
     else error->all("Invalid mapstyle setting");
 
     kv->complete();
-    if (freepage) mem_cleanup();
+    if (freepage) 
+        mem_cleanup();
     stats("Map", 0);
     uint64_t nkeyall;
     MPI_Allreduce(&kv->nkv, &nkeyall, 1, MRMPI_BIGINT, MPI_SUM, comm);
