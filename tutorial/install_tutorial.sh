@@ -10,7 +10,7 @@ if [ $WORKING_DIR == "" ]; then
     exit
 fi
 
-echo -e "\n\nCopy tutorial files to MRMPIBLAST_PREFIX/tutorial"
+echo -e "\n\n### Copy tutorial files to MRMPIBLAST_PREFIX/tutorial"
 cp -R $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial $MRMPIBLAST_PREFIX/ &&
 cp -R $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py $MRMPIBLAST_PREFIX/tutorial/tools &&
 cp -R $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tools/splitter/splitter.py $MRMPIBLAST_PREFIX/tutorial/tools &&

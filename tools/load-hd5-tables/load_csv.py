@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import sys
 import os
 import struct
@@ -81,9 +82,9 @@ if __name__ == '__main__':
                 break
         
         hitFile.close()
-        print "num hits %d in %s" % (numHits, vecHitFileName[i])
+        print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
         
-    print "total num hits = ",totalHits
+    print "Total number of hits = ",totalHits
     csvFile.close() 
      
 ### EOF

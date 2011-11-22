@@ -5,7 +5,7 @@ if [ $MRMPIBLAST_PREFIX == "" ]; then
     exit
 fi
 
-if [$SGE_ACCOUNT == "" ]; then
+if [ $SGE_ACCOUNT == "" ]; then
     echo "Please set SGE_ACCOUNT environment variable."
     exit
 fi

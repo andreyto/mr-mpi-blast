@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import sys
 import os
 import struct
@@ -129,7 +130,7 @@ if __name__ == '__main__':
                 break
         
         hitFile.close()
-        print "num hits %d in %s" % (numHits, vecHitFileName[i])
+        print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
         
     ###
     ### flush recordData
@@ -137,7 +138,7 @@ if __name__ == '__main__':
     table.flush()   # flush recordData in the table
     h5file.flush()  # flush all pending recordData
         
-    print "total num hits = ",totalHits
+    print "Total number of hits = ",totalHits
     if bMakeCSV:
         csvFile.close() 
     

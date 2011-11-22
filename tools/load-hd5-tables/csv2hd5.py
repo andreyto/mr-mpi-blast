@@ -73,8 +73,6 @@ if __name__ == '__main__':
     with open(inFileName) as infile:
         for line in infile:
             tok = line.strip().split(',')
-            #print tok
-            #print len(tok), tok[0]
             assert(len(tok) == 15)
             BlHits['gi']         = int(tok[0])
             BlHits['readId']     = int(tok[1])
@@ -98,7 +96,7 @@ if __name__ == '__main__':
     
     table.flush()   # flush recordData in the table
     h5file.flush()  # flush all pending recordData
-    print "total = ", numTotalHits
+    print "Total number of hits = ", numTotalHits
     
     ## Create index
     #table.cols.gi.createIndex()
@@ -106,10 +104,7 @@ if __name__ == '__main__':
     
     h5file.close()
     infile.close()
-    #sys.exit()
 
-
- 
     
 """
     ## HDF5 file info

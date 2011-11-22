@@ -1,8 +1,8 @@
+#!/usr/bin/env python
+
 import sys
 from cStringIO import StringIO
 import numpy as npy
-#from Bio import SeqIO
-#from Bio.Seq import Seq
  
 class FastaReader(object):
     """Class that supports an input iterator protocol for a FASTA file.
@@ -201,4 +201,4 @@ if __name__ == '__main__':
     print "Total %d queries are generated and saved in %s." % (cid, outFileName)
 
 
-# EOF
+## EOF

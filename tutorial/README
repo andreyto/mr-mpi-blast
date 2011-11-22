@@ -1,0 +1,65 @@
+* Tutorial - Test mr-mpi-blast
+
+   * NOTE: This tutorial is prepared and tested on XSEDE Ranger cluster.
+   
+   
+1. Set Ranger module list
+
+   $ bash $MRMPIBLAST_PREFIX/tutorial/ranger_setup_env.sh
+   
+
+2. Build the NCBI C++ Toolkit with mr-mpi-blast
+
+   Please refer $MRMPIBLAST_PREFIX/README
+
+
+3. Copy tutorial files to $MRMPIBLAST_PREFIX/tutorial
+
+   $ sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/install_tutorial.sh
+   
+   
+4. Prepare test data and run test
+
+   (1) Go to the tutorial directory
+    
+       $ cd $MRMPIBLAST_PREFIX/tutorial
+
+
+   (2) Generate queries
+       
+       $ sh 1.generate_query.sh
+   
+        - Download NCBI RefSeq viral FASTA sequence files
+        - Generate queries (1000bp length) by slitting the viral FASTA file 
+        - Generate index files with the query file for running mr-mpi-blast
+        
+   
+   (3) Make NCBI database
+      
+       $ sh 2.make_blastdb.sh
+   
+        - Download NCBI RefSeq microbial FASTA sequence files
+        - Make BLAST database using "makeblastdb" utility
+
+        
+   (4) Run mr-mpi-blast
+       
+       * NOTE: Please set your SGE account to $SGE_ACCOUNT 
+       
+       $ sh 3.run_mr-mpi-blast.sh
+       
+        - Qsub mr-mpi-blast for BLAST search of the quries against the 
+          generated BLAST db
+
+        
+   (5) Convert output hit files from mr-mpi-blast
+   
+       $ sh 4.convert_hits.sh
+        
+         - Convert *.bin files generated in $MRMPIBLAST_PREFIX/tutorial/blastdb 
+           into CSV file format
+         
+       * NOTE: In this tutorial example, the first column in hits.csv means the 
+         unique query id in viral_all_query.fa.def in which the original deflines 
+         can be retrieved.
+

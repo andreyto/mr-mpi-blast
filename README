@@ -10,78 +10,78 @@ By Seung-Jin Sul (ssul@jcvi.org)
 1. Set MRMPIBLAST_PREFIX (install target directory) and WORKING_DIR (current 
    working directory to download and build the C++ Toolkit and mr-mpi-blast)
 
-   export MRMPIBLAST_PREFIX=/work/01471/ssul/work/test/mrblast
-   export WORKING_DIR=`pwd`
+   $ export MRMPIBLAST_PREFIX=/work/01471/ssul/work/test/mrblast
+   $ export WORKING_DIR=`pwd`
 
-2. Get NCBI C++ Toolkit 
+2. Download the latest version of NCBI C++ Toolkit 
 
-   wget ftp.ncbi.nih.gov/toolbox/ncbi_tools++/ARCHIVE/7_0_0/ncbi_cxx--7_0_0.tar.gz &&
-   tar zxvf ncbi_cxx--7_0_0.tar.gz
+   $ wget ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools++/ARCHIVE/7_0_0/ncbi_cxx--7_0_0.tar.gz 
+   $ tar zxvf ncbi_cxx--7_0_0.tar.gz
    
-   NOTE: The NCBI C++ Toolkit version 7.0.0 is tested for the current version 
-   mr-mpi-blast. If you have problem with the toolkit version > 7.0.0, please 
-   download the toolkit verion 7.0.0.
+   * NOTE: The NCBI C++ Toolkit version 7.0.0 is tested for the current version 
+     mr-mpi-blast. If you have problem with the toolkit version > 7.0.0, please 
+     download the toolkit verion 7.0.0.
    
 3. Get mr-mpi-blast
   
-   cd $WORKING_DIR/ncbi_cxx--7_0_0/src/app &&
-   git clone git@github.com:andreyto/mr-mpi-blast &&
-   cd mr-mpi-blast &&
-   git checkout -b blastn_classifier_generic origin/blastn_classifier_generic
+   $ cd $WORKING_DIR/ncbi_cxx--7_0_0/src/app 
+   $ git clone git@github.com:andreyto/mr-mpi-blast 
    
 
-4. Edit make files  
+4. Edit files  
    
-   ######################################################
+   ##########################################################################
    If you are using XSEDE Ranger, please run
    
-   $MRMPIBLAST_PREFIX/tutorial/ranger_setup_env.sh
-  
+   $ $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/ranger_setup_env.sh
+   
    and you can skip to the step 5.
-   ######################################################
+   ##########################################################################
    
    
    * Makefile.mrblast.app
-   Check MRMPI_HOME, BOOST_HOME, mpicc/mpicxx in 
-   $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/Makefile.mrblast.app
+     Check MRMPI_HOME, BOOST_HOME, mpicc/mpicxx in 
+     $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/Makefile.mrblast.app
    
    * Makefile.in   
-   Add "mr-mpi-blast" at end of "SUB_PROJ" line in 
-   $WORKING_DIR/ncbi_cxx--7_0_0/src/app/Makefile.in
+     Add "mr-mpi-blast" at end of "SUB_PROJ" line in 
+     $WORKING_DIR/ncbi_cxx--7_0_0/src/app/Makefile.in
+
+   
+5. Configure and build MR-MPI MapReduce library 
 
    * Makefile.mpicxx
-   Check BOOST_INCLUDE in 
-   $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicxx
-   or
-   $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicc
-
-   * build_mrmpi_sh
-   Check MRMPI_HOME and mpicc/mpicxx in 
-   $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/build_mrmpi_sh
+     Check BOOST_INCLUDE in 
+     $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicxx (for Open MPI)
+     or
+     $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicc (for MVAPICH)
    
-   
-5. Build MR-MPI library 
-
-   sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/build_mrmpi_sh
+   * Build MR-MPI library
+     $ cd $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi 
+     $ make mpicc (for Open MPI)
+       or 
+     $ make mpicxx (for MVAPICH)
 
    
 6. Configure, build, and install NCBI C++ toolkit with mr-mpi-blast
-    
-   cd $WORKING_DIR/ncbi_cxx--7_0_0 &&
-   ./configure --with-64 --prefix=$MRMPIBLAST_PREFIX --without-dll --without-gbench --without-gui --without-dbapi --without-connext --without-xpm --without-sss --without-gnutls --without-openssl --with-mt --without-debug --with-optimization --with-static --with-boost=$TACC_BOOST_DIR --with-bin-release &&
-   make && make install &&
-   cd $WORKING_DIR
+   
+   $ cd $WORKING_DIR/ncbi_cxx--7_0_0 
+   $ ./configure --with-64 --prefix=$MRMPIBLAST_PREFIX --without-dll --without-gbench --without-gui --without-dbapi --without-connext --without-xpm --without-sss --without-gnutls --without-openssl --with-mt --without-debug --with-optimization --with-static --with-boost=$TACC_BOOST_DIR --with-bin-release 
+   $ make && make install 
+   $ cd $WORKING_DIR
 
 
 7. Install tutorial
-
-   sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/install_tutorial.sh
    
+   $ sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/install_tutorial.sh
+   
+   Tutorial files will be copied to $MRMPIBLAST_PREFIX/tutorial.
 
 8. Remove unnecessary files
 
    To remove unnecessary files installed, please run
-   sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/remove_unnecessary.sh
+   
+   $ sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/remove_unnecessary.sh
 
 
 

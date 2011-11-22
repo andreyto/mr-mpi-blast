@@ -5,7 +5,7 @@ if [ $MRMPIBLAST_PREFIX == "" ]; then
     exit
 fi
 
-
+echo -e "\n\n### Remove unnecessary files"
 mkdir -p $MRMPIBLAST_PREFIX/bin2 &&
 cp $MRMPIBLAST_PREFIX/bin/mrblast $MRMPIBLAST_PREFIX/bin/makeblastdb $MRMPIBLAST_PREFIX/bin2/ &&
 rm -rf $MRMPIBLAST_PREFIX/bin &&
@@ -13,4 +13,5 @@ mv $MRMPIBLAST_PREFIX/bin2 $MRMPIBLAST_PREFIX/bin &&
 rm -rf $MRMPIBLAST_PREFIX/include &&
 rm -rf $MRMPIBLAST_PREFIX/lib
 
+echo -e "\n### Done!"
 # EOF
