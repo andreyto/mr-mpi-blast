@@ -102,14 +102,14 @@ uint64_t g_realFileSize = 0;
 /// ----------------------------------------------------------------------------
 /// MR-MPI options
 int g_verbosity;
-int g_timer;                /// log elapsed time for each mapreduce call
-int g_memSize;              /// page size (in Mbytes)
+int g_timer;                /// Log elapsed time for each mapreduce call
+int g_memSize;              /// Page size (in Mbytes)
 int g_outOfCore;
 
 /// DB options
+int g_nDbFiles;
 string g_dbFileName;
 string CONF_FILE_NAME = "mrblast.ini";
-int g_nDbFiles;
 const int MAXSTR = 80;      /// For mpi proc name and subject id string
 
 /// ----------------------------------------------------------------------------
@@ -170,13 +170,13 @@ mapIS_t g_mapRankProcName;           /// dict of proc name by rank
 /// ----------------------------------------------------------------------------
 /// Misc.
 /// ----------------------------------------------------------------------------
+int g_mapStyle;
+int g_MPI_worldRank;        /// MPI rank
+int g_MPI_nProcs;
+char g_MPI_procName[MAXSTR];/// MPI procname
 string g_outFilePrefix;     /// Prefix string for output file names
 string g_indexFileName;
 string g_queryFileName;
-int g_mapStyle;
-int g_MPI_worldRank;         /// MPI rank
-char g_MPI_procName[MAXSTR]; /// MPI procname
-int g_MPI_nProcs;
 
 /// For nucl or prot DB setting
 bool g_bIsProtein = false;

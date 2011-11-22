@@ -1,5 +1,3 @@
-Generate an index file from your input FASTA query sequence file
+Generate index files from your input FASTA query sequence file
 
-python ./seqindexer.py input output
-
-ex) python ./seqindexer.py ./data/10seqs.query ./data/10seqs.query.idx
+ex) seqindexer.py -i viral_all_query.fa -o viral_all_query.fa.idx -d viral_all_query.fa.def -u 0 -s 0 -b 1

@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 
-#import MGT.FastaIO as MGTFIO
 from cStringIO import StringIO
-
 import sys
 import numpy as npy
+import optparse
 
 class FastaReader(object):
     """Class that supports an input iterator protocol for a FASTA file.
@@ -116,32 +115,91 @@ class FastaReader(object):
         if self.ownInfile:
             self.infile.close()
 
+version = '2.0'
+verbose = False
+inFileName = ''
+outFileName = ''
+defFileName = ''
+deflineOption = 0
+uidOption = 0
+seqUID = 0
+
 if __name__ == '__main__':
      
-    if len(sys.argv) != 3:
-        print "python seqindexer.py inFile outFile"
-        sys.exit(1)   
-    
+ 
+    usage = "usage:  python seqindexer.py -i inFile -o outIndexFile -d outDeflineFile -u uidopt -s startNum -b full_or_part_defline"
+
+    parser = optparse.OptionParser(usage=usage)
+
+    parser.add_option("-i", "--input", dest="infilename", 
+                  action="store", type="string", help="input fasta file")
+    parser.add_option("-o", "--output", dest="outfilename",  
+                  action="store", type="string", help="output index file")
+    parser.add_option("-d", "--deflinefilename", dest="deflinefilename",  
+                  action="store", type="string", help="defline file name")
+                  
+    parser.add_option("-u", "--uidopt", dest="uidopt",  
+                  action="store", type="int", help="uid choice: 0=serial number, 1=gi")
+    parser.add_option("-s", "--startno", dest="startno", 
+                action="store", type="int", help="uid start number when -u 0")    
+    parser.add_option("-b", "--deflineopt", dest="deflineopt",  
+                  action="store", type="int", help="defline saving option: 0=part, 1=full")
+                  
+    (options, args) = parser.parse_args()
+ 
+
+    if options.infilename:
+        inFileName = options.infilename
+    if options.outfilename:
+        outFileName = options.outfilename
+    if options.uidopt is not None:
+        uidOption = options.uidopt        
+        if uidOption == 0:
+            if options.startno != 0:          
+                seqUID = options.startno
+            print "UID will be set as serial number starting from ", options.startno
+        else:
+            print "UID will be set as GI"
+    if options.deflinefilename and options.deflineopt is not None:
+        defFileName = options.deflinefilename
+        deflineOption = options.deflineopt
+      
     numSeq = 0
     currLoc = 0    
-    outFile = open(sys.argv[2], "w")
-    for rec in FastaReader(open(sys.argv[1], 'r')).records():
-        #print currLoc
-        loc = currLoc
-        currLoc += len(rec.header())
-        seqLen = 0
-        for line in rec.seqLines():
-            seqLen += len(line.rstrip("\n"))
-            currLoc += len(line)
-        #print "seqLen = ", seqLen
-        numSeq += 1
+    outFile = open(outFileName, "w")
+    defFile = open(defFileName, "w")
+
+    for rec in FastaReader(open(inFileName, 'r')).records():
+        defline = rec.header()
         
         ### 
         ### Save start location of each query def line and the length
         ###
-        outFile.write(str(loc)+","+str(seqLen)+"\n")
+        loc = currLoc
+        currLoc += len(defline)
+        seqLen = 0
+        for line in rec.seqLines():
+            seqLen += len(line.rstrip("\n"))
+            currLoc += len(line)
+        numSeq += 1
+        seqUID += 1
+        
+        uid = 0
+        if uidOption == 1:
+            uid = defline.rstrip().split("|")[1]
+        else:
+            uid = seqUID
+        outFile.write(str(loc)+"\t"+str(seqLen)+"\t"+str(uid)+"\n")
+        
+        deflines = ''
+        if deflineOption == 0:
+            defline2 = defline.rstrip().split(" ")[0]
+        else:
+            defline2 = defline.rstrip()        
+        defFile.write(str(uid)+"\t"+defline2+"\n")
         
     outFile.close()
-    print "Total num seqs = ", numSeq
+    defFile.close()
+    print "Total number of sequences = ", numSeq
     
 ### EOF

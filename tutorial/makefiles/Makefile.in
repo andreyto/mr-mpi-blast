@@ -1,0 +1,8 @@
+# $Id: Makefile.in 118708 2008-01-31 17:58:33Z ucko $
+
+REQUIRES = objects algo
+
+APP_PROJ = mrblast
+
+srcdir = @srcdir@
+include @builddir@/Makefile.meta

@@ -1,0 +1,235 @@
+User Guide for mr-mpi-blast (version 11.0.1)
+
+
+Updated: 11/21/2011
+By Seung-Jin Sul (ssul@jcvi.org)
+
+
+
+
+* Requirement
+
+    - It needs Boost library and Open MPI stack installed. (The current version 
+      has been being tested with mvapich MPI stack on XSEDE Ranger).
+    - To build, mr-mpi-blast source tree should be added to the source tree of 
+      the NCBI C++ Toolkit (Please refer README).
+    - The NCBI C++ Toolkit version 7.0.0 is tested for the current version 
+      mr-mpi-blast. If you have problem with the toolkit version > 7.0.0, 
+      please download the toolkit verion 7.0.0.
+
+
+* MapReduce-MPI executable file - mrblast
+
+    - Run this with ibrun on XSEDE Ranger
+    - "-db -" is not omittable. Also subject database file names should be 
+      listed in a text file (dblist.txt)
+
+        ex) ibrun ./mrblast -db -
+        ex) ibrun ./mrblast -db - -evalue 1e-4
+        ex) ibrun ./mrblast -db - -dbsize 12494903041 -evalue 1e-4  
+            -num_threads 1 -window_size 0 -word_size 11 -searchsp 0 
+            -num_descriptions 500 -num_alignments  10000 -penalty -5 -reward 4 
+            -lcase_masking -dust yes -soft_masking true 
+            -export_search_strategy strategy_temp.txt -max_target_seqs 2147483647
+
+	- Most of NCBI blastn and blastp (v.2.2.24+) options are applicable 
+
+	- Example SGE job submission script on XSEDE Ranger
+
+        #!/bin/bash 
+        #$ -A $SGE_ACCOUNT
+        #$ -V # Inherit the submission environment 
+        #$ -cwd # Start job in submission directory 
+        #$ -N mrblast # Job Name 
+        #$ -j y # Combine stderr and stdout 
+        #$ -o $JOB_NAME.o$JOB_ID # Name of the output file  
+        #$ -pe 16way 64  # Requests 16 tasks/node, 64 cores total 
+        #$ -q development # Queue name 
+        #$ -l h_rt=00:30:00 # Run time (hh:mm:ss) - 1.5 hours 
+        ##$ -M # Use email notification address 
+        ##$ -m be # Email at Begin and End of job 
+
+        ibrun ../tools/mrblast -db - -evalue 1e-4
+
+
+* Input files
+
+	- Input sequence file 
+
+	Any set of sequences in multi FASTA format
+	
+	- Input index file (.idx and .def)
+
+    Index file is used to split the original input query sequence file into 
+    several blocks of sequences for distributing among workers in MapReduce 
+    framework. 
+
+    Defline file stores the unique query ids and the corresponding original 
+    deflines in the input sequence file. The format is <uniq_qid, orig_defline>. 
+    If you select to generate serial numbers as unique query id will be the 
+    serial number generated. If you select to use gi as unique query id, 
+    the gi from the original input query file is used for the unique query id. 
+
+	An example run of “seqindexer_generic.py” and option descriptions are 
+    following.	
+
+        ex) python ./tools/seqindexer_generic.py -i ./query/800seqs.query 
+        -o ./query/800seqs.query. idx 	-d ./query/800seqs.query.def -u 1 -b 1 
+
+        -i: input query file
+        -o: output index file
+        -d: output defline file; to store unique query ids and original deflines 
+        -u: unique id option; 0=serial number, 1=gi
+        -s: if serial number is selected, to specify the start number
+        -b: defline saving option; 0=part, 1=full defline
+
+	- Subject database list file (dblist.txt)
+
+    This file describes a list of subject database list. The format is 
+    <db_file_name>. Each database file should be formatted in BLAST database 
+    using legacy “formatdb” utility or blast+ “makeblastdb” utility. And the 
+    files should exist in the current working directory or in the BLASTDB path 
+    specified in the [BLAST] section of ~/.ncbirc file.
+
+	- Configuration file: mrblast.ini
+
+	Section [MR-MPI]: sets options for MR-MPI library operation
+
+        VERBOSITY   1=show log from mr-mpi lib, 0, if not
+        TIMER       1=save several elapsed time logs in log files for each 
+                    mapreduce call, 0, if not 
+        MEMSIZE     the page size in Mbytes 
+        OUTOFCORE   -1=no disk operation, 0=allow out-of-core, 1=out-of-core 
+                    even with 1-page
+  
+	Section [LOG]
+
+        LOGENABLED  1=save logs, 0, if not
+        TIMING      1=save elapsed time logs, 0, if not 
+        LOGFNAME    string, set file name postfix to save log
+        OPTDUMP     1=save search strategy to a file, 0, if not
+ 
+	Section [OTHER INPUT] 
+
+        QUERYFILENAME   string, set input query sequence file name
+        INDEXFILENAME   string, set input query sequence index file name  
+        DBLISTFILENAME  string, set subject database list file name
+        OUTFILEPREFIX   string, set output file name prefix
+        BLOCKSIZE       number of base pairs, set block size in bp to split 
+                        input query file
+        MAPSTYLE        scheduling option; 2=MR-MPI native client/server 
+                        scheduler, 3=mr-mpi-blast custom location-aware scheduler
+        NUMITER         number of iterations
+        ISPROTEIN       set BLAST mode; 1=blastp, 0=blastn
+        ISQIDGI         set unique query id used when generating the index file 
+                        is gi or serial numbers; 1=gi, 0=serial number
+
+
+* Output files
+
+
+	- BLAST search output file: *.bin
+
+    Once BLAST search is completed, each core saves BLAST hit in each separate 
+    binary file. Only the tabular format is supported for now. 
+
+    - Tabular output format fields:
+
+    <qid, subjectid, identity, alignLen, nMismatches, nGaps, queryStart, 
+    queryEnd, subjectStart, subjectEnd, evalue, bitScore>
+	
+	- Log files
+
+	If LOGENABLED=1 in mrblast.ini, each core saves detailed log in each 
+    separate log file.
+
+	- Strategy dump files 
+
+  	If OPTDUMP=1, search strategy is dumped and saved in 
+    OUTFILEPREFIX-search_strategy.txt file.	
+
+    - Convert hit output files to HD5, SQLite, and/or CSV
+
+    The resulting *.bin files are easily converted into HD5, SQLite, 
+    and/or CSV files using the provided utilities.  
+    For example, if *.bin files are stored in “./hits” directory, 
+    the below commands collects and saves all hits from *.bin files into 
+    a output file.
+
+    To use HD5 database format, Pytable Pro version should be installed 
+    (http://www.pytables.org/moin/PyTablesPro )
+   
+        ex) python ../tools/load_hd5.py ./hits/ hits 1    	# generates both hd5 and csv files
+        ex) python ../tools/load_sql.py ./hits/ hits 0      # generates only sqlite file
+        ex) python ../tools/load_csv.py ./hits/ hits        # generates only csv file
+    
+    - When serial numbers are used for unique query id and needs to 
+      retrieve the original defline information, you can use *.def file 
+      produced while indexing the input file. 
+
+
+
+* Tutorial - Test mr-mpi-blast
+
+   NOTE: This tutorial is prepared and tested on XSEDE Ranger cluster.
+   
+   
+1. Set Ranger module list
+
+   bash $MRMPIBLAST_PREFIX/tutorial/ranger_setup_env.sh
+   
+
+2. Build the NCBI C++ Toolkit with mr-mpi-blast
+
+   Please refer $MRMPIBLAST_PREFIX/README
+
+
+3. Copy tutorial files to $MRMPIBLAST_PREFIX/tutorial
+
+   sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/install_tutorial.sh
+   
+   
+4. Prepare test data and run test
+
+   (1) cd $MRMPIBLAST_PREFIX/tutorial
+
+   (2) Generate queries
+       
+       sh 1.generate_query.sh
+   
+       to
+        - Download NCBI RefSeq viral FASTA sequence files
+        - Generate queries (1000bp length) by slitting the FASTA file 
+        - Generate index files with the query file for running mr-mpi-blast
+        
+   
+   (3) Make NCBI database
+      
+       sh 2.make_blastdb.sh
+   
+       to
+        - Download NCBI RefSeq microbial FASTA sequence files
+        - Make BLAST database "using makeblastdb"
+        
+   (4) Run mr-mpi-blast
+       
+       NOTE: Please set your SGE account to $SGE_ACCOUNT 
+       
+       sh 3.run_mr-mpi-blast.sh
+       
+       to 
+        - Qsub mr-mpi-blast for BLAST search of the quries against the 
+        generated BLAST db
+        
+   (5) Convert output hit files from mr-mpi-blast
+   
+       sh 4.convert_hits.sh
+        
+       to 
+         - Convert *.bin files generated in $MRMPIBLAST_PREFIX/tutorial/blastdb 
+         into CSV file format
+         
+       NOTE: In this tutorial example, the first column in hits.csv means the 
+       unique query id in viral_all_query.fa.def in which the original deflines 
+       can be retrieved.
+

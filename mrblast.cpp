@@ -194,22 +194,6 @@ int CMrMpiBlastApplication::Run(void)
     }
     g_nWorkItems = g_vecWorkItem.size();
     
-    ///
-    /// Save the list of workitem just in case
-    ///
-    if (g_MPI_worldRank == 0) {
-        string workItemFName = g_outFilePrefix + "-workitems.txt";
-        ofstream workItemFile(workItemFName.c_str(), ios::out);
-        
-        for (size_t w = 0; w < g_nWorkItems; ++w)
-            workItemFile << g_vecWorkItem[w].blockBegin << ","
-                         << g_vecWorkItem[w].blockEnd << ","
-                         << g_vecWorkItem[w].dbNo << ","
-                         << g_vecWorkItem[w].qIdStart                          
-                         << endl;
-        workItemFile.close();
-    }        
-    
     if (g_MPI_worldRank == 0) {
         cout << "Input query file = " << g_queryFileName << endl;
         cout << "Input query index file = " << g_indexFileName << endl;
@@ -526,13 +510,13 @@ void mr_map_run_blast(int itask,
     struct timeval dbLoadingStart_s_Time;
     struct rusage  ru_dbLoading;
      
-    if (rank == 1 && g_optDumpEnabled == 1) {
-        g_optDumpEnabled = 0;
-        string strategyFName = g_outFilePrefix + "-search_strategy.txt";
-        ofstream strategyOutFile(strategyFName.c_str(), ios::out);
-        g_optsHndl->GetOptions().DebugDumpText(strategyOutFile, "optsHndl", 1);
-        strategyOutFile.close();
-    }
+    //if (rank == 1 && g_optDumpEnabled == 1) {
+        //g_optDumpEnabled = 0;
+        //string strategyFName = g_outFilePrefix + "-search_strategy.txt";
+        //ofstream strategyOutFile(strategyFName.c_str(), ios::out);
+        //g_optsHndl->GetOptions().DebugDumpText(strategyOutFile, "optsHndl", 1);
+        //strategyOutFile.close();
+    //}
     
     string dbFileName = g_vecDbFile[dbno];
      

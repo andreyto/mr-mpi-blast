@@ -1,0 +1,21 @@
+* Utils for converting the binary output files from mr-mpi-blast to 
+
+   CSV, ; comma-separaged values   (load_csv.py)
+   SQL, ; sqlite3                  (load_sql.py)
+   HD5  ; HD5 database             (load_hd5.py)
+
+   file formats.
+   
+   USAGE: python load_*.py topDir out_file_name 0/1_for_saving_csv
+   Examples:
+      python load_hd5.py ./hits output 1
+      python load_csv.py ./hits output 
+      python load_sql.py ./hits output 
+
+* Util for convert CSV file into HD5 database
+
+   csv2hd5.py
+   
+   USAGE: python csv2hd5.py input.csv output.hd5
+
+   
