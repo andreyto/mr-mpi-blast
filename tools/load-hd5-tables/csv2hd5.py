@@ -1,4 +1,12 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+# See COPYING file distributed along with the MGTAXA package for the
+# copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 #!/usr/bin/env python
+
 import sys
 import os
 import struct
@@ -12,7 +20,6 @@ if __name__ == '__main__':
     if len(sys.argv) != 3:
         print "python csv2hd5.py infile outfile"
         sys.exit(1)    
-    
     inFileName = sys.argv[1]    
     outFilename = sys.argv[2]   
     
@@ -93,7 +100,6 @@ if __name__ == '__main__':
             numTotalHits += 1
             if numTotalHits % 10000 == 0:
                 print numTotalHits
-    
     table.flush()   # flush recordData in the table
     h5file.flush()  # flush all pending recordData
     print "Total number of hits = ", numTotalHits
@@ -104,7 +110,6 @@ if __name__ == '__main__':
     
     h5file.close()
     infile.close()
-
     
 """
     ## HDF5 file info

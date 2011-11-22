@@ -1,3 +1,10 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+# See COPYING file distributed along with the MGTAXA package for the
+# copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 #!/usr/bin/env python
 
 import sys
@@ -13,7 +20,6 @@ if __name__ == '__main__':
     if len(sys.argv) != 4:
         print "python load_hd5.py topDir out_file_name 0/1_for_saving_csv"
         sys.exit(1)    
-    
     topDir   = sys.argv[1]    
     filename = sys.argv[2]
     bMakeCSV = int(sys.argv[3])
@@ -49,7 +55,6 @@ if __name__ == '__main__':
         sEnd        = t.UInt32Col()     # I
         eValue      = t.FloatCol()      # d: double
         bitScore    = t.FloatCol()      # d: double
- 
             
     ###
     ### Load recordData and insert into db table
@@ -85,7 +90,6 @@ if __name__ == '__main__':
     ### Read bin files and append to tables
     ###
     structSize = struct.calcsize('L80sdIIIIIIIdd')
-
     for i in range(numHitFiles):
         subFileName = os.path.join(subDir,vecHitFileName[i])
         hitFile = open(subFileName, "rb")
@@ -95,8 +99,7 @@ if __name__ == '__main__':
             try:
                 s = struct.unpack('L80sdIIIIIIIdd', recordData)
                 totalHits += 1
-                numHits += 1
-                   
+                numHits += 1                   
                 BlHits['qId']         = s[0]
                 BlHits['sId']         = filter(lambda x: x in string.printable, str(s[1]))
                 BlHits['dIdent']      = s[2]
@@ -128,7 +131,6 @@ if __name__ == '__main__':
                 recordData = hitFile.read(structSize)
             except:
                 break
-        
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
         
@@ -137,7 +139,6 @@ if __name__ == '__main__':
     ###
     table.flush()   # flush recordData in the table
     h5file.flush()  # flush all pending recordData
-        
     print "Total number of hits = ",totalHits
     if bMakeCSV:
         csvFile.close() 

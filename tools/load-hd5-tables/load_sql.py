@@ -1,3 +1,10 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+# See COPYING file distributed along with the MGTAXA package for the
+# copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 #!/usr/bin/env python
 
 import sys
@@ -12,7 +19,6 @@ if __name__ == '__main__':
     if len(sys.argv) != 4:
         print "python load_hd5.py topDir out_file_name 0/1_for_saving_csv" 
         sys.exit(1)    
-    
     topDir   = sys.argv[1]    
     outFileName = sys.argv[2]
     bMakeCSV = int(sys.argv[3])
@@ -38,7 +44,6 @@ if __name__ == '__main__':
     if bMakeCSV:
         csvFileName = outFileName + ".csv"
         csvFile = open(csvFileName, 'w')
-        
     totalHits = 0
     
     ###
@@ -80,7 +85,6 @@ if __name__ == '__main__':
     ### Read bin files and append to tables
     ###
     structSize = struct.calcsize('L80sdIIIIIIIdd')
-
     for i in range(numHitFiles):
         subFileName = os.path.join(subDir,vecHitFileName[i])
         hitFile = open(subFileName, "rb")
@@ -91,7 +95,6 @@ if __name__ == '__main__':
                 s = struct.unpack('L80sdIIIIIIIdd', recordData)
                 totalHits += 1
                 numHits += 1
-                
                 cmd = "insert into hits values (" \
                     + str(s[0]) + "," \
                     + filter(lambda x: x in string.printable, str(s[1])) + "," \
@@ -105,7 +108,6 @@ if __name__ == '__main__':
                     + str(s[9]) + "," \
                     + str(s[10]) + "," \
                     + str(s[11]).strip() + ")" 
-                    
                 curs.execute(cmd)
                     
                 if bMakeCSV:
@@ -122,20 +124,16 @@ if __name__ == '__main__':
                                 + str(s[10]) + "," \
                                 + str(s[11]).strip() + "\n"
                     csvFile.write(csvString)
-                
                 recordData = hitFile.read(structSize)
             except:
                 break
-        
         conn.commit()  
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
-    
     print "Total number of hits = ",totalHits
     
     if bMakeCSV:
         csvFile.close() 
-
     curs.close()  
     conn.close()
     

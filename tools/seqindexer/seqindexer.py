@@ -1,3 +1,10 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+# See COPYING file distributed along with the MGTAXA package for the
+# copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 #!/usr/bin/env python
 
 from cStringIO import StringIO
@@ -126,28 +133,22 @@ seqUID = 0
 
 if __name__ == '__main__':
      
- 
     usage = "usage:  python seqindexer.py -i inFile -o outIndexFile -d outDeflineFile -u uidopt -s startNum -b full_or_part_defline"
-
     parser = optparse.OptionParser(usage=usage)
-
     parser.add_option("-i", "--input", dest="infilename", 
                   action="store", type="string", help="input fasta file")
     parser.add_option("-o", "--output", dest="outfilename",  
                   action="store", type="string", help="output index file")
     parser.add_option("-d", "--deflinefilename", dest="deflinefilename",  
-                  action="store", type="string", help="defline file name")
-                  
+                  action="store", type="string", help="defline file name")                  
     parser.add_option("-u", "--uidopt", dest="uidopt",  
                   action="store", type="int", help="uid choice: 0=serial number, 1=gi")
     parser.add_option("-s", "--startno", dest="startno", 
                 action="store", type="int", help="uid start number when -u 0")    
     parser.add_option("-b", "--deflineopt", dest="deflineopt",  
                   action="store", type="int", help="defline saving option: 0=part, 1=full")
-                  
     (options, args) = parser.parse_args()
  
-
     if options.infilename:
         inFileName = options.infilename
     if options.outfilename:
@@ -160,10 +161,10 @@ if __name__ == '__main__':
             print "UID will be set as serial number starting from ", options.startno
         else:
             print "UID will be set as GI"
+
     if options.deflinefilename and options.deflineopt is not None:
         defFileName = options.deflinefilename
         deflineOption = options.deflineopt
-      
     numSeq = 0
     currLoc = 0    
     outFile = open(outFileName, "w")
@@ -183,21 +184,20 @@ if __name__ == '__main__':
             currLoc += len(line)
         numSeq += 1
         seqUID += 1
-        
         uid = 0
+        
         if uidOption == 1:
             uid = defline.rstrip().split("|")[1]
         else:
             uid = seqUID
         outFile.write(str(loc)+"\t"+str(seqLen)+"\t"+str(uid)+"\n")
-        
         deflines = ''
+        
         if deflineOption == 0:
             defline2 = defline.rstrip().split(" ")[0]
         else:
             defline2 = defline.rstrip()        
         defFile.write(str(uid)+"\t"+defline2+"\n")
-        
     outFile.close()
     defFile.close()
     print "Total number of sequences = ", numSeq

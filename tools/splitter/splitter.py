@@ -1,9 +1,16 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+# See COPYING file distributed along with the MGTAXA package for the
+# copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 #!/usr/bin/env python
 
 import sys
 from cStringIO import StringIO
 import numpy as npy
- 
+
 class FastaReader(object):
     """Class that supports an input iterator protocol for a FASTA file.
     Example that prints an exact copy of the input file:
@@ -124,60 +131,43 @@ if __name__ == '__main__':
         print "       - overlapBP: length (bp) of overlap\n"
         print "       - outfile: output file\n"
         sys.exit(0)
-
-    seqFileName = sys.argv[1]       ## SEQ FILE NAME
+    seqFileName = sys.argv[1]      ## SEQ FILE NAME
     queryLen = int(sys.argv[2])    ## CHUNK SIZE
-    overlapBP = int(sys.argv[3])   ## OVERLAP BPorigGI
+    overlapBP = int(sys.argv[3])   ## OVERLAP SIZE in BP
     outFileName = sys.argv[4]
-    
-    
     seqFile = open(seqFileName, "r")
     outFile = open(outFileName, "w")
-
     listcount = 0
-    cid = 0         ## CHUNK UNIQUE ID
+    cid = 0         ## query UNIQUE ID
     sid = 0         ## seq id
 
     for rec in FastaReader(open(seqFileName, 'r')).records():
-
         sid += 1  
         start = 0
         defLinePart = rec.header().strip().split()[0][1:] 
         currSeq = rec.sequence().strip()
         seqLen = len(currSeq)
             
-        ##
-        ## 
-        ##
         while True:
-            
             end = start + queryLen
             cid += 1
-            #print "cid=%d, start=%d, end=%d, cnt=%d, seqLen=%d, sid=%d" % (cid, start, end, cnt, seqLen, sid)
             
             if start == 0 and end < seqLen:
                 newHeader = ">"+defLinePart+"_"+str(cid)+"_"+"0"+"_"+str(start)+"_"+str(end)+"_"+str(start)+"_"+str(end)
-                #print newHeader
                 outFile.write(newHeader+"\n")
                 outFile.write(currSeq[start:end].upper()+"\n")
-                
             elif start == 0 and end >= seqLen:
                 newHeader =  ">"+defLinePart+"_"+str(cid)+"_"+"1"+"_"+str(start)+"_"+str(seqLen)+"_"+str(start)+"_"+str(seqLen)
-                #print newHeader
                 outFile.write(newHeader+"\n")
                 outFile.write(currSeq[start:seqLen].upper()+"\n")
                 break
-
             elif start > 0 and end < seqLen:
                 newHeader = ">"+defLinePart+"_"+str(cid)+"_"+"2"+"_"+str(start)+"_"+str(end)+"_"+str(start)+"_"+str(end)
-                #print newHeader
                 outFile.write(newHeader+"\n")
                 upper = currSeq[start:end].upper()
                 outFile.write(upper+"\n")
-
             elif start > 0 and end >= seqLen:
                 newHeader =  ">"+defLinePart+"_"+str(cid)+"_"+"3"+"_"+str(start)+"_"+str(seqLen)+"_"+str(start)+"_"+str(seqLen)
-                #print newHeader
                 outFile.write(newHeader+"\n")
                 if (seqLen - start > overlapBP):
                     upper = currSeq[start:seqLen].upper()
@@ -189,10 +179,7 @@ if __name__ == '__main__':
             else:
                 print "What?", seqLen, start, end, cur_record.id
                 sys.exit(0)
-            
             start = end - overlapBP ################ CAUSTION!
-            
-        
     outFile.close()
     seqFile.close()
     print "Total number of input sequences = ", sid
