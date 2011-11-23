@@ -2,15 +2,14 @@
 
 SHELL = /bin/sh
 
-BOOST_INCLUDE = -I/home/ssul/work/packages2/include
+BOOST_INCLUDE = $(TACC_BOOST_INC)
 
 # ---------------------------------------------------------------------
 # compiler/archive settings
 # specify flags and libraries needed for your compiler and MPI installation
 
 CC =		mpic++
-#CCFLAGS =	-O2
-CCFLAGS =    -O2 $(BOOST_INCLUDE) 
+CCFLAGS =    -O2 -I$(BOOST_INCLUDE) 
 DEPFLAGS =	-M
 ARCHIVE =	ar
 ARFLAGS =	-rc
