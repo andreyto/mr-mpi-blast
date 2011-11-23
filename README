@@ -7,14 +7,15 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 
 
-1. Set MRMPIBLAST_PREFIX (install target directory) and WORKING_DIR (current 
+1. Set MRMPIBLAST_PREFIX (installation target directory) and WORKING_DIR (current 
    working directory to download and build the C++ Toolkit and mr-mpi-blast)
 
-   $ export MRMPIBLAST_PREFIX=/work/01471/ssul/work/test/mrblast
-   $ export WORKING_DIR=`pwd`
+   $ export MRMPIBLAST_PREFIX=<target_directory_path>
+   $ export WORKING_DIR=<working_directory_path>
 
 2. Download the latest version of NCBI C++ Toolkit 
 
+   $ cd $WORKING_DIR
    $ wget ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools++/ARCHIVE/7_0_0/ncbi_cxx--7_0_0.tar.gz 
    $ tar zxvf ncbi_cxx--7_0_0.tar.gz
    
@@ -68,14 +69,14 @@ By Seung-Jin Sul (ssul@jcvi.org)
    $ cd $WORKING_DIR/ncbi_cxx--7_0_0 
    $ ./configure --with-64 --prefix=$MRMPIBLAST_PREFIX --without-dll --without-gbench --without-gui --without-dbapi --without-connext --without-xpm --without-sss --without-gnutls --without-openssl --with-mt --without-debug --with-optimization --with-static --with-boost=$TACC_BOOST_DIR --with-bin-release 
    $ make && make install 
-   $ cd $WORKING_DIR
 
 
 7. Install tutorial
+
+   Copy the tutorial files to $MRMPIBLAST_PREFIX/tutorial
    
    $ sh $WORKING_DIR/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/tutorial/install_tutorial.sh
    
-   Tutorial files will be copied to $MRMPIBLAST_PREFIX/tutorial.
 
 8. Remove unnecessary files
 
