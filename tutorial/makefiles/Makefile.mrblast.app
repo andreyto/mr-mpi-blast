@@ -18,7 +18,7 @@ MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 ### env setting ################################################################
 MRMPI_HOME=$(WORKING_DIR)/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi
 BOOST_HOME=$(TACC_BOOST_DIR)
-MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicxx
+MRMPI_USRLIB=-L$(MRMPI_HOME) -lmrmpi_mpicxx
 
 
 ### Boost Lib #################################################################

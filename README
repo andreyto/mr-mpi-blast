@@ -54,7 +54,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 5. Configure and build MR-MPI MapReduce library 
 
    * Makefile.mpicxx
-     Check BOOST_INCLUDE in 
+     Check BOOST_INCLUDE in
      $WORKING_DIR/ncbi_cxx--<version>/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicxx (for Open MPI)
      or
      $WORKING_DIR/ncbi_cxx--<version>/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicc (for MVAPICH)

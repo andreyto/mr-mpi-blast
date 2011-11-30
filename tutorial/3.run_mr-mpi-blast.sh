@@ -1,11 +1,11 @@
 #!/bin/bash
 
-if [ $MRMPIBLAST_PREFIX == "" ]; then
+if [ -z "$MRMPIBLAST_PREFIX" ]; then
     echo "The environment variable, MRMPIBLAST_PREFIX is not set."
     exit
 fi
 
-if [ $SGE_ACCOUNT == "" ]; then
+if [ -z "$SGE_ACCOUNT" ]; then
     echo "Please set SGE_ACCOUNT environment variable."
     exit
 fi
@@ -19,7 +19,6 @@ cp $MRMPIBLAST_PREFIX/tutorial/tools/mrblast_job.sh . &&
 echo -e "\n\n### qsub mr-mpi-blast job ###"
 qsub mrblast_job.sh &&
 
-echo -e "\n### Done!"
 
 
 # EOF

@@ -1,11 +1,11 @@
 #!/bin/bash 
 
-if [ $MRMPIBLAST_PREFIX == "" ]; then
+if [ -z "$MRMPIBLAST_PREFIX" ]; then
     echo "The environment variable, MRMPIBLAST_PREFIX is not set."
     exit
 fi
 
-if [ $WORKING_DIR == "" ]; then
+if [ -z "$WORKING_DIR" ]; then
     echo "The environment variable, WORKING_DIR is not set."
     exit
 fi
