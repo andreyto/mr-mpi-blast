@@ -9,7 +9,7 @@ mkdir -p hits &&
 mv *.bin ./hits &&
 #python ../tools/load_hd5.py ./hits/ hits 1 &&
 #python ../tools/load_sql.py ./hits/ hits 1 &&
-python ../tools/load_csv.py ./hits/ hits &&
+load_csv.py ./hits/ hits &&
 
 echo -e "\n### Done!"
 

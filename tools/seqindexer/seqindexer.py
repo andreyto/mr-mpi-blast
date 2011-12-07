@@ -1,11 +1,11 @@
+#!/usr/bin/env python
+
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 #
 # See COPYING file distributed along with the MGTAXA package for the
 # copyright and license terms.
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-
-#!/usr/bin/env python
 
 from cStringIO import StringIO
 import sys
@@ -133,10 +133,10 @@ seqUID = 0
 
 if __name__ == '__main__':
      
-    usage = "usage:  python seqindexer.py -i inFile -o outIndexFile -d outDeflineFile -u uidopt -s startNum -b full_or_part_defline"
+    usage = "python seqindexer.py -i inFile -o outIndexFile -d outDeflineFile -u uidopt -s startNum -b full_or_part_defline"
     parser = optparse.OptionParser(usage=usage)
     parser.add_option("-i", "--input", dest="infilename", 
-                  action="store", type="string", help="input fasta file")
+                  action="store", type="string", help="input fasta file", default=False)
     parser.add_option("-o", "--output", dest="outfilename",  
                   action="store", type="string", help="output index file")
     parser.add_option("-d", "--deflinefilename", dest="deflinefilename",  
@@ -151,8 +151,14 @@ if __name__ == '__main__':
  
     if options.infilename:
         inFileName = options.infilename
+    else:
+        parser.error("Please set the input file name.")
+        
     if options.outfilename:
         outFileName = options.outfilename
+    else:
+        parser.error("Please set the output index file name.")
+        
     if options.uidopt is not None:
         uidOption = options.uidopt        
         if uidOption == 0:
@@ -165,6 +171,9 @@ if __name__ == '__main__':
     if options.deflinefilename and options.deflineopt is not None:
         defFileName = options.deflinefilename
         deflineOption = options.deflineopt
+    else:
+        parser.error("Please set the output def file name.")
+        
     numSeq = 0
     currLoc = 0    
     outFile = open(outFileName, "w")
@@ -198,6 +207,7 @@ if __name__ == '__main__':
         else:
             defline2 = defline.rstrip()        
         defFile.write(str(uid)+"\t"+defline2+"\n")
+        
     outFile.close()
     defFile.close()
     print "Total number of sequences = ", numSeq

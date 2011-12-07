@@ -6,6 +6,8 @@ Updated: 12/7/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
+
+
 This examples show how to run mr-mpi-blast using two small query and database
 files. You should run the scripts in order of the number in the file name. Please
 refer to 'tutorial' for larger running examples.
@@ -41,16 +43,15 @@ refer to 'tutorial' for larger running examples.
     - Run mr-mpi-blast using mpirun on four processing units.
     - This will do BLAST search using '30_real_seqs.fa' against 'test.fa' BLAST db.
     - The evalue used is 10.
-    - The hit results will be saved in *.bin files and converted into a CSV file
-      by 'load_csv.py' Python script.   
-    
+    - The hit results will be saved in *.bin files and converted into CSV, 
+      Sqlite, and Hd5 database file.
+          
 
 5.run_mrblast_100_simul.sh
 
     - Run mr-mpi-blast using mpirun on four processing units.
-    - This will do BLAST search using '30_real_seqs.fa' against 'test.fa' BLAST db.
+    - This will do BLAST search using '100_simul_seqs.fa' against 'test.fa' BLAST db.
     - The evalue used is 10.
-    - The hit results will be saved in *.bin files and converted into a CSV file
-      by 'load_csv.py' Python script. 
-
+    - The hit results will be saved in *.bin files and converted into CSV, 
+      Sqlite, and Hd5 database file.
 

@@ -1,6 +1,7 @@
 User Guide for mr-mpi-blast (version 11.0.1)
 
 
+
 Updated: 12/7/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
@@ -17,17 +18,21 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The NCBI C++ Toolkit version 7.0.0 is tested for the current version of
       mr-mpi-blast. If you have problem with the toolkit version > 7.0.0, 
       please download the version 7.0.0.
-    - Utilities for preparing data and converting output need Python installed.
+    - Utilities for preparing data and converting output need Python installed. 
+      To use HD5 database format, Pytable Pro version should be installed 
+      (http://www.pytables.org/moin/PyTablesPro)
     
 
 * mr-mpi-blast - MapReduce-MPI BLAST 
 
-    - A parallel NCBI BLAST implementation using MR-MPI MapReduce library
+    - This program is a parallel NCBI BLAST implementation using MapReduce 
+      framework. 
+      
     - Usage:
     
-        ex) mpirun ./mrblast -db -
-        ex) mpirun ./mrblast -db - -evalue 1e-4
-        ex) mpirun ./mrblast -db - -dbsize 12494903041 -evalue 1e-4  
+        ex) mpirun mrblast -db -
+        ex) mpirun mrblast -db - -evalue 1e-4
+        ex) mpirun mrblast -db - -dbsize 12494903041 -evalue 1e-4  
             -num_threads 1 -window_size 0 -word_size 11 -searchsp 0 
             -num_descriptions 500 -num_alignments  10000 -penalty -5 -reward 4 
             -lcase_masking -dust yes -soft_masking true 
@@ -77,14 +82,14 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 	  An example run of “seqindexer.py” and option descriptions are following.	
 
-      ex) python ./tools/seqindexer.py -i ./query/800seqs.query 
-          -o ./query/800seqs.query. idx -d ./query/800seqs.query.def -u 1 -b 1 
+      ex) $ python seqindexer.py -i 30_real_seqs.fa -o 30_real_seqs.fa.idx -d 30_real_seqs.fa.def -u 1 -b 0
+          $ python seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx -d 100_simul_seqs.fa.def -u 0 -s 0 -b 1
 
         -i: input query file
         -o: output index file
         -d: output defline file; to store unique query ids and original deflines 
         -u: unique id option; 0=serial number, 1=gi
-        -s: if serial number is selected, to specify the start number
+        -s: if serial number option is selected, to specify the start number
         -b: defline saving option; 0=part, 1=full defline
 
 	- Subject database list file (dblist.txt)
@@ -165,21 +170,25 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
       The resulting *.bin files are easily converted into HD5, SQLite, 
       and/or CSV files using the utilities provided.  
-      For example, if *.bin files are stored in “./hits” directory, 
+      For example, if '*.bin' files are stored in './hits' directory, 
       the below commands collects and saves all hits from *.bin files into 
-      a output file.
+      a output file(s).
 
       To use HD5 database format, Pytable Pro version should be installed 
-      (http://www.pytables.org/moin/PyTablesPro )
+      (http://www.pytables.org/moin/PyTablesPro)
    
-        ex) $ python ../tools/load_hd5.py ./hits/ hits 1      # generates both hd5 and csv files
-        ex) $ python ../tools/load_sql.py ./hits/ hits 0      # generates only sqlite file
-        ex) $ python ../tools/load_csv.py ./hits/ hits        # generates only csv file
+        ex) $ python load_sql.py -b ./hits -o hits       # generates only sqlite file
+        ex) $ python load_sql.py -b ./hits -o hits -c 1  # generates both sqlite and csv files
+        ex) $ python load_hd5.py -b ./hits -o hits       # generates only hd5 file
+        ex) $ python load_hd5.py -b ./hits -o hits -c 1  # generates both hd5 and csv files
+        ex) $ python load_csv.py -b ./hits -o hits       # generate 'hits.csv' CSV file  
     
-    - When serial numbers are used for unique query id and needs to 
-      retrieve the original defline information, you can use *.def file 
-      produced while indexing the input file. 
-
+      If you want to add the original defline after the 'qid' field, use '-d' 
+      and '-i' options.
+      
+        ex) $ python load_sql.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
+        ex) $ python load_csv.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
+    
 
 * Tutorial
 

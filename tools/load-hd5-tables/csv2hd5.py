@@ -1,11 +1,11 @@
+#!/usr/bin/env python
+
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 #
 # See COPYING file distributed along with the MGTAXA package for the
 # copyright and license terms.
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-
-#!/usr/bin/env python
 
 import sys
 import os
@@ -120,40 +120,15 @@ if __name__ == '__main__':
     table = h5file.root.blhits.blhitstab
     gi = [ x['gi'] for x in table.iterrows() ]
     sid = [ x['sId'] for x in table.iterrows() ]
-    #names = [ x['name'] for x in table if x['TDCcount'] > 3 and 20 <= x['pressure'] < 50 ]
-    #names = [ x['name'] for x in table.where('(TDCcount > 3) & (20 <= pressure) & (pressure < 50)') ]
-
-    #print gi[0], sid[0]
-    # Reading rows
-    #for r in table.iterrows():
-        #print r['gi'], r['eValue'], r['dIdent'], r['dCover'] 
+    print gi[0], sid[0]
+    
+    ## Reading rows
+    for r in table.iterrows():
+        print r['gi'], r['eValue'], r['dIdent'], r['dCover'] 
         #print [r[i] for i in range(0,15)]
         
     h5file.close()
- 
 """
 
-"""
-    ## Create column object and read
-    gcolumns = h5file.createGroup(root, "columns", "")   
-    h5file.createArray(gcolumns, 'gi', array(gi), "gi array")
-    h5file.createArray(gcolumns, 'sid', array(sid), "sid array")
-    #print h5file    
-    gi2 = h5file.root.columns.gi.read()
-    #print gi2
-    
-    ## Reading rows
-    #for r in table.iterrows():
-        #print r['gi']
-    
-    ## Access recordData
-    print table.cols.gi[0]
-    
-    ## Create index
-    table.cols.gi.createIndex()
-    table.cols.sId.createIndex()
-    print h5file 
-    
-"""
     
 ### EOF

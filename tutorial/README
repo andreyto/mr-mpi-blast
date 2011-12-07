@@ -1,4 +1,4 @@
-Tutorial - how to run mr-mpi-blast
+Tutorial - How to run mr-mpi-blast
 
 
 
@@ -6,18 +6,20 @@ Updated: 12/7/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
+
+
 * NOTE
     - This tutorial is prepared and tested on XSEDE Ranger cluster.
-    - The following assumes that you are working in '$MRMPIBLAST_PREFIX/tutorial'
-      directory or in your own copy of the tutorial directory.
+    - The following assumes that you are working in your own copy of the 
+      tutorial directory.
       
-      ex) 
-            $ mkdir $HOME/mr-mpi-blast-tutorial
-            $ cp -R $MRMPIBLAST_PREFIX/tutorial/* $HOME/mr-mpi-blast-tutorial
-            $ cd $HOME/mr-mpi-blast-tutorial
+      ex) $ mkdir $HOME/mr-mpi-blast-tutorial
+          $ cp -R $MRMPIBLAST_PREFIX/tutorial/* $HOME/mr-mpi-blast-tutorial
+          $ cd $HOME/mr-mpi-blast-tutorial
       
     - The '$MRMPIBLAST_PREFIX/bin' should be added to the executable search path.
-    
+      for running 'mrblast' and 'makeblastdb' executables and other Python scripts.
+      
 
 1. Set Ranger module list
 
@@ -31,8 +33,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
        $ sh ./1.generate_query.sh
    
         - Download NCBI RefSeq viral FASTA sequence files
-        - Generate queries (1000bp length) by slitting the viral FASTA file 
-        - Generate index files with the query file for running mr-mpi-blast
+        - Generate queries (1000bp length) by splitting the viral sequences 
+        - Generate index file and defline file from the input query file 
+          for running mr-mpi-blast
     
 
     (2) Make NCBI database

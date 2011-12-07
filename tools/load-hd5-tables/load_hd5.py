@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 #
 # See COPYING file distributed along with the MGTAXA package for the
@@ -5,26 +7,31 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-#!/usr/bin/env python
-
 import sys
 import os
 import struct
 from numpy import *
 import tables as t
-print 'tables.__version__',t.__version__
+#print 'tables.__version__',t.__version__
 import string
+import optparse
 
 if __name__ == '__main__':
 
-    if len(sys.argv) != 4:
-        print "python load_hd5.py topDir out_file_name 0/1_for_saving_csv"
-        sys.exit(1)    
-        
-    topDir   = sys.argv[1]    
-    filename = sys.argv[2]
-    bMakeCSV = int(sys.argv[3])
-
+    usage = "python load_hd5.py -b binDir -o outSqlFile"
+    parser = optparse.OptionParser(usage=usage)
+    parser.add_option("-b", "--bin-dir", dest="directory", 
+                  action="store", type="string", help="path to *.bin files")
+    parser.add_option("-o", "--output", dest="outHd5FileName",  
+                  action="store", type="string", help="output HD5 database file")
+    (options, args) = parser.parse_args()
+    
+    if options.directory and options.outHd5FileName:
+        topDir = options.directory
+        outHd5FileName = options.outHd5FileName
+    else:
+        parser.error("Please set the path to *.bin files and output file name.")
+                    
     ###
     ### Define a user record to characterize some kind of particles
     ###
@@ -62,7 +69,7 @@ if __name__ == '__main__':
     ###
     
     ## Open a file in "w"rite mode
-    h5file = t.openFile(filename+".hd5", mode = "w", title = "BLAST hits")
+    h5file = t.openFile(outHd5FileName+".hd5", mode = "w", title = "BLAST hits")
     ## Create a new group under "/" (root)
     root = h5file.root
     group = h5file.createGroup(root, "blhits", "blhits")
@@ -71,12 +78,8 @@ if __name__ == '__main__':
     ## Fill the table with 10 particles
     BlHits = table.row
 
-    if bMakeCSV:
-        csvFileName = filename + ".csv"
-        csvFile = open(csvFileName, 'w')
-    
-    totalHits = 0
-    
+    print "Output HD5 database file: ", outHd5FileName+".hd5"
+        
     ###
     ### load hit file names from hitfilelist
     ###
@@ -90,6 +93,7 @@ if __name__ == '__main__':
     ###
     ### Read bin files and append to tables
     ###
+    totalHits = 0
     structSize = struct.calcsize('L80sdIIIIIIIdd')
     for i in range(numHitFiles):
         subFileName = os.path.join(subDir,vecHitFileName[i])
@@ -114,24 +118,12 @@ if __name__ == '__main__':
                 BlHits['eValue']      = s[10]
                 BlHits['bitScore']    = s[11]
                 BlHits.append()
-                
-                if bMakeCSV:
-                    csvString = str(s[0]) + "," \
-                                + filter(lambda x: x in string.printable, str(s[1])) + "," \
-                                + str(s[2]) + "," \
-                                + str(s[3]) + "," \
-                                + str(s[4]) + "," \
-                                + str(s[5]) + "," \
-                                + str(s[6]) + "," \
-                                + str(s[7]) + "," \
-                                + str(s[8]) + "," \
-                                + str(s[9]) + "," \
-                                + str(s[10]) + "," \
-                                + str(s[11]).strip() + "\n"
-                    csvFile.write(csvString)
                 recordData = hitFile.read(structSize)
-            except:
+            except struct.error:
                 break
+            except:
+                print "Unexpected error:", sys.exc_info()[0]
+                raise
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
         
@@ -141,8 +133,6 @@ if __name__ == '__main__':
     table.flush()   # flush recordData in the table
     h5file.flush()  # flush all pending recordData
     print "Total number of hits = ",totalHits
-    if bMakeCSV:
-        csvFile.close() 
     
     ## Create index
     #table.cols.sId.createIndex()
@@ -156,40 +146,17 @@ if __name__ == '__main__':
     
     ## Access columns
     table = h5file.root.blhits.blhitstab
-    gi = [ x['qId'] for x in table.iterrows() ]
+    gi = [ x['gi'] for x in table.iterrows() ]
     sid = [ x['sId'] for x in table.iterrows() ]
-    #names = [ x['name'] for x in table if x['TDCcount'] > 3 and 20 <= x['pressure'] < 50 ]
-    #names = [ x['name'] for x in table.where('(TDCcount > 3) & (20 <= pressure) & (pressure < 50)') ]
-
     print gi[0], sid[0]
-    # Reading rows
-    #for r in table.iterrows():
-        #print r['qId']
+    
+    ## Reading rows
+    for r in table.iterrows():
+        print r['gi'], r['eValue'], r['dIdent'], r['dCover'] 
+        #print [r[i] for i in range(0,15)]
         
     h5file.close()
 """
 
-"""
-    ## Create column object and read
-    gcolumns = h5file.createGroup(root, "columns", "")   
-    h5file.createArray(gcolumns, 'gi', array(gi), "gi array")
-    h5file.createArray(gcolumns, 'sid', array(sid), "sid array")
-    #print h5file    
-    gi2 = h5file.root.columns.gi.read()
-    #print gi2
-    
-    ## Reading rows
-    #for r in table.iterrows():
-        #print r['gi']
-    
-    ## Access recordData
-    print table.cols.gi[0]
-    
-    ## Create index
-    table.cols.gi.createIndex()
-    table.cols.sId.createIndex()
-    print h5file 
-    
-"""
-    
+
 ### EOF

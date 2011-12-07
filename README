@@ -1,4 +1,5 @@
-HOWTO build mr-mpi-blast
+README - How to build mr-mpi-blast
+
 
 
 Updated: 12/7/2011
@@ -6,10 +7,28 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 
 
+* Requirements
+
+    - The implementation of mr-mpi-blast uses the unmodified high-level methods 
+      of the NCBI C++ Toolkit. 
+    - The mr-mpi-blast source tree should be inside of the NCBI C++ Toolkit 
+      source tree for build.
+    - The NCBI C++ Toolkit version 7.0.0 is tested for the current version of
+      mr-mpi-blast. If you have problem with the toolkit version > 7.0.0, 
+      please download the version 7.0.0.
+    - The 'MapReduce-MPI Library' from Sandia National Laboratories is used for
+      MapReduce framework. The version 20Jun2011 is tested for the current 
+      mr-mpi-blast and is included in 'mrmpi' subdirectory.
+    - To build mr-mpi-blast, the Boost library and a MPI stack should be 
+      installed. (The current version has been being tested with the mvapich  
+      MPI stack on XSEDE Ranger).        
+    
+     
 
 1. Set target directory
 
-    You should specify an installation target prefix using 'MRMPIBLAST_PREFIX'.
+    The following assumes that you specify an installation target directory  
+    using 'MRMPIBLAST_PREFIX'.
       
     ex) $ mkdir $HOME/mr-mpi-blast
         $ export MRMPIBLAST_PREFIX=$HOME/mr-mpi-blast
@@ -18,24 +37,22 @@ By Seung-Jin Sul (ssul@jcvi.org)
 2. Download the NCBI C++ Toolkit
 
     The following assumes that you are working in a directory, for 
-    instance, '$HOME/mr-mpi-blast-src', to download and build.
+    instance, '$HOME/mr-mpi-blast-src' for downloading and extracting the toolkit.
     
     ex) $ mkdir $HOME/mr-mpi-blast-src
         $ cd $HOME/mr-mpi-blast-src
 
-    To build the program mr-mpi-blast, the NCBI C++ Toolkit should be installed.
+    Download and extract the latest NCBI C++ Toolkit.
     
     $ wget ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools++/ARCHIVE/<version>/
       ncbi_cxx--<version>.tar.gz 
     $ tar zxvf ncbi_cxx--<version>.tar.gz
-    
-    The NCBI C++ Toolkit version 7.0.0 is tested for the current version 
-    mr-mpi-blast. If you have problem with the toolkit version > 7.0.0, 
-    please download the toolkit version 7.0.0.
-    
+       
    
-3. Download mr-mpi-blast. Please note that mr-mpi-blast should be inside of the 
-   NCBI C++ Toolkit source tree for build.
+3. Checkout the latest mr-mpi-blast. 
+
+    * NOTE: The mr-mpi-blast should be inside of the NCBI C++ Toolkit source 
+      tree for build.
   
     $ cd ./ncbi_cxx--<version>/src/app 
     $ git clone git@github.com:andreyto/mr-mpi-blast 
@@ -45,17 +62,20 @@ By Seung-Jin Sul (ssul@jcvi.org)
 4. Edit meta-Make files  
    
     (1) Makefile.mrblast.app
+    
         Edit 'CC', 'CXX', and 'BOOST_HOME' in 
         ./ncbi_cxx--<version>/src/app/mr-mpi-blast/Makefile.mrblast.app
    
     (2) Makefile.in   
+    
         Add "mr-mpi-blast" at end of "SUB_PROJ" line in 
         ./ncbi_cxx--<version>/src/app/Makefile.in
 
    
-5. Configure and build MR-MPI MapReduce library 
+5. Configure and build the MapReduce-MPI library 
 
     (1) Makefile.mpicxx
+    
         Edit 'BOOST_HOME' in
         ./ncbi_cxx--<version>/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicc (for Open MPI)
         or
@@ -105,6 +125,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
     $ sh ./src/app/mr-mpi-blast/tools/remove_unnecessary.sh
 
 
+9. Add '$MRMPIBLAST_PREFIX/bin' in PATH 
+
+    The '$MRMPIBLAST_PREFIX/bin' should be added to the executable search path.
+    
 
 
 

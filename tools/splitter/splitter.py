@@ -1,11 +1,11 @@
+#!/usr/bin/env python
+
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 #
 # See COPYING file distributed along with the MGTAXA package for the
 # copyright and license terms.
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-
-#!/usr/bin/env python
 
 import sys
 from cStringIO import StringIO
