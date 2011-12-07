@@ -1,2 +1,0 @@
-microbial_all.fa.00
-microbial_all.fa.01

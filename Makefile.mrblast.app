@@ -16,7 +16,8 @@ CXX = mpicxx
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 
-MRMPI_HOME = $(WORKING_DIR)/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi
+#MRMPI_HOME = $(WORKING_DIR)/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi
+MRMPI_HOME = ./mrmpi
 
 ## Open MPI
 #MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicc

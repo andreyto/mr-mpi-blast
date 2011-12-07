@@ -20,6 +20,7 @@ if __name__ == '__main__':
     if len(sys.argv) != 3:
         print "python csv2hd5.py infile outfile"
         sys.exit(1)    
+        
     inFileName = sys.argv[1]    
     outFilename = sys.argv[2]   
     

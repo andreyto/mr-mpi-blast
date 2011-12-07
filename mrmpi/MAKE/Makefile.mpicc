@@ -2,14 +2,14 @@
 
 SHELL = /bin/sh
 
-BOOST_INCLUDE = $(TACC_BOOST_INC)
+BOOST_HOME = $(TACC_BOOST_DIR)
 
 # ---------------------------------------------------------------------
 # compiler/archive settings
 # specify flags and libraries needed for your compiler and MPI installation
 
 CC =		mpic++
-CCFLAGS =    -O2 -I$(BOOST_INCLUDE) 
+CCFLAGS =    -O2 -I$(BOOST_HOME)/include
 DEPFLAGS =	-M
 ARCHIVE =	ar
 ARFLAGS =	-rc

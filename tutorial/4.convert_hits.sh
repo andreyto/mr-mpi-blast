@@ -1,12 +1,9 @@
 #!/bin/bash 
 
-if [ -z "$MRMPIBLAST_PREFIX" ]; then
-    echo "The environment variable, MRMPIBLAST_PREFIX is not set."
-    exit
-fi
+ 
 
 echo -e "\n\n### Convert hit files into CSV file ###"
-cd $MRMPIBLAST_PREFIX/tutorial/blastdb &&
+cd ./blastdb &&
 mkdir -p hits &&
 #mv *log.txt ./logs &&
 mv *.bin ./hits &&

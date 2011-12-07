@@ -1,0 +1,56 @@
+EXAMPLES - how to run mr-mpi-blast
+
+
+
+Updated: 12/7/2011
+By Seung-Jin Sul (ssul@jcvi.org)
+
+
+This examples show how to run mr-mpi-blast using two small query and database
+files. You should run the scripts in order of the number in the file name. Please
+refer to 'tutorial' for larger running examples.
+
+
+1.indexing_30_real_seqs.sh
+
+    - Indexing the input query file, '30_real_seqs.fa' for mr-mpi-blast run
+    - Option used for running seqindexer.py
+        -u 1: use gi in the input file as unique query id  
+        -b 0: save part of deflines in '30_real_seqs.fa.def'
+
+    
+2.indexing_100_simul_seqs.sh
+
+    - Indexing the input query file, '100_real_seqs.fa' for mr-mpi-blast run
+    - Option used for running seqindexer.py
+        -u 0: use generated sequential number as unique query id  
+        -s 0: the generated sequential number will be starting from 0
+        -b 1: save full deflines in '100_real_seqs.fa.def'
+
+
+3.makeblastdb.sh
+
+    - Using 'makeblastdb' utility from NCBI BLAST+ and test input FASTA file, 
+      'test.fa', generate BLAST formatted db.
+    - The name of the generated BLAST db is specified in 'dblist.txt' so that
+      mr-mpi-blast read the subject database list from the file.
+
+
+4.run_mrblast_30_real.sh
+
+    - Run mr-mpi-blast using mpirun on four processing units.
+    - This will do BLAST search using '30_real_seqs.fa' against 'test.fa' BLAST db.
+    - The evalue used is 10.
+    - The hit results will be saved in *.bin files and converted into a CSV file
+      by 'load_csv.py' Python script.   
+    
+
+5.run_mrblast_100_simul.sh
+
+    - Run mr-mpi-blast using mpirun on four processing units.
+    - This will do BLAST search using '30_real_seqs.fa' against 'test.fa' BLAST db.
+    - The evalue used is 10.
+    - The hit results will be saved in *.bin files and converted into a CSV file
+      by 'load_csv.py' Python script. 
+
+

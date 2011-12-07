@@ -19,6 +19,7 @@ if __name__ == '__main__':
     if len(sys.argv) != 4:
         print "python load_hd5.py topDir out_file_name 0/1_for_saving_csv" 
         sys.exit(1)    
+        
     topDir   = sys.argv[1]    
     outFileName = sys.argv[2]
     bMakeCSV = int(sys.argv[3])
