@@ -1,15 +1,15 @@
 #!/bin/bash 
 
- 
 
-echo -e "\n\n### Convert hit files into CSV file ###"
+echo -e "\n### Convert *.bin to CSV files: ###" &&
+echo -e "    hits.csv : only qid" &&
+echo -e "    hits_w_defline .csv : qid + original defline" &&
 cd ./blastdb &&
 mkdir -p hits &&
 #mv *log.txt ./logs &&
 mv *.bin ./hits &&
-#python ../tools/load_hd5.py ./hits/ hits 1 &&
-#python ../tools/load_sql.py ./hits/ hits 1 &&
-load_csv.py ./hits/ hits &&
+load_csv.py -b ./hits/ -o hits &&
+load_csv.py -b ./hits/ -o hits_w_defline -d 1 -i ../query/viral_all_query.fa.def  &&
 
 echo -e "\n### Done!"
 

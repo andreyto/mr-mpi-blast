@@ -1,0 +1,15 @@
+prefix = @prefix@
+examplesdir = $(prefix)/examples
+tutorialdir = $(prefix)/tutorial
+docdir = $(prefix)/doc
+toolsdir = $(prefix)/tools
+bindir = $(prefix)/bin
+
+all:
+	-mkdir -p $(examplesdir)  &&  cp -Rp $(srcdir)/examples/* $(examplesdir)
+	-mkdir -p $(tutorialdir)  &&  cp -Rp $(srcdir)/tutorial/* $(tutorialdir)
+	-mkdir -p $(docdir)  &&  cp -Rp $(srcdir)/doc/* $(docdir) && cp -p $(srcdir)/README $(prefix)/README
+	-mkdir -p $(toolsdir)  &&  cp -Rp $(srcdir)/tools/* $(toolsdir) && rm $(toolsdir)/remove_unnecessary.sh
+	-mkdir -p $(bindir) && cp -Rp ../../../../src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py $(bindir) && cp -Rp ../../../../src/app/mr-mpi-blast/tools/splitter/splitter.py $(bindir) && cp -Rp ../../../../src/app/mr-mpi-blast/tools/load-hd5-tables/load_*.py $(bindir)
+    
+clean purge:;

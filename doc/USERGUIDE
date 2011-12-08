@@ -2,7 +2,7 @@ User Guide for mr-mpi-blast (version 11.0.1)
 
 
 
-Updated: 12/7/2011
+Updated: 12/8/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -12,7 +12,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     - To build mr-mpi-blast, it is needed that the Boost library and a MPI stack 
       are installed. (The current version has been being tested with the mvapich  
-      MPI stack on XSEDE Ranger).
+      MPI stack on XSEDE TACC Ranger).
     - The mr-mpi-blast should be inside of the NCBI C++ Toolkit source tree for
       build.
     - The NCBI C++ Toolkit version 7.0.0 is tested for the current version of
@@ -42,7 +42,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The argument, "-db -" is mandatory. The subject database file names 
       should be listed in a text file (e.q. dblist.txt)
 	- Most of NCBI blastn and blastp (v.2.2.24+) options are applicable 
-	- Example SGE job submission script on XSEDE Ranger
+	- Example SGE job submission script on XSEDE TACC Ranger
 
         #!/bin/bash 
         #$ -A $SGE_ACCOUNT
@@ -194,7 +194,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     We provide a tutorial for running the program on a specific MPI cluster. 
     You can see the tutorial for running the program on a specific MPI cluster 
-    XSEDE Ranger here: $MRMPIBLAST_PREFIX/tutorial/README.
+    XSEDE TACC Ranger here: $MRMPIBLAST_PREFIX/tutorial/README. It should be 
+    easy to adapt for other systems.
 
 
 * Reference 

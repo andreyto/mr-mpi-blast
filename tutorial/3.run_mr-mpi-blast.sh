@@ -13,8 +13,7 @@ cp ../mrblast.ini . &&
 cp ../mrblast_job.sh . &&
 
 echo -e "\n\n### qsub mr-mpi-blast job ###"
-qsub mrblast_job.sh &&
-
+qsub mrblast_job.sh 
 
 
 # EOF

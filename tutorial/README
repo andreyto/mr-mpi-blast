@@ -2,14 +2,15 @@ Tutorial - How to run mr-mpi-blast
 
 
 
-Updated: 12/7/2011
+Updated: 12/8/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
 
-
 * NOTE
-    - This tutorial is prepared and tested on XSEDE Ranger cluster.
+    - This tutorial is prepared and tested on XSEDE TACC Ranger cluster which 
+      is one of high performance computing systems operated by Texas Advanced 
+      Computing Center (TACC). It should be easy to adapt for other systems.
     - The following assumes that you are working in your own copy of the 
       tutorial directory.
       
@@ -20,8 +21,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The '$MRMPIBLAST_PREFIX/bin' should be added to the executable search path.
       for running 'mrblast' and 'makeblastdb' executables and other Python scripts.
       
+      ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
+      
 
-1. Set Ranger module list
+1. Set XSEDE TACC Ranger module list
 
    $ bash ./ranger_setup_env.sh
 
@@ -61,11 +64,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
        $ sh ./4.convert_hits.sh
         
          - Move './blastdb/*.bin' to './blastdb/hits'
-         - Convert *.bin files in './blastdb/hits' into ./hits.csv
+         - Convert *.bin files in './blastdb/hits' into ./hits.csv with and 
+           without the original deflines of the input queries.
          
-       * NOTE: In this tutorial example, the first column in hits.csv means 
-               the unique query id in viral_all_query.fa.def in which the 
-               original deflines can be retrieved.
                    
                    
                    

@@ -1,11 +1,5 @@
 #!/bin/bash
-
-if [ -z "$MRMPIBLAST_PREFIX" ]; then
-    echo "The environment variable, MRMPIBLAST_PREFIX is not set"
-    exit
-fi
-
-
+ 
 echo -e "\n\n### Get NCBI RefSeq microbial FASTA sequence files ###"
 mkdir -p ./blastdb &&
 cd ./blastdb &&

@@ -5,36 +5,39 @@
 APP = mrblast
 SRC = mrblast blast_app_util
 
-###############################################################################
-## Open MPI
-#CC = mpicc
-#CXX = mpic++
-## MVAPICH
-CC = mpicxx
-CXX = mpicxx
+## -------------------------------------------------------------------
+## To build mr-mpi-blast, a MPI stack should be installed, for instance, Open
+## MPI or MVAPICH. Also the MapReduce MPI library link path should be set.
+##
+## If you use Open MPI,
+CC = mpicc
+CXX = mpic++
+MRMPI_USRLIB = -L../../../../src/app/mr-mpi-blast/mrmpi -lmrmpi_mpicc
+##
+## If you use MVAPICH,
+#CC = mpicxx
+#CXX = mpicxx
+#MRMPI_USRLIB = -L../../../../src/app/mr-mpi-blast/mrmpi -lmrmpi_mpicxx
 
 MPI_COMPILE_FLAGS = $(shell mpic++ --showme:compile)
 MPI_LINK_FLAGS = $(shell mpic++ --showme:link)
 
-#MRMPI_HOME = $(WORKING_DIR)/ncbi_cxx--7_0_0/src/app/mr-mpi-blast/mrmpi
-MRMPI_HOME = ./mrmpi
-
-## Open MPI
-#MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicc
-## MVAPICH
-MRMPI_USRLIB = -L$(MRMPI_HOME) -lmrmpi_mpicxx
-
-BOOST_HOME = $(TACC_BOOST_DIR)
+## -------------------------------------------------------------------
+## Also mr-mpi-blast implementation uses the Boost library. Check 'BOOST_HOME'
+## on the system you are using and set it appropriately.
+## The 'TACC_BOOST_DIR' is 'BOOST_HOME' in XSEDE Ranger cluster system.
+##
+#BOOST_HOME = $(TACC_BOOST_DIR)
+BOOST_HOME = /home/ssul/work/packages2
 BOOST_INCLUDE = -I$(BOOST_HOME)/include
 BOOST_USRLIB = -L$(BOOST_HOME)/lib -lboost_program_options -lboost_iostreams -lboost_filesystem
-###############################################################################
-
 
 CXXFLAGS = $(ORIG_CXXFLAGS) $(MPI_COMPILE_FLAGS)
 ORIG_LIBS = $(MRMPI_USRLIB) $(BOOST_USRLIB)
 LIBS = $(MPI_LINK_FLAGS) $(ORIG_LIBS)
 CPPFLAGS = $(ORIG_CPPFLAGS) $(BOOST_INCLUDE)
-
+ 
+dummy := $(shell date > last_build_timestamp.log) 
 
  
 # new_project.sh will copy everything in the following block to any

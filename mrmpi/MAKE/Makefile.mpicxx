@@ -2,6 +2,10 @@
 
 SHELL = /bin/sh
 
+## -------------------------------------------------------------------
+## Check 'BOOST_HOME' on the system you are using and set it appropriately.
+## The 'TACC_BOOST_DIR' is 'BOOST_HOME' in XSEDE Ranger cluster system.
+##
 BOOST_HOME = $(TACC_BOOST_DIR)
 
 # ---------------------------------------------------------------------

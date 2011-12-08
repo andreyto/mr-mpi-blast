@@ -2,6 +2,10 @@
 
 SHELL = /bin/sh
 
+## -------------------------------------------------------------------
+## Check 'BOOST_HOME' on the system you are using and set it appropriately.
+## The 'TACC_BOOST_DIR' is 'BOOST_HOME' in XSEDE Ranger cluster system.
+##
 BOOST_HOME = $(TACC_BOOST_DIR)
 
 # ---------------------------------------------------------------------
@@ -9,7 +13,7 @@ BOOST_HOME = $(TACC_BOOST_DIR)
 # specify flags and libraries needed for your compiler and MPI installation
 
 CC =		mpic++
-CCFLAGS =    -O2 -I$(BOOST_HOME)/include
+CCFLAGS =   -O2 -I$(BOOST_HOME)/include
 DEPFLAGS =	-M
 ARCHIVE =	ar
 ARFLAGS =	-rc

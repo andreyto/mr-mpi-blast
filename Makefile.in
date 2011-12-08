@@ -2,7 +2,12 @@
 
 REQUIRES = objects algo
 
-APP_PROJ = mrblast
+APP_PROJ = mrblast  
+
+USR_PROJ = mrblast_install
+EXTRA_CONFIGURABLES = Makefile.mrblast_install
 
 srcdir = @srcdir@
 include @builddir@/Makefile.meta
+
+ 
