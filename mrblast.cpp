@@ -51,22 +51,22 @@ void CMrMpiBlastApplication::Init(void)
             g_timer          = boost::lexical_cast<int>(parameters["TIMER"]);
             g_memSize        = boost::lexical_cast<int>(parameters["MEMSIZE"]);
             g_outOfCore      = boost::lexical_cast<int>(parameters["OUTOFCORE"]);
-
+            g_mapStyle       = boost::lexical_cast<int>(parameters["MAPSTYLE"]);
+            
             g_bLogEnabled    = boost::lexical_cast<bool>(parameters["LOGENABLED"]);
             g_timingEnabled  = boost::lexical_cast<int>(parameters["TIMING"]);
+            g_logFileName    = parameters["LOGFNAME"];
             g_optDumpEnabled = boost::lexical_cast<int>(parameters["OPTDUMP"]);
             
-            g_logFileName    = parameters["LOGFNAME"];
-            g_queryFileName  = parameters["QUERYFILENAME"];
-            g_indexFileName  = parameters["INDEXFILENAME"];
-            g_dbFileName     = parameters["DBLISTFILENAME"];
-            g_outFilePrefix  = parameters["OUTFILEPREFIX"];
-            
             g_blockSize      = boost::lexical_cast<uint32_t>(parameters["BLOCKSIZE"]);
-            g_mapStyle       = boost::lexical_cast<int>(parameters["MAPSTYLE"]);
             g_nIter          = boost::lexical_cast<int>(parameters["NUMITER"]);
             g_bIsProtein     = boost::lexical_cast<bool>(parameters["ISPROTEIN"]);
             g_bIsQidGi       = boost::lexical_cast<bool>(parameters["ISQIDGI"]);
+                        
+            g_queryFileName  = parameters["QUERYFILENAME"];
+            g_indexFileName  = parameters["INDEXFILENAME"];
+            g_dbFileName     = parameters["DBLISTFILENAME"];
+            g_outFilePrefix  = parameters["OUTFILEPREFIX"];            
         }
         catch (const boost::bad_lexical_cast &) {
             cout << "Exception: bad_lexical_cast" << endl;

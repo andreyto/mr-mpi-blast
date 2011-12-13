@@ -11,6 +11,8 @@ cat *.fna > microbial_all.fa &&
 echo -e "\n\n### Make NCBI BLAST database ###"
 makeblastdb -in microbial_all.fa -dbtype nucl -logfile blastdbmake.log &&
 
+blastdbcmd -info -db microbial_all.fa &&
+
 ls -alh . &&
 cd ..
 

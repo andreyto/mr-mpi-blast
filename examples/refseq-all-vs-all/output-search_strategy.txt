@@ -1,0 +1,59 @@
+
+================================= opts_hndl =================================
+  ? {
+    CBlastOptionsLocal {
+      m_Program = 8
+      CQuerySetUpOptions {
+        mask_at_hash = 1
+        dust_level = 20
+        dust_window = 64
+        dust_linker = 1
+        strand_option = 3
+        genetic_code = 1 }
+      CLookupTableOptions {
+        threshold = 0
+        lut_type = 0
+        word_size = 11
+        mb_template_length = 0
+        mb_template_type = 0 }
+      BlastInitialWordOptions {
+        window_size = 0
+        x_dropoff = 0 }
+      CBlastExtensionOptions {
+        gap_x_dropoff = 30
+        gap_x_dropoff_final = 100
+        ePrelimGapExt = 1
+        eTbackExt = 1 }
+      CBlastHitSavingOptions {
+        hitlist_size = 2147483647
+        hsp_num_max = 0
+        total_hsp_limit = 0
+        culling_limit = 0
+        expect_value = 0.0001
+        cutoff_score = 0
+        percent_identity = 0
+        do_sum_stats = 0
+        longest_intron = 0
+        min_hit_length = 0
+        min_diag_separation = 6 }
+      CPSIBlastOptions {
+        pseudo_count = 0
+        inclusion_ethresh = 0.002
+        use_best_alignment = 1
+        nsg_compatibility_mode = 0
+        impala_scaling_factor = 1 }
+      CBlastDatabaseOptions { }
+      CBlastScoringOptions {
+        matrix = 
+        reward = 4
+        penalty = -5
+        gapped_calculation = 1
+        gap_open = 0
+        gap_extend = 0
+        shift_pen = 32767
+        is_ooframe = 0 }
+      CBlastEffectiveLengthsOptions {
+        db_length = 12494903041
+        dbseq_num = 0
+        searchsp[0] = 0 } } }
+==============================================================================

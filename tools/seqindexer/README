@@ -1,3 +1,3 @@
-Generate index files from your input FASTA query sequence file
+Generate an index file and a defline file from your input FASTA query sequence file
 
 ex) seqindexer.py -i viral_all_query.fa -o viral_all_query.fa.idx -d viral_all_query.fa.def -u 0 -s 0 -b 1

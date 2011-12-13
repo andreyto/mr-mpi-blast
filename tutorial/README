@@ -1,13 +1,12 @@
-Tutorial - How to run mr-mpi-blast
+Tutorial - How to run mr-mpi-blast on XSEDE TACC Ranger
 
 
-
-Updated: 12/8/2011
+Updated: 12/12/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
+* Requirements
 
-* NOTE
     - This tutorial is prepared and tested on XSEDE TACC Ranger cluster which 
       is one of high performance computing systems operated by Texas Advanced 
       Computing Center (TACC). It should be easy to adapt for other systems.
@@ -18,10 +17,14 @@ By Seung-Jin Sul (ssul@jcvi.org)
           $ cp -R $MRMPIBLAST_PREFIX/tutorial/* $HOME/mr-mpi-blast-tutorial
           $ cd $HOME/mr-mpi-blast-tutorial
       
-    - The '$MRMPIBLAST_PREFIX/bin' should be added to the executable search path.
-      for running 'mrblast' and 'makeblastdb' executables and other Python scripts.
+    - The "$MRMPIBLAST_PREFIX/bin" should be added to the executable search path.
+      for running "mrblast" and "makeblastdb" executables and other Python scripts.
       
       ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
+      
+    - Utilities for preparing data and converting output need Python installed. 
+      To use HD5 database format, PyTables should be installed 
+      (http://www.pytables.org/moin/PyTablesPro).
       
 
 1. Set XSEDE TACC Ranger module list
@@ -35,37 +38,56 @@ By Seung-Jin Sul (ssul@jcvi.org)
    
        $ sh ./1.generate_query.sh
    
-        - Download NCBI RefSeq viral FASTA sequence files
-        - Generate queries (1000bp length) by splitting the viral sequences 
-        - Generate index file and defline file from the input query file 
-          for running mr-mpi-blast
+        - Download NCBI RefSeq viral FASTA sequence files and collect them in a 
+          FASTA file (3,984 sequences, ~84Mbp)
+        - Generate short queries by splitting each viral sequence in 1000bp 
+          length with 100bp overlap. (96,752 sequences, ~97Mbp).
+        - Generate an index file and a defline file from the input query file 
+          for running mr-mpi-blast.
     
 
-    (2) Make NCBI database
+    (2) Make BLAST database
       
        $ sh ./2.make_blastdb.sh
    
-        - Download NCBI RefSeq microbial FASTA sequence files
-        - Make BLAST database using "makeblastdb" utility
+        - Download NCBI RefSeq microbial FASTA sequence files and collect them 
+          in a FASTA file (39,006 sequences, ~8Gbp).
+        - Make BLAST formatted database using "makeblastdb" utility resulting 
+          in two BLAST formatted database, "microbial_all.fa.00" and 
+          "microbial_all.fa.01".
+        - We have two formatted database partitions and each of the partition 
+          will be engaged in BLAST search. Thus, the effective length of the 
+          database should be set as the total database size which is 8,538,182,741
+          total bases.
 
         
     (3) Run mr-mpi-blast
        
        * NOTE: Please set your SGE account to $SGE_ACCOUNT 
-       
+              
        $ sh ./3.run_mr-mpi-blast.sh
        
         - Qsub mr-mpi-blast for BLAST search of the queries against the 
-          generated BLAST db
+          generated BLAST db.
+        - Run mr-mpi-blast using ibrun with 64 processing units in "development" 
+          queue. 
+        - The Block size option, "BLOCKSIZE" in the "mrblast.ini" is set 
+          as 1Mbp resulting in 96 query blocks and total 192 (96 query blocks x 
+          2 database files) work items.
+        - The "dblist.txt" has the name of formatted database, "microbial_all.fa.00" 
+          and "microbial_all.fa.01".
+        - The evalue is set as 1e-4.
+        - Note that the effective database size is set by "-dbsize 8538182741".
 
         
     (4) Convert output hit files from mr-mpi-blast
    
        $ sh ./4.convert_hits.sh
         
-         - Move './blastdb/*.bin' to './blastdb/hits'
-         - Convert *.bin files in './blastdb/hits' into ./hits.csv with and 
-           without the original deflines of the input queries.
+         - Move "./blastdb/*.bin" to "./blastdb/hits". 
+         - Convert *.bin files in "./blastdb/hits" into "./blastdb/hits.csv" 
+           without the original deflines of the input queries and into
+           "./blastdb/hits_w_defline.csv" with deflines from the input queries.
          
                    
                    

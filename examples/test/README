@@ -2,64 +2,101 @@ EXAMPLES - how to run mr-mpi-blast
 
 
 
-Updated: 12/8/2011
+Updated: 12/12/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
 
 
-* NOTE
-    - This examples show how to run mr-mpi-blast using two small query and 
-      database files. 
-    - This small tests assumes that you run mr-mpi-blast on your local machine 
-      with Open MPI. The mr-mpi-blast will be started using 'mpirun'.
+* Requirements
+
+    - This examples show how to run mr-mpi-blast using two small query files 
+      for doing a BLAST search against a custom NCBI blast database.
+    - This assumes that you run mr-mpi-blast on your local machine 
+      with Open MPI. The mr-mpi-blast will be started using "mpirun".
     - You should run the scripts in order of the number in the file name. 
-    - Please refer to 'tutorial' for larger running examples.
-    - The '$MRMPIBLAST_PREFIX/bin' should be added to the executable search path.
-      for running 'mrblast' and 'makeblastdb' executables and other Python scripts.
+    - Please refer to "tutorial" for larger running examples.
+    - The "$MRMPIBLAST_PREFIX/bin" should be added to the executable search path.
+      for running "mrblast" and "makeblastdb" executables and other Python 
+      scripts.
       
       ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
+
+    - Utilities for preparing data and converting output need Python installed. 
+      To use HD5 database format, Pytable should be installed 
+      (http://www.pytables.org/moin/PyTablesPro)
 
 
 1.indexing_30_real_seqs.sh
 
-    - Indexing the input query file, '30_real_seqs.fa' for mr-mpi-blast run
-    - Option used for running seqindexer.py
-        -u 1: use gi in the input file as unique query id  
-        -b 0: save part of deflines in '30_real_seqs.fa.def'
+    - This query data shows the case of general query sequence in which each 
+      sequence has "gi".
+    - The 30 query sequences were selected arbitrarily from NCBI RefSeq viral 
+      sequences and saved in "30_real_seqs.fa" file (~100Kbp).
+    - Indexing the input query file, "30_real_seqs.fa" for mr-mpi-blast run.    
+    - Options used for running seqindexer.py
+        -u 1: use gi in the input file as unique query ID  
+        -b 0: save part of deflines in "30_real_seqs.fa.def"
 
     
 2.indexing_100_simul_seqs.sh
 
-    - Indexing the input query file, '100_real_seqs.fa' for mr-mpi-blast run
-    - Option used for running seqindexer.py
-        -u 0: use generated sequential number as unique query id  
+    - This query data shows the case of simulated query sequence which has no 
+      "gi". Each query will be assigned a unique query ID during the indexing 
+      step.
+    - Generate 100 query sequences (1000bp length) by splitting the RefSeq viral 
+      sequences and saved in "100_simul_seqs.fa" file (~100Kbp).
+    - Indexing the input query file, "100_simul_seqs.fa" for mr-mpi-blast run.
+    - Options used for running seqindexer.py
+        -u 0: use generated sequential number as unique query ID  
         -s 0: the generated sequential number will be starting from 0
-        -b 1: save full deflines in '100_real_seqs.fa.def'
+        -b 1: save full deflines in "100_real_seqs.fa.def"
 
 
 3.makeblastdb.sh
 
-    - Using 'makeblastdb' utility from NCBI BLAST+ and test input FASTA file, 
-      'test.fa', generate BLAST formatted db.
-    - The name of the generated BLAST db is specified in 'dblist.txt' so that
+    - Total 3,728 sequences were arbitrarily chosen from NCBI RefSeq viral 
+      sequences and saved in "test.fa" file (78MB).
+    - Using "makeblastdb" utility from NCBI BLAST+ and test input FASTA file, 
+      "test.fa", generate BLAST formatted db.
+    - The name of the generated BLAST db is specified in "dblist.txt" so that
       mr-mpi-blast read the subject database list from the file.
+    
+    NOTE: If you do BLAST search against the NCBI BLAST database downloaded 
+    from the NCBI site, list the names of database in the "dblist.txt" file.
+    
+    ex) in dblist.txt:
+        refseq_genomic.00
+        refseq_genomic.01
+        refseq_genomic.02
+        refseq_genomic.03
+        ...
 
 
 4.run_mrblast_30_real.sh
 
-    - Run mr-mpi-blast using mpirun on four processing units.
-    - This will do BLAST search using '30_real_seqs.fa' against 'test.fa' BLAST db.
-    - The evalue used is 10.
+    - Run mr-mpi-blast using mpirun on four processing units. The Block size 
+      option, "BLOCKSIZE" in the "mrblast.ini" is set as 5000bp resulting in 
+      10 query blocks and 10 (10 query blocks x 1 database file) work items.
+    - Do BLAST search using "30_real_seqs.fa" against "test.fa" 
+      BLAST db. The "dblist.txt" has the name of formatted database, 
+      "test.fa".
+    - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
-      Sqlite, and Hd5 database file.
+      Sqlite, and Hd5 database files.
+    - In this run, "-dbsize" is unset, because there is only one database partition.
           
 
 5.run_mrblast_100_simul.sh
 
-    - Run mr-mpi-blast using mpirun on four processing units.
-    - This will do BLAST search using '100_simul_seqs.fa' against 'test.fa' BLAST db.
-    - The evalue used is 10.
+    - Run mr-mpi-blast using mpirun on four processing units. The Block size 
+      option, "BLOCKSIZE" in the "mrblast.ini" is set as 5000bp resulting in 
+      20 query blocks and total 20 (20 query blocks x 1 database file) work 
+      items.
+    - This will do BLAST search using "100_simul_seqs.fa" against "test.fa" 
+      BLAST db. The "dblist.txt" has the name of formatted database, 
+      "test.fa".
+    - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
-      Sqlite, and Hd5 database file.
-
+      Sqlite, and Hd5 database files.
+    - In this run, "-dbsize" is unset, because there is only one database partition.
