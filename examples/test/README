@@ -100,3 +100,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The hit results will be saved in *.bin files and converted into CSV, 
       Sqlite, and Hd5 database files.
     - In this run, "-dbsize" is unset, because there is only one database partition.
+
+
+6.run_mrblast_30_real_w_numiter.sh
+
+    - Run mr-mpi-blast with setting "NUMITER". 
+    - The iteration number will be added to the resulting hit file names.
+    - The hit files are converted into CSV, Sqlite, and Hd5 database files.

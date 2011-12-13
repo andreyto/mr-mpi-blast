@@ -107,12 +107,13 @@ By Seung-Jin Sul (ssul@jcvi.org)
     
     ex) $ ./configure --prefix=$MRMPIBLAST_PREFIX --with-64 --without-dll 
           --without-gbench --without-gui --without-dbapi --without-connext 
-          --without-xpm --without-sss --without-gnutls --without-openssl --with-mt 
+          --without-xpm --without-sss --without-gnutls --without-openssl 
+          --with-mt 
  
-    * NOTE: Once all the toolkit package is compiled, you can build only 
+    * NOTE: Once all the C++ toolkit package is compiled, you can build only 
       mr-mpi-blast program in the build directory, if you want. 
     
-    $ cd .../ncbi_cxx--<version>/GCC*/build/app/mr-mpi-blast/ && make
+      $ cd .../ncbi_cxx--<version>/GCC*/build/app/mr-mpi-blast/ && make
 
 
 7. Remove unnecessary files

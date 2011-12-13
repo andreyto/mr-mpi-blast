@@ -13,13 +13,13 @@ By Seung-Jin Sul (ssul@jcvi.org)
       using the NCBI C++ Toolkit and MapReduce-MPI library and implements a 
       "matrix-split" BLAST search in which a BLAST search job is transformed into 
       searching "n" blocks of query sequences against "m" database partitions. 
-    - The work items then become pairs <query block, DB partition name>.
+    - The work items become pairs <query block, DB partition name>.
     - The program distributes (n x m) work items among "c" processing units 
       ("workers") in a cluster system and each worker runs BLAST search with 
       the assigned pairs of <query block, DB partition name>. Note that 
       c << n x m, in normal case.
     - The mr-mpi-blast assumes a shared file system.
-    - The master/worker running option of MapReduce library is used which 
+    - The master/worker scheduling option of MapReduce library is used which 
       instructs it to use the process with rank 0 as a master that distributes
       work items to the remaining ranks in a load-balanced way, such that each 
       worker is kept occupied as long as there are remaining work items. 
@@ -28,7 +28,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       already been processing the same DB partitions. 
     - The mr-mpi-blast consists of three primary steps. The first and last 
       steps are offline jobs and the second step is done during the actual
-      mr-mpi-blast running. First, the input query sequences in a FASTA file 
+      mr-mpi-blast run. First, the input query sequences in a FASTA file 
       are indexed so that mr-mpi-blast loads the file as memory-mapped file 
       and logically splits it into many blocks. Second, the master prepares 
       (n x m) work items and assigns each work item to non-busy workers. Each 
@@ -36,7 +36,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       per work item is accumulated at each worker. For example, if the master 
       assigns "w" work items among (n x m) work items to a worker, where w 
       < n x m, the worker accumulates "w" sets of BLAST results during the 
-      whole operation. Finally, each worker saves the hits to a binary file 
+      whole operation. Finally, each worker saves all the hits to a binary file 
       that is owned by each rank. Finally, all result files are collected and 
       saved to a file.
       
@@ -64,12 +64,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
         . Miscellaneous options: -remote
 
     - The "-dbsize" option is useful for maintaining consistent statistics 
-      over time as databases grow. If "-dbsize" is unset or set to 0, the actual 
-      effective length of the database is used. As it is usually done in the 
-      DB-split BLAST computations, the effective DB size should be overridden in 
-      the BLAST call to be the entire length of the size instead of the 
-      length of the current partition. To see the BLAST database info use the 
-      below command:
+      over time as databases grow. If "-dbsize" is unset or set to 0, the 
+      actual effective length of the database is used. As it is usually done 
+      in the DB-split BLAST computations, the effective DB size should be 
+      overridden in the BLAST call to be the entire length of the size 
+      instead of the length of the current partition. To see the BLAST 
+      database info use the below command:
       
       ex) $ blastdbcmd -info -db microbial_all.fa
       
@@ -81,6 +81,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
             Volumes:
                     /work/01471/ssul/work/test/tutorial-test/blastdb/microbial_all.fa.00
                     /work/01471/ssul/work/test/tutorial-test/blastdb/microbial_all.fa.01
+
 
     - The mr-mpi-blast is a MPI program thus it should be run by "mpirun".
       
@@ -103,7 +104,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     * NOTE: The mr-mpi-blast program assumes the cluster system supports a shared
       file system. All required input files should be accessible from all 
-      processing units.
+      processing units or ranks.
       
 
 	- Input query sequence file 
@@ -126,10 +127,11 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
       You can select unique query ID option between serial number and gi. The 
       former assigns serial numbers starting from "1" for all input query 
-      sequences. On the other hand, the latter uses the original gi of the query
+      sequences. Also you can specify the starting number using "-s" option, if
+      you want. On the other hand, the latter uses the original gi of the query
       sequence as its unique query ID. 
 
-	  An example run of "seqindexer.py" and option descriptions are following.	
+	  An example run of "seqindexer.py" and option description are following.	
 
         ex) $ python seqindexer.py -i 30_real_seqs.fa -o 30_real_seqs.fa.idx 
               -d 30_real_seqs.fa.def -u 1 -b 0
@@ -143,6 +145,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         -u: unique ID option; 0=serial number, 1=gi
         -s: if serial number option is selected, to specify the start number
         -b: defline saving option; 0=part, 1=full defline
+
 
       For more information, please refer to "tools/seqindexer/README" and 
       "tools/seqindexer/examples".
@@ -167,7 +170,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
                     even with 1-page
         MAPSTYLE    set scheduling option; 2=MapReduce-MPI native client/server 
                     scheduler, 3=mr-mpi-blast custom location-aware scheduler
-                    (scheduling options 0 and 1 are not supported by mr-mpi-blast)
+                    (scheduling modes 0 and 1 are not supported by mr-mpi-blast)
+                        
                         
 	  . Section [LOG]: log related settings
 
@@ -175,6 +179,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         TIMING      1=save elapsed time logs; 0, if not 
         LOGFNAME    set file name postfix for log files
         OPTDUMP     1=save BLAST search strategy to a file; 0, if not
+        
         
       . Section [BLAST]: BLAST related settings
       
@@ -188,6 +193,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         ISQIDGI         set unique query ID options used for indexing; 
                         1=gi, 0=serial number
  
+
 	  . Section [FILES] : in/out file settings
 
         QUERYFILENAME   set input query sequence file name
@@ -205,8 +211,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
 	- BLAST search output files (*.bin)
 
-      Once BLAST search is completed, each core saves BLAST hit in each separate 
-      binary file. Only the tabular format is supported for now. 
+      Once BLAST search is completed, each rank saves BLAST hit in each separate 
+      binary file. The rank number will be added to the file name. Only the 
+      tabular format is supported for now. 
 
       Tabular output format fields:
       <queryId, subjectid, identity, alignLen, nMismatches, nGaps, queryStart, 
@@ -214,12 +221,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
 	
 	- Log files (*.log)
 
-	  If LOGENABLED=1 in mrblast.ini, each core saves detailed log in each 
+	  If LOGENABLED=1 in mrblast.ini, each rank saves detailed log in each 
       separate log file.
 
 	- Strategy dump files (*-search_strategy.txt)
 
-  	  If OPTDUMP=1, search strategy is dumped and saved in 
+  	  If OPTDUMP=1, BLAST search strategy is dumped in 
       "OUTFILEPREFIX-search_strategy.txt" file.	
 
 
@@ -237,6 +244,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     ex) $ python load_hd5.py -b ./hits -o hits       # generates a hd5 file
     ex) $ python load_csv.py -b ./hits -o hits       # generate a CSV file  
     
+    
     If you want to add the original defline after the "qid" field, use "-d" 
     and "-i" options.
       
@@ -246,39 +254,40 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 * Technical Considerations
 
-    This section discusses critical parameters to run mr-mpi-blast 
-    especially for large-scale BLAST search. 
-    
+    This section discusses on the critical parameters to run mr-mpi-blast 
+    especially for large-scale BLAST search.     
     
     (1) Parameters related with MapReduce-MPI library
     
         We are using MPI MapReduce implementation called MapReduce-MPI. The  
         important parameters will be discussed in this section. For details, 
         please refer to the MapReduce-MPI documents. 
-        
-        - Page size
-          The page size determines the size (in Mbytes) of each page of 
-          memory allocated by the MapReduce object to perform its 
-          operations. The MapReduce-MPI requires 1 to 7 pages for its 
-          run-time operation such as saving MapReduce key-value pairs. There is 
-          no limitation of the size, but you should insure the total memory 
-          consumed by all pages allocated by all the MapReduce objects you 
-          create, does not exceed the physical memory available (which may 
-          be shared by several processors if running on a multi-core node).
-          If exceeded, then many systems will allocate virtual memory, 
-          which will typically cause MR-MPI library operations to run very 
-          slowly and thrash the disk. If you set MEMSIZE small, then 
-          processing a large data set will induce many reads and writes to 
-          disk. If you make it large, then the reads and writes will happen 
-          in large chunks, which generally yields better I/O performance. 
-          However, past a few MBytes in size, there may be little gain in 
-          I/O performance. 
-                    
+
         - Out-of-core operation
           If the data owned by a processor for operating MapReduce fits within 
           one page, then no disk I/O is performed. However, if data exceeds the 
           page size, then it is written to temporary disk files and read back 
           in for subsequent operations and this is called out-of-core operation.
+                  
+        - Page size
+          The page size determines the size (in Mbytes) of each page of 
+          memory allocated by the MapReduce object to perform its 
+          operations. The MapReduce-MPI requires 1 to 7 pages for its 
+          run-time operation such as saving MapReduce key-value pairs. There is 
+          no limitation of this size, but you should insure the total memory 
+          consumed by all pages allocated by all the MapReduce objects you 
+          create, does not exceed the physical memory available (which may 
+          be shared by several processors if running on a multi-core node).
+          If exceeded, then many systems will allocate virtual memory, 
+          which will typically cause MR-MPI library operations to run very 
+          slowly and thrash the disk. 
+          
+          If you allow the out-of-core operation and if you set MEMSIZE small, 
+          then processing a large data set will induce many reads and writes to 
+          disk. If you make it large, then the reads and writes will happen 
+          in large chunks, which generally yields better I/O performance. 
+          However, past a few MBytes in size, there may be little gain in 
+          I/O performance. 
           
         - Map style (scheduler mode)
           The run-time option of MapReduce-MPI that instructs it to use the 
@@ -327,12 +336,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
           To set the block size, use "BLOCKSIZE". The block size determines 
           the number of work items. You should decide to block size so that 
           you can have much more work items than the number of processing 
-          units for drawing maximum performance. Too small number of work 
+          units for maximum performance. Too small number of work 
           items can not fully utilize the load-balancing feature. If there is 
           large enough query file as input, 1MB of the block size is recommended.        
     
         - Iteration number
-          In order to process large collections of queries, the mr-mpi-blast 
+          In order to process large collection of queries, the mr-mpi-blast 
           supports "NUMITER" options for iterating the same MPI process by looping 
           over the consecutive subsets of the entire query set. In other words, 
           the set of total work items will be divided into "n" sub work 

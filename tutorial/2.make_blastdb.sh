@@ -4,7 +4,6 @@ echo -e "\n\n### Get NCBI RefSeq microbial FASTA sequence files ###"
 mkdir -p ./blastdb &&
 cd ./blastdb &&
 wget ftp://ftp.ncbi.nih.gov/refseq/release/microbial/microbial.*.genomic.fna.gz &&
-#wget ftp://ftp.ncbi.nih.gov/refseq/release/microbial/microbial.?.*genomic.fna.gz &&
 gunzip -f -v *.gz &&
 cat *.fna > microbial_all.fa &&
 

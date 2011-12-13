@@ -5,42 +5,47 @@ Updated: 12/12/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
-The purpose of this is to introduce one of our large-scale BLAST experiments 
-using mr-mpi-blast. We will show input/output files, parameter values, and 
-other information. 
+This document introduces one of our large-scale BLAST experiments using 
+mr-mpi-blast. We will show input/output files, parameter settings, and other 
+information. 
     
     
 (1) XSEDE TACC Ranger Cluster Architecture
 
-    The analysis uses the Ranger cluster which provides 3,936 16-way SMP 
-    compute nodes providing 15,744 AMD Opteron™ processors. Each node has 16 
-    cores with 32GB RAM. The memory subsystem has a 1.0 GHz HyperTransport 
-    system Bus, and 2 channels with 667 MHz DDR2 DIMMS. Ranger nodes are 
-    interconnected using InfiniBand technology. Also it supports Lustre shared 
-    file system hosted on 72 disk servers.
+    The Sun Constellation Linux Cluster, named Ranger, is one of the largest 
+    computational resources in the world. Ranger was made possible by a 
+    grant awarded by the National Science Foundation in September 2006 to 
+    TACC and its partners including Sun Microsystems, Arizona State 
+    University, and Cornell University. Ranger entered formal production on 
+    February 4, 2008 and supports high-end computational science for NSF 
+    XSEDE researchers throughout the United States, academic institutions 
+    within Texas, and components of the University of Texas System.
+    The Ranger cluster which provides 3,936 16-way SMP compute nodes 
+    providing 15,744 AMD Opteron(TM) processors. Each node has 16 cores 
+    with 32GB RAM. The memory subsystem has a 1.0 GHz HyperTransport system 
+    Bus, and 2 channels with 667 MHz DDR2 DIMMS. Ranger nodes are 
+    interconnected using InfiniBand technology. Also it supports Lustre 
+    shared file system hosted on 72 disk servers.
     
 
-(2) Prepare Query File
+(2) Prepare Query Files
 
     The purpose of the mr-mpi-blast experiment is to analyze the similarity 
-    space of all sequences from NCBI RefSeq microbial genome sequences against 
-    themselves. For constructing queries, all RefSeq microbial sequences are 
-    downloaded in a FASTA file and a set of queries is generated. The original 
-    sequences are splitted to query sequences of 1kbp length with 500bp overlap. 
-    We prepare total 245,00,447 queries (~ 70Gbp).
-    
-    $ python splitter.py refseq_microbial.fasta 1000 500 refseq_microbial_all_3ksplit.fasta
-    
-    The generated queries are splitted into 1 ~ 1.5GB files and the index file 
-    for each file is generated.
-    
+    space of all sequences from NCBI RefSeq microbial genome sequences 
+    against themselves. For constructing queries, all NCBI RefSeq microbial 
+    sequences are downloaded in a FASTA file and a set of queries is 
+    generated. The original sequences are splitted to query sequences of 
+    1kbp length with 500bp overlap. We prepare total 245,00,447 queries (~ 
+    70Gbp). The generated queries are partitioned into 1 ~ 1.5GB files and the 
+    index file for each file is generated.
+        
 
-(3) Prepare BLAST Database
+(3) Prepare BLAST Databases
 
     The NCBI RefSeq microbial genome sequences are formatted by using the 
-    "formatblastdb" NCBI utility. Total 329,924 sequences are formatted in 
+    "makeblastdb" NCBI utility. Total 329,924 sequences are formatted in 
     three 1GB database partitions. Those database names are listed in 
-    "dblist.txt" file.
+    "dblist.txt" file for running mr-mpi-blast.
     
     $ makeblastdb -in refseq_microbial.fasta -dbtype nucl -logfile blastdbmake.log
       
@@ -60,20 +65,21 @@ other information.
 (4) Running mr-mpi-blast
 
     As described in "USERGUIDE" document, the input qeury file is physically 
-    partitioned into 63 files and the size of file varies 1 ~ 1.5GB. This will 
-    eliminate the possibility of page overflow in MapReduce-MPI. As we set the 
-    page size as 128MB, the first issue is out-of-core operation. 
-    Many hits should be maintained in the data structure of MapReduce. 
-    When we allow the out-of-core operation, it is 
-    able to deal with the whole input query file but the file system of the 
-    underlying cluster system is overloaded (Actually Ranger staffs monitored 
-    the system load and found it degraded the file system performance). We 
-    decided not to allow the out-of-core. Thus we should split the input query 
-    file into several pieces. To decide the split size, we tested the proper 
-    block size with a test query with different sizes, for example, 500MB, 
-    750MB, 1GB, and so on. In this application, we found 1 ~ 1.5GB query files 
-    is safe for running mr-mpi-blast without allowing out-of-core operation. 
-    
+    partitioned into 63 files and the size of file varies 1 ~ 1.5GB. This 
+    will eliminate the possibility of page overflow in MapReduce-MPI. As we 
+    set the page size as 128MB, the first issue is out-of-core operation. 
+    Many hits should be maintained in the data structure of MapReduce. When 
+    we allow the out-of-core operation, it could deal with the whole input 
+    query file but the file system of the underlying cluster system is 
+    overloaded by the out-of-core disk access (Actually Ranger staffs 
+    monitored the system load and found it degraded the file system 
+    performance). We decided not to allow the out-of-core. Thus we should 
+    partition the input query file into several pieces. To decide the partition 
+    size, we tested the proper block size with a test query with different 
+    sizes, for example, 500MB, 750MB, 1GB, and so on. In this application, 
+    we found 1 ~ 1.5GB query files is safe for running mr-mpi-blast without 
+    allowing out-of-core operation.
+        
     The other parameter settings are followed:
     
         in "examples/refseq-all-vs-all/mrblast.ini":
@@ -89,19 +95,21 @@ other information.
             ISQIDGI     0       
         
         
-    The number of query block by BLOCKSIZE=500000 is around 2500. Thus the total 
-    number of work items is around 7500. We used 2,048 cores for this run. We 
-    first request 2,048 cores from "normal" queue with 24 hours runtime. The 
-    partitioned query files are placed in different subdirectories. The script 
-    "ranger-for-loop-run.sh" does a little trick. Each subdirectory is visited 
-    one by one and mr-mpi-blast runs with the data in the directory. When 
-    completed, writes "SUCCESS" file to represent this partition is done. 
-    If the runtime request (24h) is not ended, visit the next subdirectory and 
-    run mr-mpi-blast. If the requested runtime is ended, the running mr-mpi-blast 
-    process will be terminated but "SUCCESS" will not be recorded for the 
-    subdirectory. Thus, the next allocation will started from the aborted 
+    The number of query block created by BLOCKSIZE=500000 is around 2,500. Thus 
+    the total number of work items is around 7,500. We used 2,048 cores for 
+    this run. We first request 2,048 cores from "normal" queue with 24 
+    hours runtime. The partitioned query files are placed in different 
+    subdirectories. The script "ranger-for-loop-run.sh" does a little 
+    trick. Each subdirectory is visited one by one and mr-mpi-blast runs 
+    with the data in the directory. When completed, "SUCCESS" file is created
+    to represent BLAST search for this partition is done. If the runtime 
+    request (24hours) is not ended, visit the next subdirectory and run 
+    mr-mpi-blast. If the requested runtime is ended, the running mr-mpi-blast 
+    process will be aborted but "SUCCESS" will not be recorded for the 
+    subdirectory. Thus, the next allocation will start from the aborted 
     subdirectory. The SGE job script and program looping script are following.
     
+       
         in "examples/refseq-all-vs-all/sge_job_script.job":
         
             #$ -N r2048
