@@ -11,7 +11,6 @@
 import sys
 import os
 import struct
-from numpy import *
 import string
 from sqlite3 import *
 import optparse

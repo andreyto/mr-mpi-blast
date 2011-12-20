@@ -11,7 +11,6 @@
 import sys
 import os
 import struct
-from numpy import *
 import string
 import linecache
 import optparse

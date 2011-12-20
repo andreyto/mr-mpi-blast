@@ -5,18 +5,14 @@ Updated: 12/12/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
-This is an introductory README for the mr-mpi-blast program. 
+This is introductory README for the mr-mpi-blast program. For details, you may 
+refer the below documents:
 
-The mr-mpi-blast is a parallel implementation of NCBI BLAST+ using the NCBI C++ 
-Toolkit and MapReduce-MPI library.
-
-For details, you may refer the below documents:
-
-  - ./doc/BUILD: explains how to build mr-mpi-blast 
-  - ./doc/USERGUIDE: introduces mr-mpi-blast program and how to use mr-mpi-blast and parameters
-  - ./tutorial/README: explains how to run mr-mpi-blast on the XSEDE TACC Ranger cluster
-  - ./examples/test/README: explains how to run mr-mpi-blast on a local machine
-  - ./examples/refseq-all-vs-all/README: introduces a case of our large-scale experiment
+  - doc/BUILD: explains how to build mr-mpi-blast 
+  - doc/USERGUIDE: introduces mr-mpi-blast program and how to use mr-mpi-blast and parameters
+  - tutorial/README: explains how to run mr-mpi-blast on the XSEDE TACC Ranger cluster
+  - examples/test/README: explains how to run mr-mpi-blast on a local machine
+  - examples/refseq-all-vs-all/README: introduces a case study of our large-scale experiment
     
     
 If you have any question, please contact Seung-Jin Sul (ssul@jcvi.rog) or 

@@ -9,7 +9,7 @@
 
 import sys
 from cStringIO import StringIO
-import numpy as npy
+
 
 class FastaReader(object):
     """Class that supports an input iterator protocol for a FASTA file.

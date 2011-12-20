@@ -7,17 +7,16 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 
 
-
 * Requirements
 
-    - This examples show how to run mr-mpi-blast using two small query files 
-      for doing a BLAST search against a custom NCBI blast database.
+    - This document shows how to run mr-mpi-blast using two small query files 
+      for running BLAST search against a custom NCBI blast database.
     - This assumes that you run mr-mpi-blast on your local machine 
       with Open MPI. The mr-mpi-blast will be started using "mpirun".
     - You should run the scripts in order of the number in the file name. 
     - Please refer to "tutorial" for larger running examples.
     - The "$MRMPIBLAST_PREFIX/bin" should be added to the executable search path.
-      for running "mrblast" and "makeblastdb" executables and other Python 
+      for running "mrblast" and "makeblastdb" executables, and other Python 
       scripts.
       
       ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
@@ -29,7 +28,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 1.indexing_30_real_seqs.sh
 
-    - This query data shows the case of general query sequence in which each 
+    - This query data show the case of general query sequence in which each 
       sequence has "gi".
     - The 30 query sequences were selected arbitrarily from NCBI RefSeq viral 
       sequences and saved in "30_real_seqs.fa" file (~100Kbp).
@@ -41,8 +40,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
     
 2.indexing_100_simul_seqs.sh
 
-    - This query data shows the case of simulated query sequence which has no 
-      "gi". Each query will be assigned a unique query ID during the indexing 
+    - This query data show the case of simulated query sequence which has no 
+      "gi". Each query will be assigned an unique query ID during the indexing 
       step.
     - Generate 100 query sequences (1000bp length) by splitting the RefSeq viral 
       sequences and saved in "100_simul_seqs.fa" file (~100Kbp).
@@ -56,35 +55,27 @@ By Seung-Jin Sul (ssul@jcvi.org)
 3.makeblastdb.sh
 
     - Total 3,728 sequences were arbitrarily chosen from NCBI RefSeq viral 
-      sequences and saved in "test.fa" file (78MB).
-    - Using "makeblastdb" utility from NCBI BLAST+ and test input FASTA file, 
-      "test.fa", generate BLAST formatted db.
-    - The name of the generated BLAST db is specified in "dblist.txt" so that
-      mr-mpi-blast read the subject database list from the file.
-    
-    NOTE: If you do BLAST search against the NCBI BLAST database downloaded 
-    from the NCBI site, list the names of database in the "dblist.txt" file.
-    
-    ex) in dblist.txt:
-        refseq_genomic.00
-        refseq_genomic.01
-        refseq_genomic.02
-        refseq_genomic.03
-        ...
-
+      sequences and saved in the "test.fa" file (78MB).
+    - Using "makeblastdb" utility from NCBI BLAST+ and the input FASTA file, 
+      "test.fa", generate BLAST formatted database, names as "test.db".
+    - The "test.db" should be set as "DATABASENAME" in the "mrblast.ini" 
+      configuration file.
+    - The name of the generated BLAST database fragment is specified in the 
+      "dblist.txt" so that mr-mpi-blast read the list from the file, and the 
+      "dblist.txt" should be set in "DBLISTFILENAME" of the configuration file.
+ 
 
 4.run_mrblast_30_real.sh
 
     - Run mr-mpi-blast using mpirun on four processing units. The Block size 
       option, "BLOCKSIZE" in the "mrblast.ini" is set as 5000bp resulting in 
       10 query blocks and 10 (10 query blocks x 1 database file) work items.
-    - Do BLAST search using "30_real_seqs.fa" against "test.fa" 
-      BLAST db. The "dblist.txt" has the name of formatted database, 
+    - Do BLAST search using "30_real_seqs.fa" against "test.db" 
+      BLAST . The "dblist.txt" has the name of formatted database, 
       "test.fa".
     - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
       Sqlite, and Hd5 database files.
-    - In this run, "-dbsize" is unset, because there is only one database partition.
           
 
 5.run_mrblast_100_simul.sh
@@ -99,11 +90,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
       Sqlite, and Hd5 database files.
-    - In this run, "-dbsize" is unset, because there is only one database partition.
 
 
 6.run_mrblast_30_real_w_numiter.sh
 
-    - Run mr-mpi-blast with setting "NUMITER". 
+    - Run mr-mpi-blast with setting "NUMITER" as 2.
     - The iteration number will be added to the resulting hit file names.
     - The hit files are converted into CSV, Sqlite, and Hd5 database files.

@@ -12,7 +12,7 @@
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 10/28/2011
+//  Last updated: 12/19/2011
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -27,57 +27,7 @@ private:
 };
 
 void CMrMpiBlastApplication::Init(void)
-{
-    ///
-    /// Read conf file, mrblast.ini and set parameters
-    ///
-    ifstream config(CONF_FILE_NAME.c_str(), ios::in);
-    if (!config) {
-        MPI_Abort(MPI_COMM_WORLD, 1);
-        cout << "ERROR: failed to open configuration file (mrblast.ini)" << endl;
-        exit(1);
-    }
-
-    set<string> options;
-    mapSS_t parameters;
-    options.insert("*");
-
-    try {
-        for (pod::config_file_iterator i(config, options), e ; i != e; ++i) {
-            parameters[i->string_key] = i->value[0];
-        }
-        try {
-            g_verbosity      = boost::lexical_cast<int>(parameters["VERBOSITY"]);
-            g_timer          = boost::lexical_cast<int>(parameters["TIMER"]);
-            g_memSize        = boost::lexical_cast<int>(parameters["MEMSIZE"]);
-            g_outOfCore      = boost::lexical_cast<int>(parameters["OUTOFCORE"]);
-            g_mapStyle       = boost::lexical_cast<int>(parameters["MAPSTYLE"]);
-            
-            g_bLogEnabled    = boost::lexical_cast<bool>(parameters["LOGENABLED"]);
-            g_timingEnabled  = boost::lexical_cast<int>(parameters["TIMING"]);
-            g_logFileName    = parameters["LOGFNAME"];
-            g_optDumpEnabled = boost::lexical_cast<int>(parameters["OPTDUMP"]);
-            
-            g_blockSize      = boost::lexical_cast<uint32_t>(parameters["BLOCKSIZE"]);
-            g_nIter          = boost::lexical_cast<int>(parameters["NUMITER"]);
-            g_bIsProtein     = boost::lexical_cast<bool>(parameters["ISPROTEIN"]);
-            g_bIsQidGi       = boost::lexical_cast<bool>(parameters["ISQIDGI"]);
-                        
-            g_queryFileName  = parameters["QUERYFILENAME"];
-            g_indexFileName  = parameters["INDEXFILENAME"];
-            g_dbFileName     = parameters["DBLISTFILENAME"];
-            g_outFilePrefix  = parameters["OUTFILEPREFIX"];            
-        }
-        catch (const boost::bad_lexical_cast &) {
-            cout << "Exception: bad_lexical_cast" << endl;
-            cout.flush();
-        }
-    }
-    catch (exception& e) {
-        cout << "Exception: " << e.what() << endl;
-        cout.flush();
-    }
-     
+{    
     if (g_bIsProtein) 
         g_cmdLineArgs.Reset(new CBlastpAppArgs());
     else 
@@ -85,6 +35,7 @@ void CMrMpiBlastApplication::Init(void)
         
     HideStdArgs(fHideLogfile | fHideConffile | fHideFullVersion | 
                 fHideXmlHelp | fHideDryRun);
+                
     SetupArgDescriptions(g_cmdLineArgs->SetCommandLine());  
 }
 
@@ -94,9 +45,9 @@ int CMrMpiBlastApplication::Run(void)
     SetDiagPostLevel(eDiag_Warning);
     
     const CArgs& args = GetArgs();
-    string allArgs;
     RecoverSearchStrategy(args, g_cmdLineArgs);
-    CRef<CBlastOptionsHandle> optsHndl(&*g_cmdLineArgs->SetOptions(args));
+    CRef<CBlastOptionsHandle> optsHndl(&*g_cmdLineArgs->SetOptions(args));       
+    optsHndl->Validate();
     g_optsHndl = optsHndl;
     
     ///
@@ -119,7 +70,7 @@ int CMrMpiBlastApplication::Run(void)
     /// Load DB list 
     ///
     string line;
-    ifstream dbListFile(g_dbFileName.c_str(), ios::in);
+    ifstream dbListFile(g_dbListFileName.c_str(), ios::in);
     if (!dbListFile.is_open()) {        
         MPI_Abort(MPI_COMM_WORLD, 1);
         cout << "ERROR: failed to open DB list file.\n";
@@ -195,12 +146,13 @@ int CMrMpiBlastApplication::Run(void)
     g_nWorkItems = g_vecWorkItem.size();
     
     if (g_MPI_worldRank == 0) {
-        cout << "Input query file = " << g_queryFileName << endl;
-        cout << "Input query index file = " << g_indexFileName << endl;
-        cout << "Database list file = " << g_dbFileName << endl;
-        cout << "Block size (bp) = " << g_blockSize << endl;
+        cout << "Query file name = " << g_queryFileName << endl;
+        cout << "Query index file name = " << g_indexFileName << endl;
+        cout << "Database name = " << g_dbName << endl;
+        cout << "Database list file name = " << g_dbListFileName << endl;
+        cout << "Query block size (bp) = " << g_blockSize << endl;
         cout << "Number of query blocks = " << g_nQueryBlocks << endl;
-        cout << "Number of DB files = " << g_nDbFiles << endl;
+        cout << "Number of database fragments = " << g_nDbFiles << endl;
         cout << "Number of total work items = " << g_nWorkItems << endl;
         cout << "Number of iterations = " << g_nIter << endl;
         cout.flush();
@@ -260,6 +212,57 @@ int CMrMpiBlastApplication::Run(void)
 int main(int argc, char** argv)
 {
     ///
+    /// Read conf file, mrblast.ini and set parameters
+    ///
+    ifstream config(CONF_FILE_NAME.c_str(), ios::in);
+    if (!config) {
+        MPI_Abort(MPI_COMM_WORLD, 1);
+        cout << "ERROR: failed to open mr-mpi-blast configuration file, mrblast.ini" << endl;
+        exit(1);
+    }
+
+    set<string> options;
+    mapSS_t parameters;
+    options.insert("*");
+
+    try {
+        for (pod::config_file_iterator i(config, options), e ; i != e; ++i) {
+            parameters[i->string_key] = i->value[0];
+        }
+        try {
+            g_verbosity      = boost::lexical_cast<int>(parameters["VERBOSITY"]);
+            g_timer          = boost::lexical_cast<int>(parameters["TIMER"]);
+            g_memSize        = boost::lexical_cast<int>(parameters["MEMSIZE"]);
+            g_outOfCore      = boost::lexical_cast<int>(parameters["OUTOFCORE"]);
+            g_mapStyle       = boost::lexical_cast<int>(parameters["MAPSTYLE"]);
+            
+            g_bLogEnabled    = boost::lexical_cast<bool>(parameters["LOGENABLED"]);
+            g_timingEnabled  = boost::lexical_cast<int>(parameters["TIMING"]);
+            g_logFileName    = parameters["LOGFNAME"];
+            g_optDumpEnabled = boost::lexical_cast<int>(parameters["OPTDUMP"]);
+            
+            g_blockSize      = boost::lexical_cast<uint32_t>(parameters["BLOCKSIZE"]);
+            g_nIter          = boost::lexical_cast<int>(parameters["NUMITER"]);
+            g_bIsProtein     = boost::lexical_cast<bool>(parameters["ISPROTEIN"]);
+            g_bIsQidGi       = boost::lexical_cast<bool>(parameters["ISQIDGI"]);
+                        
+            g_queryFileName  = parameters["QUERYFILENAME"];
+            g_indexFileName  = parameters["INDEXFILENAME"];
+            g_dbName         = parameters["DATABASENAME"];
+            g_dbListFileName = parameters["DBLISTFILENAME"];
+            g_outFilePrefix  = parameters["OUTFILEPREFIX"];            
+        }
+        catch (const boost::bad_lexical_cast &) {
+            cout << "Exception: bad_lexical_cast" << endl;
+            cout.flush();
+        }
+    }
+    catch (exception& e) {
+        cout << "Exception: " << e.what() << endl;
+        cout.flush();
+    }
+    
+    ///
     /// MPI setup
     ///
     int MPI_procNameLen;    
@@ -267,9 +270,79 @@ int main(int argc, char** argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &g_MPI_worldRank);
     MPI_Comm_size(MPI_COMM_WORLD, &g_MPI_nProcs);
     MPI_Get_processor_name(g_MPI_procName, &MPI_procNameLen);
+    
+    ///
+    /// Set the "-db -" parameter by default. It's dummy. The actual list of 
+    /// databases is read from a database list file, like "dblist.txt".
+    /// Check if user sets "-dbsize" if not get the effective db size by using
+    /// "blastdbcmd" and set it using "-dbsize".
+    ///
+    int i;    
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "-db") == 0) {
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            cout << "ERROR: '-db' option is not compatible with mr-mpi-blast.\n";
+            exit(1);
+        }
+    }
+    char *defArg1 = "-db";
+    char *defVal1 = "-";    
+    bool bIsDbsizeSet = false;
+    /// Check if user sets "-dbsize"
+    for (i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "-dbsize") == 0) {
+            bIsDbsizeSet = true;
+            break;
+        }
+    }
+    
+    /// Duplicate the orig argv
+    char **newArgv = (char **) malloc((argc+5) * sizeof (char *));
+    for (i = 0; i < argc; i++) {
+        int len = strlen(argv[i]);
+        newArgv[i] = (char *) malloc (len + 1);
+        strcpy(newArgv[i], argv[i]); 
+    }
+    
+    /// Add '-db' and '-'
+    newArgv[argc] = (char *) malloc (strlen(defArg1) + 1);
+    strcpy(newArgv[argc], defArg1);
+    newArgv[argc++][strlen(defArg1)+1] = '\0';
+    newArgv[argc] = (char *) malloc (strlen(defVal1) + 1);
+    strcpy(newArgv[argc], defVal1);
+    newArgv[argc++][strlen(defVal1)+1] = '\0';
+    newArgv[argc] = NULL;
+    
+    /// if "dbsize" is not set by user, get the effective
+    /// db size of the database and set the number by "-dbsize" BLAST option.
+    if (!bIsDbsizeSet) {
+        /// Get the effective db size of "g_dbName"
+        CRef<CSeqDBExpert> BlastDb;
+        CSeqDB::ESeqType seqtype;
+        seqtype = g_bIsProtein ? CSeqDB::eProtein : CSeqDB::eNucleotide;;
+        BlastDb.Reset(new CSeqDBExpert(g_dbName, seqtype));
+        string strDbLen = NStr::UInt8ToString(BlastDb->GetTotalLength());        
+        
+        /// Bcast the effective dbsize
+        char dbLen[50];
+        strcpy(dbLen, strDbLen.c_str());
+        dbLen[strDbLen.length()+1] = '\0';
+        /// Just send dbLen as MPI_CHAR instead MPI_INT_SOMETHING
+        MPI_Bcast((char*)dbLen, strDbLen.length()+1, MPI_CHAR, 0, MPI_COMM_WORLD);
+
+        /// Add "-dbsize" option and value
+        char *defArg2 = "-dbsize";
+        newArgv[argc] = (char *) malloc (strlen(defArg2) + 1);
+        strcpy(newArgv[argc], defArg2);
+        newArgv[argc++][strlen(defArg2)+1] = '\0';
+        newArgv[argc] = (char *) malloc (strlen(dbLen) + 1);
+        strcpy(newArgv[argc], dbLen);
+        newArgv[argc++][strlen(dbLen)+1] = '\0';
+        newArgv[argc] = NULL;
+    }
         
     /// Execute main application function
-    int ret = CMrMpiBlastApplication().AppMain(argc, argv);    
+    int ret = CMrMpiBlastApplication().AppMain(argc, newArgv);    
     
     MPI_Finalize();   
     
@@ -510,13 +583,13 @@ void mr_map_run_blast(int itask,
     struct timeval dbLoadingStart_s_Time;
     struct rusage  ru_dbLoading;
      
-    //if (rank == 1 && g_optDumpEnabled == 1) {
-        //g_optDumpEnabled = 0;
-        //string strategyFName = g_outFilePrefix + "-search_strategy.txt";
-        //ofstream strategyOutFile(strategyFName.c_str(), ios::out);
-        //g_optsHndl->GetOptions().DebugDumpText(strategyOutFile, "optsHndl", 1);
-        //strategyOutFile.close();
-    //}
+    if (rank == 1 && g_optDumpEnabled == 1) {
+        g_optDumpEnabled = 0;
+        string strategyFName = g_outFilePrefix + "-search_strategy.txt";
+        ofstream strategyOutFile(strategyFName.c_str(), ios::out);
+        g_optsHndl->GetOptions().DebugDumpText(strategyOutFile, "optsHndl", 1);
+        strategyOutFile.close();
+    }
     
     string dbFileName = g_vecDbFile[dbno];
      
@@ -568,7 +641,6 @@ void mr_map_run_blast(int itask,
                                         query_opts->GetParseDeflines(),
                                         query_opts->GetRange(),
                                         !g_cmdLineArgs->ExecuteRemotely());
-        iconfig.SetLowercaseMask(true); /// Enforce lowercase mask option again
         CBlastFastaInputSource fasta(query, iconfig);
         CBlastInput input(&fasta);
 
@@ -1014,6 +1086,13 @@ inline void mr_reduce_sort_and_save_generic(char *key,
 inline bool compare_evalue_generic(structEValue_t e1,
                                    structEValue_t e2)
 {
+    ///
+    /// Possible sort criteria
+    /// Expect Value: default
+    /// Max Score: By the bit score of HSPs, similar to Expect Value
+    /// Query Coverage: By the percent of length coverge for the query
+    /// Max Identity: By the maximal percent ID of the HSPs
+    ///
     int ret = strcmp(e1.subjectId, e2.subjectId);
     return (ret != 0) ? ((e1.eValue != e2.eValue) ? (e1.eValue < e2.eValue) : 
                 (e1.bitScore < e2.bitScore)) : (ret);

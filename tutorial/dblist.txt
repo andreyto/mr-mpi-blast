@@ -1,2 +1,2 @@
-microbial_all.fa.00
-microbial_all.fa.01
+microbial_all.db.00
+microbial_all.db.01

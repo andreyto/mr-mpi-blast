@@ -8,8 +8,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
 * Requirements
 
     - This tutorial is prepared and tested on XSEDE TACC Ranger cluster which 
-      is one of high performance computing systems operated by Texas Advanced 
-      Computing Center (TACC). It should be easy to adapt for other systems.
+      is one of high performance computing systems operated by XSEDE Texas 
+      Advanced Computing Center (TACC). It should be easy to adapt for other 
+      systems.
     - The following assumes that you are working in your own copy of the 
       tutorial directory.
       
@@ -24,8 +25,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
       ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
       
     - Utilities for preparing data and converting output need Python installed. 
-      To use HD5 database format as output format, PyTables should be installed 
-      (http://www.pytables.org/moin/PyTablesPro).
+      To use HD5 database format as output format, PyTables package should be 
+      installed (http://www.pytables.org/moin).
       
 
 1. Set XSEDE TACC Ranger module list
@@ -54,17 +55,16 @@ By Seung-Jin Sul (ssul@jcvi.org)
         - Download NCBI RefSeq microbial FASTA sequence files and collect them 
           in a FASTA file (39,006 sequences, ~8Gbp).
         - Make BLAST formatted database using "makeblastdb" utility resulting 
-          in two BLAST formatted database, "microbial_all.fa.00" and 
-          "microbial_all.fa.01".
-        - We have two formatted database partitions and each of the partition 
-          will be engaged in BLAST search. Thus, the effective length of the 
-          database should be set with the total database size which is 8,538,182,741
-          total bases by using "-dbsize" parameter.
-
+          in two BLAST formatted database partitions, "microbial_all.db.00" and 
+          "microbial_all.db.01".
+        - We have two formatted database partitions and each of the partition
+          will be engaged in BLAST search. 
+          
         
     (3) Run mr-mpi-blast
        
-       * NOTE: Please set your SGE account to $SGE_ACCOUNT 
+       * NOTE
+         Please set your SGE account code to $SGE_ACCOUNT 
               
        $ sh ./3.run_mr-mpi-blast.sh
        
@@ -72,13 +72,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
           generated BLAST database.
         - Run mr-mpi-blast using ibrun with 64 processing units of "development" 
           queue. 
-        - The Block size option, "BLOCKSIZE" in the "mrblast.ini" is set 
+        - The query block size option, "BLOCKSIZE" in the "mrblast.ini" is set 
           as 1Mbp resulting in 96 query blocks and total 192 (96 query blocks x 
           2 database files) work items.
-        - The "dblist.txt" has the name of formatted database, "microbial_all.fa.00" 
-          and "microbial_all.fa.01".
+        - The "dblist.txt" has the name of formatted database, "microbial_all.db.00" 
+          and "microbial_all.db.01".
         - The evalue is set as 1e-4.
-        - Note that the effective database size is set by "-dbsize 8538182741".
 
         
     (4) Convert output hit files from mr-mpi-blast

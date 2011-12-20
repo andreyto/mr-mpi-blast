@@ -6,10 +6,7 @@
 # copyright and license terms.
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
-
-from cStringIO import StringIO
-import sys
-import numpy as npy
+ 
 import optparse
 
 class FastaReader(object):
@@ -164,9 +161,9 @@ if __name__ == '__main__':
         if uidOption == 0:
             if options.startno != 0:          
                 seqUID = options.startno
-            print "UID will be set as serial number starting from ", options.startno
+            print "    Serial number starting from ", options.startno, "is used for unique query ID."
         else:
-            print "UID will be set as GI"
+            print "    GI number is used for unique query ID."
 
     if options.deflinefilename and options.deflineopt is not None:
         defFileName = options.deflinefilename
@@ -196,6 +193,8 @@ if __name__ == '__main__':
         uid = 0
         
         if uidOption == 1:
+            assert defline.rstrip().split("|")[0].find('gi') != -1
+            defline.rstrip().split("|")[0]
             uid = defline.rstrip().split("|")[1]
         else:
             uid = seqUID
@@ -210,6 +209,6 @@ if __name__ == '__main__':
         
     outFile.close()
     defFile.close()
-    print "Total number of sequences = ", numSeq
+    print "    Total number of sequences = ", numSeq
     
 ### EOF

@@ -8,13 +8,13 @@ gunzip -f -v *.gz &&
 cat *.fna > microbial_all.fa &&
 
 echo -e "\n\n### Make NCBI BLAST database ###"
-makeblastdb -in microbial_all.fa -dbtype nucl -logfile blastdbmake.log &&
+makeblastdb -in microbial_all.fa -out microbial_all.db -dbtype nucl -logfile blastdbmake.log &&
 
 blastdbcmd -info -db microbial_all.fa &&
 
 ls -alh . &&
 cd ..
 
-echo -e "\n### Done!"
+echo -e "\nDone!"
 
 # EOF

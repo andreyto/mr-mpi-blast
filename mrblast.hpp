@@ -12,7 +12,7 @@
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 10/24/2011
+//  Last updated: 12/19/2011
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -59,6 +59,9 @@ using namespace std;
 /// For align info
 #include "blast_app_util.hpp"
 
+/// For blastdbcmd
+#include <objtools/blast/seqdb_reader/seqdbexpert.hpp>
+
 USING_NCBI_SCOPE;
 USING_SCOPE (blast);
 USING_SCOPE (align_format);
@@ -97,8 +100,11 @@ namespace pod = boost::program_options::detail;
 boost::iostreams::mapped_file_source g_memmapQueryFile; /// Read-only Boost mmap query file
 uint64_t g_realFileSize = 0;
 
+/// String trim
+#include <boost/algorithm/string/trim.hpp>
+
 /// ----------------------------------------------------------------------------
-/// Settings from mrblast.ini conf file
+/// Settings from mrblast.ini file
 /// ----------------------------------------------------------------------------
 /// MR-MPI options
 int g_verbosity;
@@ -108,8 +114,9 @@ int g_outOfCore;
 
 /// DB options
 int g_nDbFiles;
-string g_dbFileName;
-string CONF_FILE_NAME = "mrblast.ini";
+string g_dbName;
+string g_dbListFileName;
+const string CONF_FILE_NAME = "mrblast.ini";
 const int MAXSTR = 80;      /// For mpi proc name and subject id string
 
 /// ----------------------------------------------------------------------------

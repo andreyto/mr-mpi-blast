@@ -8,7 +8,7 @@ echo -e "\n### Indexing query FASTA file for mr-mpi-blast"
 seqindexer.py -i 30_real_seqs.fa -o 30_real_seqs.fa.idx -d 30_real_seqs.fa.def -u 1 -b 0
 
 
-echo -e "\n### Done!"
+echo -e "\nDone!"
 
 # EOF
 

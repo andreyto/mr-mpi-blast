@@ -57,9 +57,9 @@ information.
         Date: May 23, 2011  6:49 PM     Longest sequence: 13,033,779 bases
 
         Volumes:
-           /export/blastdb_microbial/refseq_microbial.00
-           /export/blastdb_microbial/refseq_microbial.01
-           /export/blastdb_microbial/refseq_microbial.02
+           .../refseq_microbial.00
+           .../refseq_microbial.01
+           .../refseq_microbial.02
 
 
 (4) Running mr-mpi-blast
@@ -69,15 +69,15 @@ information.
     will eliminate the possibility of page overflow in MapReduce-MPI. As we 
     set the page size as 128MB, the first issue is out-of-core operation. 
     Many hits should be maintained in the data structure of MapReduce. When 
-    we allow the out-of-core operation, it could deal with the whole input 
-    query file but the file system of the underlying cluster system is 
-    overloaded by the out-of-core disk access (Actually Ranger staffs 
-    monitored the system load and found it degraded the file system 
+    we allow the out-of-core operation, it could be possible to process the 
+    whole input query file but the file system of the underlying cluster system 
+    is definitely overloaded by the out-of-core disk access (Actually Ranger 
+    staffs monitored the system load and found it degraded the file system 
     performance). We decided not to allow the out-of-core. Thus we should 
     partition the input query file into several pieces. To decide the partition 
     size, we tested the proper block size with a test query with different 
     sizes, for example, 500MB, 750MB, 1GB, and so on. In this application, 
-    we found 1 ~ 1.5GB query files is safe for running mr-mpi-blast without 
+    we found 1 ~ 1.5GB query files are safe for running mr-mpi-blast without 
     allowing out-of-core operation.
         
     The other parameter settings are followed:
@@ -147,10 +147,7 @@ information.
                         cd $direc            
                         rm -rf output-*
                         echo "run job in $direc"
-                        time ibrun mrblast -db - -dbsize 12494903041 -evalue 1e-4 -num_threads 1
-             -window_size 0 -word_size 11 -searchsp 0 -num_descriptions 500 -num_alignments 10000 -
-            penalty -5 -reward 4  -lcase_masking -dust yes -soft_masking true -max_target_seqs 2147
-            483647
+                        time ibrun mrblast -evalue 1e-4 -num_threads 1 -window_size 0 -word_size 11 -searchsp 0 -num_descriptions 500 -num_alignments 10000 -penalty -5 -reward 4  -lcase_masking -dust yes -soft_masking true -max_target_seqs 2147483647
             
             echo "job done in $direc"
                         cp ../*.o* .
@@ -160,12 +157,7 @@ information.
                     fi
                 fi
             done
-
-
-    In the above script, mr-mpi-blast takes several BLAST+ options. Note that 
-    the dbsize is set with the total database size. For details on the BLAST+ 
-    options, please refer to BLAST+ documents.
-    
+   
     
 (5) Result File
  

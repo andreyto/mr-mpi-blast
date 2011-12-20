@@ -9,7 +9,7 @@ echo -e "\n### Indexing query FASTA file for mr-mpi-blast"
 seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx -d 100_simul_seqs.fa.def -u 0 -s 0 -b 1
 
 
-echo -e "\n### Done!"
+echo -e "\nDone!"
 
 # EOF
 

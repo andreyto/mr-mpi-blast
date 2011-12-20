@@ -2,7 +2,7 @@ User Guide for mr-mpi-blast (version 11.0.1)
 
 
 
-Updated: 12/12/2011
+Updated: 12/19/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
  
@@ -11,14 +11,15 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     - The mr-mpi-blast program is a parallel implementation of NCBI BLAST+ 
       using the NCBI C++ Toolkit and MapReduce-MPI library and implements a 
-      "matrix-split" BLAST search in which a BLAST search job is transformed into 
-      searching "n" blocks of query sequences against "m" database partitions. 
-    - The work items become pairs <query block, DB partition name>.
-    - The program distributes (n x m) work items among "c" processing units 
-      ("workers") in a cluster system and each worker runs BLAST search with 
-      the assigned pairs of <query block, DB partition name>. Note that 
-      c << n x m, in normal case.
-    - The mr-mpi-blast assumes a shared file system.
+      "matrix-split" BLAST search in which a BLAST search job is transformed 
+      into searching "n" blocks of query sequences against "m" database 
+      partitions. 
+    - A work item becomes pairs <query block, DB partition name> and the 
+      (n x m) work items are distributed to "c" processing units ("workers") 
+      in a cluster system. Each worker runs BLAST search with the assigned 
+      pairs of <query block, DB partition name>. Note that c << n x m, usually. 
+    - The mr-mpi-blast assumes a shared file system which means no locally 
+      attached file system is available for each node. 
     - The master/worker scheduling option of MapReduce library is used which 
       instructs it to use the process with rank 0 as a master that distributes
       work items to the remaining ranks in a load-balanced way, such that each 
@@ -27,63 +28,43 @@ By Seung-Jin Sul (ssul@jcvi.org)
       master tries best to distribute the work items to those ranks that have
       already been processing the same DB partitions. 
     - The mr-mpi-blast consists of three primary steps. The first and last 
-      steps are offline jobs and the second step is done during the actual
+      steps are offline and the second step is done during the actual
       mr-mpi-blast run. First, the input query sequences in a FASTA file 
       are indexed so that mr-mpi-blast loads the file as memory-mapped file 
       and logically splits it into many blocks. Second, the master prepares 
       (n x m) work items and assigns each work item to non-busy workers. Each 
-      worker runs BLAST search with the assigned work item. Here the results 
-      per work item is accumulated at each worker. For example, if the master 
-      assigns "w" work items among (n x m) work items to a worker, where w 
-      < n x m, the worker accumulates "w" sets of BLAST results during the 
-      whole operation. Finally, each worker saves all the hits to a binary file 
-      that is owned by each rank. Finally, all result files are collected and 
-      saved to a file.
+      worker runs BLAST search with the assigned work item. The hit results 
+      per work item is accumulated in each worker. For example, if the master 
+      assigns "w" work items of the (n x m) work items to a worker, where w 
+      < n x m, the worker accumulates maximum "w" sets of BLAST results. At the 
+      end, each worker saves the stored hits to individual binary 
+      file. Finally, all result files are collected and saved into a file.
       
     - Usage examples:
     
-        ex) mpirun mrblast -db -
-        ex) mpirun mrblast -db - -evalue 1e-4          
-        ex) mpirun mrblast -db - -evalue 1e-4 -dbsize 12494903041 
-            -num_threads 1 -window_size 0 -word_size 11 -searchsp 0            
-            -num_descriptions 500 -num_alignments  10000 -penalty -5 -reward 4 
-            -lcase_masking -dust yes -soft_masking true -export_search_strategy 
-            strategy_temp.txt -max_target_seqs 2147483647
+        ex) mpirun mrblast
+        ex) mpirun mrblast -evalue 1e-4          
+        ex) mpirun mrblast -evalue 1e-4 -num_threads 1 -window_size 0 
+            -word_size 11 -searchsp 0 -num_descriptions 500 -num_alignments 10000 
+            -penalty -5 -reward 4 -lcase_masking -dust yes -soft_masking true 
+            -export_search_strategy strategy_temp.txt -max_target_seqs 2147483647
             
-    - The argument, "-db -" is mandatory. The subject database file names 
-      should be listed in a text file, for example, "dblist.txt" and the name
-      of the text file should be specified as "DBLISTFILENAME" in the 
-      mr-mpi-blast configuration file, "mrblast.ini".
+    - The subject database name should be specified as "DATABASENAME" and the 
+      name of the database partition files should be listed in a text file, for 
+      example, "dblist.txt" and the list file name should be specified as 
+      "DBLISTFILENAME" in the mr-mpi-blast configuration file, "mrblast.ini".
     - The query FASTA file and the generated index file should be specified in 
       the configuration file.
-	- Most of NCBI blastn and blastp (v.2.2.24+) options are supported except:
+    - Most of NCBI blastn and blastp (v.2.2.24+) options are supported except:
       
         . Input query options: -query, -query_loc
         . Database options: -db, -out, -use_index, -index_name, -subject, -subject_loc
         . Formatting options: -outfmt, -show_gis, -html
+        . Search strategy options: -import_search_strategy, -export_search_strategy
         . Miscellaneous options: -remote
-
-    - The "-dbsize" option is useful for maintaining consistent statistics 
-      over time as databases grow. If "-dbsize" is unset or set to 0, the 
-      actual effective length of the database is used. As it is usually done 
-      in the DB-split BLAST computations, the effective DB size should be 
-      overridden in the BLAST call to be the entire length of the size 
-      instead of the length of the current partition. To see the BLAST 
-      database info use the below command:
-      
-      ex) $ blastdbcmd -info -db microbial_all.fa
-      
-            Database: microbial_all.fa
-                    39,006 sequences; 8,538,182,741 total bases
-
-            Date: Dec 8, 2011  12:57 PM     Longest sequence: 13,033,779 bases
-
-            Volumes:
-                    /work/01471/ssul/work/test/tutorial-test/blastdb/microbial_all.fa.00
-                    /work/01471/ssul/work/test/tutorial-test/blastdb/microbial_all.fa.01
-
-
-    - The mr-mpi-blast is a MPI program thus it should be run by "mpirun".
+        
+    - The mr-mpi-blast is a MPI program thus it should be run by "mpirun" or 
+      whatever equivalent like "ibrun" on XSEDE TACC Ranger cluster.
       
         . An example SGE job script  
 
@@ -96,263 +77,434 @@ By Seung-Jin Sul (ssul@jcvi.org)
             #$ -o $JOB_NAME.o$JOB_ID # Name of the output file  
             #$ -pe 16way 64  # Requests 16 tasks/node, 64 cores total 
             #$ -q development # Queue name 
-            #$ -l h_rt=00:30:00 # Run time (hh:mm:ss) - 1.5 hours 
-            mpirun mrblast -db - -evalue 1e-4 -dbsize 8538182741
+            #$ -l h_rt=00:30:00 # Run time (hh:mm:ss)
+            mpirun mrblast -evalue 1e-4 
       
 
 * Input Files
 
-    * NOTE: The mr-mpi-blast program assumes the cluster system supports a shared
-      file system. All required input files should be accessible from all 
-      processing units or ranks.
+    * NOTE
+      The mr-mpi-blast program assumes user uses a cluster system which 
+      supports a shared file system. All required input files should be 
+      accessible from all processing units or ranks.
       
 
 	- Input query sequence file 
 
-      This should be a multi FASTA file. As mentioned, an index of sequence 
-      offsets in the input FASTA file should be generated. 
+      This should be a multi FASTA file. The FASTA formatted sequence 
+      consists of a single comment line called "defline", which is marked 
+      by a ">" sign at the beginning followed by the description of the 
+      sequence. The defline terminates with a new line character and is 
+      followed by one or more lines of actual sequences, each terminated 
+      with a new line character. Deflines for FASTA sequences from NCBI 
+      follow a distinctive structure, which has several pipe (|) separated 
+      fields. GI number is simply a series of digits that are assigned 
+      consecutively to each sequence record processed by NCBI and is 
+      recorded between ">gi|" and the next "|" in defline. See the examples 
+      of FASTA sequence below:
       
-	- Input index file and defline file (*.idx and *.def)
-
-      The index file has the offset in the file and the length in 
-      base-pair of each sequence and is used to logically split the query file 
-      into blocks of sequences for distributing among workers in MapReduce 
-      framework. 
-
-      The "tools/seqindexer/seqindexer.py" is provided to generate the index 
-      file. It also produces a defline file (.def) which stores the unique 
-      query IDs and the corresponding part or full deflines of the input 
-      sequences. This defline file is used to map the query ID to the defline
-      and prints the defline in the final tabular hit list.
+        ex) A nucleotide FASTA sequence example:
+            >gi|5524211|gb|AAD44166.1| cytochrome b [Elephas maximus maximus]
+            LCLYTHIGRNIYYGSYLYSETWNTGIMLLLITMATAFMGYVLPWGQMSFWGATVITNLFSAIPYIGTNLV
+            EWIWGGFSVDKATLNRFFAFHFILPFTMVALAGVHLTFLHETGSNNPLGLTSDSDKIPFHPYYTIKDFLG
+            LLILILLLLLLALLSPDMLGDPDNHMPADPLNTPLHIKPEWYFLFAYAILRSVPNKLGGVLALFLSIVIL
+            GLMPFLHTSKHRSMMLRPLSQALFWTLTMDLLTLTWIGSQPVEYPYTIIGQMASILYFSIILAFLPIAGX
+            IENY
       
-      You can select unique query ID option between serial number and gi. The 
-      former assigns serial numbers starting from "1" for all input query 
-      sequences. Also you can specify the starting number using "-s" option, if
-      you want. On the other hand, the latter uses the original gi of the query
-      sequence as its unique query ID. 
-
-	  An example run of "seqindexer.py" and option description are following.	
+      
+	- Input index and defline files (.idx and .def files)
+    
+      Before running mr-mpi-blast, user should generate an index file and a 
+      defline file by using "tools/seqindexer/seqindexer.py" utility 
+      (please refer to "tools/seqindexer/README"). The index file stores a 
+      set of information per each query in <offset, length, qid> format. 
+      The offset is each sequence's location in the query file and the 
+      length is base-pair length of the sequnece. Both are used to 
+      logically split the query file into blocks of sequences for 
+      distributing among workers in MapReduce framework. The "qid" field 
+      represents universally unique query ID per each query. You can select 
+      query ID option between serial number and GI for running 
+      "seqindexer.py". The former assigns serial numbers starting from "1" 
+      with the query sequences. This option is useful when your query 
+      sequences are not assigned with an unique GI number or do not have 
+      the GI field. Also you can specify any starting number using "-s" 
+      option, if you want. If you have query sequences which have unique 
+      GIs, you can use the extracted GI numbers as unique query IDs.     
+      
+      The defline file stores <qid, defline> and is used for generating 
+      final output with the saved deflines in a tabular format. The "-b" 
+      option in "seqindexer.py" directs to save either part of or full 
+      deflines of the input sequences. The part of defline means a 
+      substring of the defline between the first character, ">" and the 
+      first blank. The full defline means the whole line of the defline 
+      starting from ">" and the new line character. See the examples below 
+      showing part and full deflines from the above sequence exameple.
+      
+        ex) Example of part of defline 
+            >gi|5524211|gb|AAD44166.1|
+        ex) Example of full defline 
+            >gi|5524211|gb|AAD44166.1| cytochrome b [Elephas maximus maximus]
+            
+ 
+      An example execution of "seqindexer.py" and the resulting index file 
+      and defline file are shown below.
 
         ex) $ python seqindexer.py -i 30_real_seqs.fa -o 30_real_seqs.fa.idx 
               -d 30_real_seqs.fa.def -u 1 -b 0
-            $ python seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx 
+              
+            in "30_real_seqs.fa.idx":
+                0       1714    32140163
+                1841    1418    32140165
+                3382    2341    32140167
+                ...
+            
+            in "30_real_seqs.fa.def":
+                32140163        >gi|32140163|ref|NC_004908.1|
+                32140165        >gi|32140165|ref|NC_004909.1|
+                32140167        >gi|32140167|ref|NC_004910.1|
+                ...
+              
+              
+        ex) $ python seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx 
               -d 100_simul_seqs.fa.def -u 0 -s 0 -b 1
 
-        Options:
-        -i: input query file
-        -o: output index file
-        -d: output defline file; to store unique query ids and original deflines 
-        -u: unique ID option; 0=serial number, 1=gi
-        -s: if serial number option is selected, to specify the start number
-        -b: defline saving option; 0=part, 1=full defline
+            in "100_simul_seqs.fa.idx":
+                0       1000    1
+                1049    1000    2
+                2102    1000    3
+                ...
+                
+            in "100_simul_seqs.fa.def":
+                1       >gi|15078713|ref|NC_003038.1|_1_0_0_1000_0_1000
+                2       >gi|15078713|ref|NC_003038.1|_2_2_900_1900_900_1900
+                3       >gi|15078713|ref|NC_003038.1|_3_2_1800_2800_1800_2800
+                ...
 
+       
+      The description of the "seqindexer.py" options:
+    
+        Options:
+            -i: input query file
+            -o: output index file
+            -d: output defline file
+            -u: unique query ID option, 0=serial number, 1=GI number
+            -s: if serial number option is selected, you can optionally specify a 
+                start number
+            -b: defline saving option, 0=part of defline, 1=full defline
 
       For more information, please refer to "tools/seqindexer/README" and 
-      "tools/seqindexer/examples".
+      "tools/seqindexer/examples". The input sequence file and the 
+      generated index file should be described in the mr-mpi-blast 
+      configuration file, "mrblast.ini". How to set those names in the 
+      configuration file will be explained in the later section.
+
 
 	- Subject database list file
 
-      This file describes a list of subject database list. The format is 
-      <db file name>. Each database file should be formatted in BLAST database 
-      using either "formatdb" utility or blast+ "makeblastdb" utility. And the 
-      files should exist in the current working directory or in the "BLASTDB" 
-      path specified in the "[BLAST]" section of "~/.ncbirc" file.
+      This file describes a list of subject database partition names. The 
+      database partition(s) should be generated using "formatdb" utility or 
+      the latest "makeblastdb" utility in BLAST+. By default the utilities 
+      will produce one or more 1GB database partition(s). You can specify 
+      the partition size with "-max_file_sz". Please refer to the 
+      "Technical Considerations" section for details on choosing a database 
+      partition size. 
+      
+      For example, if you download all NCBI RefSeq microbial FASTA sequences 
+      and collect them in a FASTA file, "microbial_all.fa" (39,006 
+      sequences, ~8Gbp), the below "makeblastdb" command will generates two 
+      1GB BLAST formatted database partitions (please refer to 
+      "tutorial/README").
+      
+        ex) makeblastdb -in microbial_all.fa -out microbial_all.db -dbtype nucl 
+        
+      
+      Upon completion of the above command, you can find the generated 
+      database partitions, "microbial_all.db.00.*" and "microbial_all.db.01". 
+      The database name, "microbial_all.db" and the partition list file name 
+      should be specified in the mr-mpi-blast configuration file, "mrblast.ini". 
+      How to set those names in the configuration file will be explained in 
+      the next section.
+        
+      * NOTE
+        The mr-mpi-blast should run in the same directory of the databases or 
+        the path to the database should be specified in the "BLASTDB" path 
+        of the "[BLAST]" section in the "~/.ncbirc" file.
+        
+      * NOTE
+        If you need to run a set of queries against different databases, 
+	    you should run  separage mr-mpi-blast jobs with dif
+            
       
 	- Configuration file: mrblast.ini
 
-	  . Section [MR-MPI]: settings for MapReduce-MPI library operation
+      The "mrblast.ini" file is the configuration file which provides important 
+      input file names and parameter values with mr-mpi-blast. There are four 
+      sections in the file (Important parameters closely related with 
+      mr-mpi-blast performance will be discussed in "Technical Considerations" 
+      section in detail).
+
+      . Section [MR-MPI]: settings for MapReduce-MPI library operation
 
         VERBOSITY   1=show log from MapReduce-MPI library; 0, if not
         TIMER       1=save timing logs in log files for each MapReduce call;
                     0, if not 
-        MEMSIZE     page size in Mbytes; default=64MB
-        OUTOFCORE   -1=no disk operation, 0=allow out-of-core, 1=out-of-core 
-                    even with 1-page
-        MAPSTYLE    set scheduling option; 2=MapReduce-MPI native client/server 
+        MEMSIZE     Page size in Mbytes; default=64MB (smallest=1MB)
+        OUTOFCORE   -1=no out of core operation, 0=allow out-of-core, 
+                    1=out-of-core even with 1-page
+        MAPSTYLE    Set scheduling option; 2=MapReduce-MPI native client/server 
                     scheduler, 3=mr-mpi-blast custom location-aware scheduler
-                    (scheduling modes 0 and 1 are not supported by mr-mpi-blast)
-                        
-                        
-	  . Section [LOG]: log related settings
+                    (scheduler modes 0 and 1 are not supported by mr-mpi-blast)
+        
+                      
+      . Section [LOG]: log related settings
 
         LOGENABLED  1=save mr-mpi-blast logs; 0, if not
         TIMING      1=save elapsed time logs; 0, if not 
-        LOGFNAME    set file name postfix for log files
+        LOGFNAME    Set file name postfix for log files
         OPTDUMP     1=save BLAST search strategy to a file; 0, if not
         
         
       . Section [BLAST]: BLAST related settings
       
-        BLOCKSIZE       set block size in base pairs to split input query file
-        NUMITER         number of iterations; If you set this as n > 1, the set 
+        BLOCKSIZE       Set block size in base pair to split input query file
+        NUMITER         Number of iterations; If you set this as n > 1, the set 
                         of total work items will be divided into "n" sub work 
                         items and mr-mpi-blast will iterate over the sub sets 
                         "n" times. The output file from each run can be 
                         distinguished by the iteration number in each file name.
-        ISPROTEIN       set BLAST mode; 1=blastp, 0=blastn
-        ISQIDGI         set unique query ID options used for indexing; 
+        ISPROTEIN       Set BLAST mode; 1=blastp, 0=blastn
+        ISQIDGI         Set unique query ID options used for indexing; 
                         1=gi, 0=serial number
- 
 
-	  . Section [FILES] : in/out file settings
 
-        QUERYFILENAME   set input query sequence file name
-        INDEXFILENAME   set input query sequence index file name  
-        DBLISTFILENAME  set subject database list file name
-        OUTFILEPREFIX   set file name prefix for output file names
+     . Section [FILES] : in/out file settings
+
+        QUERYFILENAME   Set input query sequence file name
+        INDEXFILENAME   Set input query sequence index file name  
+        DATABASENAME    Set the subject database name
+        DBLISTFILENAME  Set the subject database partition list file name
+        OUTFILEPREFIX   Set file name prefix for output files
         
-
 
 * Output Files
 
-    * NOTE: The mr-mpi-blast program assumes the cluster system supports a shared
-      file system. All output files from workers are saved in a same location of 
-      the share file system. 
+    * NOTE
+      The mr-mpi-blast program assumes the cluster system supports a shared 
+      file system and there is no locally attached file system for node. 
+      All output files from workers will be saved in the same shared 
+      location. 
       
 	- BLAST search output files (*.bin)
 
-      Once BLAST search is completed, each rank saves BLAST hit in each separate 
-      binary file. The rank number will be added to the file name. Only the 
-      tabular format is supported for now. 
+      When BLAST search is completed, each rank saves the BLAST hits (HSPs, 
+      High Scoring Sequnece Pairs) that satisfy the defined cutoff for 
+      statistical significance, up to a user-defined maximum number of 
+      results. The Expect value (Evalue parameter) represents the number of 
+      times this match or a better one would be expected to occur purely by 
+      chance in a search of the entire database. Thus, the lower the Expect 
+      value, the greater the similarity between the input sequence and the 
+      match. The user-defined maximum number of results to show can be set 
+      using the "-num_alignments" BLAST option. If this is set as "n", "n" 
+      HSP(s) will be reported even though there are more than "n" hits 
+      which satisfy the cutoff. For more details on the related parameter 
+      settings, please refer to the BLAST+ user manual 
+      (http://www.ncbi.nlm.nih.gov/books/NBK1763/). 
+      
+      Those binary files can be converted into CSV, Sqlite database, and HD5 
+      database. To see how to convert, please refer to "Converting hit 
+      files" section. 
 
-      Tabular output format fields:
-      <queryId, subjectid, identity, alignLen, nMismatches, nGaps, queryStart, 
-      queryEnd, subjectStart, subjectEnd, evalue, bitScore>
-	
 	- Log files (*.log)
 
-	  If LOGENABLED=1 in mrblast.ini, each rank saves detailed log in each 
-      separate log file.
+	  If you set LOGENABLED=1 in "mrblast.ini", each rank saves mr-mpi-blast
+      log in individual log file.
 
 	- Strategy dump files (*-search_strategy.txt)
 
-  	  If OPTDUMP=1, BLAST search strategy is dumped in 
-      "OUTFILEPREFIX-search_strategy.txt" file.	
+  	  If OPTDUMP=1, BLAST search strategy is dumped in "OUTFILEPREFIX-
+      search_strategy.txt" file.	
 
 
-* Collecting and converting hit files    
+* Converting hit files    
 
-    The resulting "*.bin" files are easily converted into HD5, SQLite, or 
-    CSV files using the utilities provided under "tools/converter" directory. 
+    Upon completion of mr-mpi-blast run, each rank saves hits in each 
+    individual binary file. Those files can be easily converted into CSV, 
+    SQLite database, and HD5 database using the utilities provided under 
+    "tools/converter" directory. The mr-mpi-blast supports a tabular 
+    output format with the following fields:
+    
+        - queryId: unique query ID (GI or generated serial number)
+        - subjectId: subject sequence ID (GI or defline)
+        - identity: percent identity (%)
+        - alignLen: align length
+        - nMismatches: number of mismatches
+        - nGaps: number of gap openings
+        - queryStart: start of alignment in query
+        - queryEnd: end of alignment in query
+        - subjectStart: start of alignment in subject
+        - subjectEnd: End of alignment in subject
+        - evalue: expect value
+        - bitScore: bit score
+    
+    
     For example, if "*.bin" files are saved in "./hits" directory, the below 
-    commands collects and saves all hits from *.bin files into a output file.
+    commands collect and save all hits from *.bin files into an output file.
 
-    * NOTE: To use HD5 database format, PyTables should be installed 
-            (http://www.pytables.org/moin/PyTablesPro).
+    * NOTE
+      To use HD5 database format, PyTables should be installed 
+      (http://www.pytables.org/moin).
    
+    ex) $ python load_csv.py -b ./hits -o hits       # generate a CSV file  
     ex) $ python load_sql.py -b ./hits -o hits       # generates a sqlite file
     ex) $ python load_hd5.py -b ./hits -o hits       # generates a hd5 file
-    ex) $ python load_csv.py -b ./hits -o hits       # generate a CSV file  
     
     
-    If you want to add the original defline after the "qid" field, use "-d" 
-    and "-i" options.
-      
+    If you want to retrieve the saved deflines from ".def" file, use "-d" 
+    and "-i" options like the below examples. The defline field will be 
+    printed after "queryId" field. 
+       
+    ex) $ python load_csv.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def  
     ex) $ python load_sql.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
-    ex) $ python load_csv.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
     
+    * NOTE
+      Adding defline field is only supported by "load_csv.py" and "load_sql.py".
+      
 
 * Technical Considerations
 
-    This section discusses on the critical parameters to run mr-mpi-blast 
-    especially for large-scale BLAST search.     
+    This section discusses the critical parameters to run mr-mpi-blast 
+    successfully.
     
     (1) Parameters related with MapReduce-MPI library
     
-        We are using MPI MapReduce implementation called MapReduce-MPI. The  
-        important parameters will be discussed in this section. For details, 
-        please refer to the MapReduce-MPI documents. 
-
-        - Out-of-core operation
-          If the data owned by a processor for operating MapReduce fits within 
-          one page, then no disk I/O is performed. However, if data exceeds the 
-          page size, then it is written to temporary disk files and read back 
-          in for subsequent operations and this is called out-of-core operation.
+        - Out-of-core (OUTOFCORE) and page size (MEMSIZE)
+          If the data owned by a processor for operating MapReduce fits 
+          within one page, then no disk I/O is performed. However, if data 
+          exceeds the page size, then it is written to temporary disk files 
+          and read back in for subsequent operations and this is called 
+          "out-of-core" operation.
                   
-        - Page size
           The page size determines the size (in Mbytes) of each page of 
           memory allocated by the MapReduce object to perform its 
           operations. The MapReduce-MPI requires 1 to 7 pages for its 
-          run-time operation such as saving MapReduce key-value pairs. There is 
-          no limitation of this size, but you should insure the total memory 
-          consumed by all pages allocated by all the MapReduce objects you 
-          create, does not exceed the physical memory available (which may 
-          be shared by several processors if running on a multi-core node).
-          If exceeded, then many systems will allocate virtual memory, 
-          which will typically cause MR-MPI library operations to run very 
-          slowly and thrash the disk. 
+          run-time operation such as managing MapReduce key-value pairs or 
+          key-multivalue pairs. The smallest size allowed is 1MB. There is 
+          no limitation of this size, but you should insure the total 
+          memory consumed by all pages allocated by all the MapReduce 
+          objects you create, does not exceed the physical memory available 
+          (which may be shared by several processors if running on a 
+          multi-core node). If exceeded, then many systems will allocate 
+          virtual memory, which will typically cause MR-MPI library 
+          operations to run very slowly and thrash the disk. 
           
-          If you allow the out-of-core operation and if you set MEMSIZE small, 
-          then processing a large data set will induce many reads and writes to 
-          disk. If you make it large, then the reads and writes will happen 
-          in large chunks, which generally yields better I/O performance. 
-          However, past a few MBytes in size, there may be little gain in 
-          I/O performance. 
+          If you allow the out-of-core operation and set the page size 
+          small, then processing a large data set will induce many reads 
+          and writes to disk. If you make it large, then the reads and 
+          writes will happen in large chunks, which generally yields better 
+          I/O performance. However, past a few MBytes in size, there may be 
+          little gain in I/O performance. 
           
-        - Map style (scheduler mode)
+          If you do not allow the out-of-core operation, the execution of 
+          mr-mpi-blast will be terminated when any page overflow occurs.
+          
+        - Map style (MAPSTYLE)
           The run-time option of MapReduce-MPI that instructs it to use the 
-          process with rank 0 as a master that distributes work units to the 
-          remaining ranks (“workers”) in a load-balanced way, such that each 
-          worker is kept occupied as long as there are remaining work units. 
-          This is especially important for an algorithm like BLAST which is 
-          characterized by a highly non-uniform and unpredictable execution
-          time depending on each query.              
-          The mr-mpi-blast supports a location-aware master/worker scheduler in 
-          which the master tries best to distribute the work items to those 
-          ranks that have already been processing the same DB partitions. This The DB 
-          object is cached between map() invocations on a given rank, and only 
-          re-initialized if the different DB partition is required.
+          process with rank 0 as a master that distributes work units to 
+          the remaining ranks ("workers") in a load-balanced way, such that 
+          each worker is kept occupied as long as there are remaining work 
+          units. This is especially important for algorithms like BLAST 
+          which is characterized by a highly non-uniform and unpredictable 
+          execution time depending on each query. The mr-mpi-blast supports 
+          a location-aware master/worker scheduler in which the master 
+          tries best to distribute the work items to those ranks that have 
+          already been processed the same DB partitions. This DB object is 
+          cached between map() invocations on a given rank, and only 
+          re-initialized if the different DB partition is required. We 
+          recommend to use our location-aware scheduler (MAPSTYLE=3).
               
         
-        In most cases, MAPSTYLE=3, MEMSIZE=64~128, and OUTOFCORE=0 settings should 
-        be fine. For large-scale analysis, determining MEMSIZE and OUTOFCORE 
-        might need preliminary test runs. By setting VERBOSITY=1 and with smaller 
-        input data, it will be possible to estimate the total memory requirement 
-        and proper options values. Allowing out-of-core operation is recommended, 
-        but it could overload the underlying system with excessive disk I/O. 
-        It is also recommended to place all input/out files on scratch disk if 
-        supported. Too small page size will make the out-of-core operation 
-        started. Too large page size should cause thrashing. Physical 
-        partitioning of input query file can be considered as well. 
-        
-        Another important factor to consider is the size of database partitions. 
-        The size should be considered when the database is formatted. Let's say  
-        a node is consisted of 16 cores and has 32GB of combined RAM. If the 
-        size of database partition is 1GB, total 16GB of combined 32GB RAM will 
-        be consumed for database loading. Too small size will also affect the 
-        performance because of frequent reloading of different database. Too 
-        large size might cause out-of-memory. 
-        
-        For instance, we run a large-scale analysis by splitting a large query 
-        file (~ 100GB) into 1 ~ 2GB partitions and with MEMSIZE=128 and 
-        OUTOFCORE=-1. 500Mbp was set for the block size with one iteration. 
-        As for the size of database, the default size (1GB) is used to format 
-        database by using "blastformatdb" utility. We introduce one of our large 
-        -scale experiment in "examples/refseq-all-vs-all/README".
-        
     (2) Parameters related with mr-mpi-blast
-    
-        - Block size    
+       
+        - Query block size (BLOCKSIZE)
           To set the block size, use "BLOCKSIZE". The block size determines 
-          the number of work items. You should decide to block size so that 
+          the number of work items. You should set the block size so that 
           you can have much more work items than the number of processing 
-          units for maximum performance. Too small number of work 
-          items can not fully utilize the load-balancing feature. If there is 
-          large enough query file as input, 1MB of the block size is recommended.        
+          units for maximum performance. Too small number of work items can 
+          not fully use the load-balancing feature of MapReduce. If there 
+          is large enough query file as input, 1MB of the block size is 
+          recommended. 
     
-        - Iteration number
-          In order to process large collection of queries, the mr-mpi-blast 
-          supports "NUMITER" options for iterating the same MPI process by looping 
-          over the consecutive subsets of the entire query set. In other words, 
-          the set of total work items will be divided into "n" sub work 
-          items and mr-mpi-blast will iterate over the sub sets "n" times. This 
-          is for controlling the size of the intermediate key-value dataset that 
-          has to be kept in the collective memory of the process ranks during
-          each MapReduce cycle. As discussed, if the size of the dataset grows 
-          beyond the page size limit, the performance will suffer, especially 
-          on typical cluster architecture that has no locally attached user 
-          scratch space on the computer nodes.
-          
+        - Iteration number (NUMITER)
+          To process large collection of queries, the mr-mpi-blast supports 
+          "NUMITER" options for iterating the same MPI process by looping 
+          over the consecutive subsets of the entire query set. In other 
+          words, the set of total work items will be divided into "n" 
+          subsets of work items and mr-mpi-blast will iterate over the sub 
+          sets for "n" times. This is for controlling the size of the 
+          intermediate key-value dataset that has to be kept in the 
+          collective memory of the process ranks during each MapReduce 
+          cycle. 
+      
+      
+    (3) Settings for large-scale analysis
+    
+        This section is to give an idea how to run mr-mpi-blast successfully 
+        for a large-scale experiment which involves large query file and 
+        databases. The scheduler type and query block size can be fixed 
+        with 3 and 1,000,000, respectively. If you have not enough work 
+        items than the number of processing units you will request from a 
+        HPC (Remember the total number of work items is (total base-pairs 
+        of input queries / block size * number of database partitions) and 
+        we ), you can decrease the query block size to increase the number 
+        of work items. 
+        
+        Finding a proper value for the page size is not trivial because it 
+        is hard to predict in advance. Too small page size will make the 
+        out-of-core operation started. Too large page size should cause 
+        thrashing. It depends on the characteristics of the KV pairs, e.g. 
+        how many HSPs are found for each query sequence. These 
+        characteristics HSPs found for per query varies along with 
+        characteristics of query and database sequences. Also the evalue 
+        and the user-defined number of hits to show also dictates the size 
+        of data to store in the pages. The page size is also related with 
+        the database partition size discussed next. Therefore, finding the 
+        page size should be accompanied with test runs with allowing the 
+        verbosity setting (VERBOSITY) to show the page consumption and 
+        memory requirement infomation. 
+        
+        The number of required pages ranges from 1 to 7 in most of 
+        MapReduce-MPI operations. Plus it needs to allocate relative small 
+        amount of memory space. Thus, as a starting setting, you can set 
+        the page size so that ((page size * 7) + database partition size) < 
+        memory space available per each core. For example, if ~2GB memory 
+        space is available for each core and if you decide to set the 
+        database partition size to 1GB, 1GB RAM will be available. Thus, 
+        your possible page size settings varies between 64MB and 128MB 
+        which will expectedly consume roughly 448~896MB of memory space. 
+         
+        So the database partition size should be determined based on the 
+        amount of available physical memory space. Let's say a node is 
+        consisted of 16 cores and has 32GB of combined RAM. If the size of 
+        database partition is 1GB, total 16GB of combined 32GB RAM will be 
+        consumed by 16 cores for database loading. Too small size will also 
+        affect the performance because of frequent reloading of different 
+        databases. Too large size might cause excessive I/O due to shortage 
+        of memory space. 
+        
+        For instance, we ran a large-scale BLAST search using ~70Gbp query 
+        sequences agaist ~12Gbp subject sequences using 2,048 cores on 
+        XSEDE TACC Ranger. For the initial parameter values, we used 128MB 
+        page size, 1GB size of database partition, and 1Mbp block size. By 
+        running tests, we found the out-of-core operation severely affects 
+        the shared file system performance. Then, after close monitoring 
+        with the Ranger administrators, they recommended us to use scratch 
+        disk for running the jobs, but we still saw the degradation of the 
+        performance of file system. We had no option but disallow the 
+        out-of-core operation which in turn made us to partition the query 
+        file into smaller size (~1Gbp) and run mr-mpi-blast repeatedly. We 
+        introduce our experiments with large dataset in detail at 
+        "examples/refseq-all-vs-all/README". 
+       
         
 * Tutorial
 

@@ -10,7 +10,6 @@
 import sys
 import os
 import struct
-from numpy import *
 import tables as t
 #print 'tables.__version__',t.__version__
 import string

@@ -16,7 +16,7 @@ seqindexer.py -i viral_all_query.fa -o viral_all_query.fa.idx -d viral_all_query
 ls -alh . &&
 cd ..
 
-echo -e "\n### Done!"
+echo -e "\nDone!"
 
 # EOF
 
