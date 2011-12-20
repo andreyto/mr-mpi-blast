@@ -1,0 +1,6 @@
+Example of splitting FASTA sequences
+
+Run "test.sh"
+
+    It will read the sequences from the "30_real_seqs.fa" FASTA file and split 
+    each sequence into subsequcens of 1kbp length with 100bp overlap.
