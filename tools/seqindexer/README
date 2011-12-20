@@ -1,3 +1,49 @@
 Generate an index file and a defline file from your input FASTA query sequence file
 
-ex) seqindexer.py -i viral_all_query.fa -o viral_all_query.fa.idx -d viral_all_query.fa.def -u 0 -s 0 -b 1
+    - Usage examples
+    
+        ex) $ python seqindexer.py -i 30_real_seqs.fa -o 30_real_seqs.fa.idx 
+              -d 30_real_seqs.fa.def -u 1 -b 0
+              
+            in "30_real_seqs.fa.idx":
+                0       1714    32140163
+                1841    1418    32140165
+                3382    2341    32140167
+                ...
+            
+            in "30_real_seqs.fa.def":
+                32140163        >gi|32140163|ref|NC_004908.1|
+                32140165        >gi|32140165|ref|NC_004909.1|
+                32140167        >gi|32140167|ref|NC_004910.1|
+                ...
+              
+              
+        ex) $ python seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx 
+              -d 100_simul_seqs.fa.def -u 0 -s 0 -b 1
+
+            in "100_simul_seqs.fa.idx":
+                0       1000    1
+                1049    1000    2
+                2102    1000    3
+                ...
+                
+            in "100_simul_seqs.fa.def":
+                1       >gi|15078713|ref|NC_003038.1|_1_0_0_1000_0_1000
+                2       >gi|15078713|ref|NC_003038.1|_2_2_900_1900_900_1900
+                3       >gi|15078713|ref|NC_003038.1|_3_2_1800_2800_1800_2800
+                ...
+
+   
+    The description of the "seqindexer.py" options:
+
+        Options:
+            -i: input query file
+            -o: output index file
+            -d: output defline file
+            -u: unique query ID option, 0=serial number, 1=GI number
+            -s: if serial number option is selected, you can optionally specify a 
+                start number
+            -b: defline saving option, 0=part of defline, 1=full defline
+
+
+

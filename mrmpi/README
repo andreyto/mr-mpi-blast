@@ -1,0 +1,8 @@
+This is the MapReduce-MPI library from Sandia National Laboratories. It is 
+used for implementing MapReduce part of the mr-mpi-blast. The library is 
+modified to add our location-aware scheduler based on the MapReduce-MPI 
+version 20Jun2011, which is included in this "mrmpi" subdirectory of the 
+source package. 
+
+For more information, please refer to the web site, 
+http://www.cs.sandia.gov/~sjplimp/mapreduce.html

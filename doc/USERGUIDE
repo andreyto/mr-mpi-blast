@@ -90,7 +90,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       from all processing units or ranks.
       
 
-	- Input query sequence file 
+    - Input query sequence file 
 
       This is a multi FASTA file. The FASTA formatted sequence consists of a 
       single comment line called "defline", which is marked by a ">" sign 
@@ -117,7 +117,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
             ...         
       
       
-	- Input index and defline files (.idx and .def files)
+    - Input index and defline files (.idx and .def files)
     
       Before running mr-mpi-blast, user should generate an index file and a 
       defline file by using "tools/seqindexer/seqindexer.py" utility. The 
@@ -203,7 +203,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       configuration file will be explained in the later section.
 
 
-	- Subject database list file
+    - Subject database list file
 
       This file specifies a list of subject database partition names. The 
       database partition(s) should be generated using "formatdb" or 
@@ -239,7 +239,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 	    you should run  separage mr-mpi-blast jobs with dif
             
       
-	- Configuration file: mrblast.ini
+    - Configuration file: mrblast.ini
 
       The "mrblast.ini" file is the configuration file which provides 
       important input file names and parameter values with mr-mpi-blast. 
@@ -300,7 +300,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       for nodes. All output files from workers will be saved in the same 
       location on the shared file system.
       
-	- BLAST search output files (*.bin)
+    - BLAST search output files (*.bin)
 
       When BLAST search is completed, each rank saves the BLAST hits (HSPs, 
       High Scoring Sequnece Pairs) that satisfy the defined cutoff for 
@@ -320,12 +320,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
       database. To see how to convert, please refer to "Converting hit 
       files" section. 
 
-	- Log files (*.log)
+    - Log files (*.log)
 
 	  If you set LOGENABLED=1 in "mrblast.ini", each rank saves mr-mpi-blast
       log in individual log file.
 
-	- Strategy dump files (*-search_strategy.txt)
+    - Strategy dump files (*-search_strategy.txt)
 
   	  If OPTDUMP=1, BLAST search strategy is dumped in "OUTFILEPREFIX-
       search_strategy.txt" file.	
