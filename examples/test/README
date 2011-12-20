@@ -10,7 +10,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 * Requirements
 
     - This document shows how to run mr-mpi-blast using two small query files 
-      for running BLAST search against a custom NCBI blast database.
+      for running BLAST search against a custom NCBI BLAST database.
     - This assumes that you run mr-mpi-blast on your local machine 
       with a MPI stack installed. The mr-mpi-blast will be started using 
       "mpirun" in the examples.
@@ -23,9 +23,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
       ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
 
 
-    - Utilities for preparing data and converting output need Python installed. 
-      To use HD5 database format, Pytable should be installed 
-      (http://www.pytables.org/moin/PyTablesPro)
+    - Utilities for preparing input data and converting output need Python 
+      installed. To use HD5 database format, Pytable package should be 
+      installed (http://www.pytables.org/moin/PyTablesPro)
 
 
 1. Indexing 30 real sequences
@@ -99,7 +99,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       20 query blocks and total 20 (20 query blocks x 1 database file) work 
       items.
     - Do BLAST search using "100_simul_seqs.fa" against "test.db" 
-      BLAST db. 
+      BLAST database. 
     - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
       Sqlite, and Hd5 database files.

@@ -31,19 +31,19 @@ considerations.
 (2) Prepare Query Files
 
     The purpose of the mr-mpi-blast experiment is to analyze the similarity 
-    space of query sequences generated from NCBI RefSeq microbial genome 
-    sequences against NCBI RefSeq microbial databases. For constructing 
-    queries, all NCBI RefSeq microbial sequences are downloaded in a FASTA 
-    file and a set of queries is generated. The original sequences are 
-    splitted by 1kbp length with 500bp overlap. We prepare total 245,00,447 
-    queries (~ 70Gbp). 
+    space by searching a set of query sequences simulated from NCBI RefSeq 
+    microbial genome sequences against NCBI RefSeq microbial database 
+    itself. For constructing queries, all NCBI RefSeq microbial sequences 
+    are downloaded in a FASTA file and the sequences are splitted by 1kbp 
+    length with 500bp overlap. We prepare total 245,00,447 queries (~ 
+    70Gbp). 
             
 
 (3) Prepare BLAST Databases
 
     The NCBI RefSeq microbial genome sequences are formatted by using the 
     "makeblastdb" NCBI utility. Total 329,924 sequences are formatted in 
-    three 1GB database partitions. Those database names are listed in 
+    three 1GB database partitions. Those database partition names are listed in 
     "dblist.txt" file for running mr-mpi-blast.
     
     $ makeblastdb -in refseq_microbial.fasta -dbtype nucl -logfile blastdbmake.log
@@ -63,20 +63,22 @@ considerations.
 
 (4) Running mr-mpi-blast
 
-    In our experience on Ranger with 1,024~2,048 cores, the file system of 
-    the underlying cluster system is definitely overloaded by the 
-    out-of-core disk operation (Actually Ranger staffs monitored the system 
-    load and found it degraded the file system performance). So we decided 
-    not to allow the out-of-core and partition the input qeury file was 
-    physically partitioned into 63 files and the size of file varies 1 ~ 
-    1.5GB. This eliminates the possibility of page overflow in the 
-    MapReduce-MPI because of the issue of out-of-core operation. To decide 
-    the size of the query file partition, we ran tests with different 
-    partition sizes, for example, 500MB, 750MB, 1GB, and so on with 
-    disabling the out-of-core operation. We found 1 ~ 1.5GB query files are 
-    safe for running mr-mpi-blast without allowing out-of-core operation 
-    for the experiments. 
-        
+    For the initial parameter values, we used 128MB page size, 1GB size of 
+    database partition, and 1Mbp block size. In our experience on Ranger 
+    with 1,024~2,048 cores, the file system of the cluster system was 
+    definitely overloaded by the out-of-core disk operation (Actually 
+    Ranger staffs monitored the system load and found the file system 
+    performance was affected by the excessive disk I/O). So we decided not 
+    to allow the out-of-core and to partition the input qeury file into 
+    smaller files to eliminate the possibility of the MapReduce page 
+    overflow. To decide the size of the query file partition, we ran tests 
+    with different query partition file sizes, for example, 500MB, 750MB, 
+    1GB, and so on with disabling the out-of-core operation. We found 1 ~ 
+    1.5GB query file partitions were safe for running mr-mpi-blast which 
+    results in having 63 query files. Because the query file size is 
+    decreased by partitioning, we set the block size as 500Kbp so as to 
+    prepare enoung number of work items.
+                
     The other parameter settings are followed:
     
         in "examples/refseq-all-vs-all/mrblast.ini":
@@ -91,20 +93,21 @@ considerations.
             ISPROTEIN   0
             ISQIDGI     0       
         
-        
-    The number of query block created by BLOCKSIZE=500000 is around 2,500. Thus 
-    the total number of work items is around 7,500. We used 2,048 cores for 
-    this run. We first request 2,048 cores from "normal" queue with 24 
-    hours runtime. The partitioned query files are placed in different 
-    subdirectories. The script "ranger-for-loop-run.sh" does a little 
-    trick. Each subdirectory is visited one by one and mr-mpi-blast runs 
-    with the data in the directory. When completed, "SUCCESS" file is created
-    to represent BLAST search for this partition is done. If the runtime 
-    request (24hours) is not ended, visit the next subdirectory and run 
-    mr-mpi-blast. If the requested runtime is ended, the running mr-mpi-blast 
-    process will be aborted but "SUCCESS" will not be recorded for the 
-    subdirectory. Thus, the next allocation will start from the aborted 
-    subdirectory. The SGE job script and program looping script are following.
+    
+    The number of query block created by the block size of 500Kbp is around 
+    2,500. Thus the total number of work items is around 7,500. We 
+    requested 2,048 cores from "normal" queue with 24 hours runtime. The 63 
+    partitioned query files are placed in different subdirectories. The 
+    script "ranger-for-loop-run.sh" does a little trick. Each subdirectory 
+    is visited one by one and mr-mpi-blast runs with the data in the 
+    directory. When completed, "SUCCESS" file is created to represent BLAST 
+    search for this partition is done. If the runtime request (24hours) is 
+    not ended, visit the next subdirectory and run mr-mpi-blast. If the 
+    requested runtime is ended, the running mr-mpi-blast process will be 
+    aborted but "SUCCESS" will not be recorded for the subdirectory. Thus, 
+    when the next allocation is started. the mr-mpi-blast can run from the 
+    previously aborted subdirectory. The SGE job script and program looping 
+    script are following.
     
        
         in "examples/refseq-all-vs-all/sge_job_script.job":
@@ -159,7 +162,7 @@ considerations.
 (5) Converting the Result File
  
     After completion, each subdirectory has a set of resulting hit files in 
-    binary format. Finally, those files (~74GB in total) are collected in HD5 
+    binary format. Those files (~74GB in total) are collected in HD5 
     database (~67GB).
     
     
