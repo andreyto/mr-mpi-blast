@@ -5,7 +5,7 @@ if [ -z "$MRMPIBLAST_PREFIX" ]; then
     exit
 fi
 
-echo -e "\n\n### Remove unnecessary files"
+echo -e "\n\n### Remove unnecessary files/directories"
 find $MRMPIBLAST_PREFIX/bin/ -maxdepth 1 -type f ! -name 'mrblast' -and ! -name 'makeblastdb' -and ! -name 'load_*.py' -and ! -name 'splitter.py' -and ! -name 'seqindexer.py' -and ! -name 'blastdbcmd' -exec rm -f {} \; &&
 rm -rf $MRMPIBLAST_PREFIX/include &&
 rm -rf $MRMPIBLAST_PREFIX/lib

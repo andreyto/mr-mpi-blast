@@ -10,7 +10,6 @@
 import sys
 from cStringIO import StringIO
 
-
 class FastaReader(object):
     """Class that supports an input iterator protocol for a FASTA file.
     Example that prints an exact copy of the input file:

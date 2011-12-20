@@ -2,7 +2,7 @@ BUILD - How to build mr-mpi-blast
 
 
 
-Updated: 12/19/2011
+Updated: 12/20/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -16,12 +16,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The NCBI C++ Toolkit version 7.0.0 is tested for the current version 
       of mr-mpi-blast. If you have a problem with the toolkit version > 
       7.0.0, please download the version 7.0.0.
-    - The "MapReduce-MPI Library" from Sandia National Laboratories is used 
-      for implementing MapReduce framework. The modified version based on the 
-      version 20Jun2011 is needed because of our new scheduler and is 
-      included in "mrmpi" subdirectory of the source package.
-    - To build mr-mpi-blast, the Boost library and a MPI stack should be 
-      installed. The current version is tested with the MVAPICH MPI stack on 
+    - The "MapReduce-MPI" library from Sandia National Laboratories is used 
+      for MapReduce framework. The library is modified to add our 
+      location-aware scheduler based on the MapReduce-MPI version 20Jun2011, 
+      which is included in the "mrmpi" subdirectory of the source package.
+    - To build mr-mpi-blast, the Boost library and a MPI stack is needed. 
+      The current version is tested with the MVAPICH MPI stack on 
       XSEDE TACC Ranger and with a local machine with Open MPI installed. The 
       MVAPICH is the current recommended MPI stack for Ranger HPC.
     
@@ -104,8 +104,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
     $ ./configure --prefix=$MRMPIBLAST_PREFIX 
     $ make && make install
         
-    You can specify configuration flags as you want. For details, please 
-    refer to the NCBI C++ Toolkit installation manual 
+    You can specify configuration flags as you want. For more information, 
+    please refer to the NCBI C++ Toolkit installation manual 
     (http://www.ncbi.nlm.nih.gov/IEB/ToolBox/CPP_DOC/).
     
     ex) $ ./configure --prefix=$MRMPIBLAST_PREFIX --with-64 --without-dll 

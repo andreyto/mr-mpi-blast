@@ -1,7 +1,7 @@
 Tutorial - How to run mr-mpi-blast on XSEDE TACC Ranger
 
 
-Updated: 12/12/2011
+Updated: 12/20/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -18,11 +18,13 @@ By Seung-Jin Sul (ssul@jcvi.org)
           $ cp -R $MRMPIBLAST_PREFIX/tutorial/* $HOME/mr-mpi-blast-tutorial
           $ cd $HOME/mr-mpi-blast-tutorial
       
+      
     - The "$MRMPIBLAST_PREFIX/bin" should be added to the executable search path
       for running "mrblast" and "makeblastdb" executables and other Python 
       scripts.
       
       ex) $ export PATH=$MRMPIBLAST_PREFIX/bin:$PATH
+      
       
     - Utilities for preparing data and converting output need Python installed. 
       To use HD5 database format as output format, PyTables package should be 
@@ -45,7 +47,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
         - Generate short queries by splitting each viral sequence in 1kbp 
           length with 100bp overlap. (96,752 sequences, ~97Mbp).
         - Generate an index file and a defline file from the input query file 
-          for running mr-mpi-blast.
+          using "seqindexer.py".
+        - The query file name and the index/defline file names are specified in 
+          "mrblast.ini".
     
 
     (2) Make BLAST database
@@ -54,12 +58,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
    
         - Download NCBI RefSeq microbial FASTA sequence files and collect them 
           in a FASTA file (39,006 sequences, ~8Gbp).
-        - Make BLAST formatted database using "makeblastdb" utility resulting 
-          in two BLAST formatted database partitions, "microbial_all.db.00" and 
-          "microbial_all.db.01".
-        - We have two formatted database partitions and each of the partition
-          will be engaged in BLAST search. 
-          
+        - Make BLAST formatted database partitions using "makeblastdb" utility 
+          resulting in two BLAST formatted database partitions, 
+          microbial_all.db.00" and "microbial_all.db.01".
+        - The partition names are specified in "dblist.txt" and the database 
+          name, "microbial_all.db" is also set in "DATABASENAME" in "mrblast.ini".
+                    
         
     (3) Run mr-mpi-blast
        
@@ -70,8 +74,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
        
         - Qsub mr-mpi-blast for BLAST search of the queries against the 
           generated BLAST database.
-        - Run mr-mpi-blast using ibrun with 64 processing units of "development" 
-          queue. 
+        - Run the mr-mpi-blast using ibrun with requesting 64 cores
+          on the "development" queue. 
         - The query block size option, "BLOCKSIZE" in the "mrblast.ini" is set 
           as 1Mbp resulting in 96 query blocks and total 192 (96 query blocks x 
           2 database files) work items.
