@@ -8,13 +8,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
 This is introductory README for the mr-mpi-blast program. For details, you may 
 refer the below documents:
 
-  - doc/BUILD: explains how to build mr-mpi-blast 
+  - doc/HOWTOBUILD: explains how to build mr-mpi-blast 
   - doc/USERGUIDE: introduces mr-mpi-blast program and how to run mr-mpi-blast and set parameters
-  - tutorial/README: explains how to run mr-mpi-blast on the XSEDE TACC Ranger cluster
-  - examples/test/README: explains how to run mr-mpi-blast on a local machine
-  - examples/refseq-all-vs-all/README: introduces a case study of our large-scale experiment
+  - tutorial/README: introduces how to run mr-mpi-blast on the XSEDE TACC Ranger cluster
+  - examples/test/README: introduces how to run mr-mpi-blast on a local machine
+  - examples/refseq-all-vs-all/README: introduces an example of large-scale experiment
     
-    
-If you have any question, please contact Seung-Jin Sul (ssul@jcvi.org) or 
-Andrey Tovtchigretchko (atovtchi@jcvi.org).
-

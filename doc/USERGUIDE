@@ -1,12 +1,10 @@
-User Guide for mr-mpi-blast (version 11.0.1)
-
+User Guide for mr-mpi-blast 
 
 
 Updated: 12/20/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
  
-
 * Introduction  
 
     - The mr-mpi-blast program is a parallel implementation of NCBI BLAST+ 
@@ -26,7 +24,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       worker is kept occupied as long as there are remaining work items. 
     - The mr-mpi-blast provides a modified master/worker scheduler in which the 
       master tries best to distribute the work items to those ranks that have
-      already been processing the same database partitions. 
+      already processed the same database partitions. 
     - The mr-mpi-blast consists of three steps. The first and last 
       steps are offline works and the second step is done during the actual 
       mr-mpi-blast run. First, the input query sequences in a FASTA file are 
@@ -51,6 +49,11 @@ By Seung-Jin Sul (ssul@jcvi.org)
             -export_search_strategy strategy_temp.txt -max_target_seqs 2147483647
             
     
+    - Default parameter values
+    
+        . evalue = 10
+        . 
+        
     - Most of NCBI blastn and blastp (v.2.2.24+) options are supported except:
       
         . Input query options: -query, -query_loc
@@ -58,6 +61,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
         . Formatting options: -outfmt, -show_gis, -html
         . Search strategy options: -import_search_strategy, -export_search_strategy
         . Miscellaneous options: -remote
+
+        * NOTE
+          If not specified, the default values of the blastn and blastp are 
+          used. For instance, the default evalue threshold is '10'. 
         
     - The mr-mpi-blast is a MPI program thus it should be run by "mpirun" or 
       whatever equivalent like "ibrun" on XSEDE TACC Ranger cluster.
@@ -81,18 +88,19 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     * NOTE
       The mr-mpi-blast program assumes user uses a HPC system which supports 
-      a shared file system. All required input files should be accessible 
-      from all processing units or ranks.
+      a shared file system and there is no locally attached file system 
+      avaiable for nodes. All required input files should be accessible 
+      from all computing nodes.      
       
     - The FASTA query file and the generated index and defline files should be 
       specified using "QUERYFILENAME" and "INDEXFILENAME" in the "FILES" 
-      section of the mr-mpi-blast configuration file, "mrblast.ini".  
-        
+      section of the mr-mpi-blast configuration file, "mrblast.ini".          
+    
     - The subject database name should be specified as "DATABASENAME" and the 
       name of the database partition files should be listed in a text file, for 
       example, "dblist.txt", and the list file name should be specified as 
       "DBLISTFILENAME" in the mr-mpi-blast configuration file, "mrblast.ini".
-            
+
     
     - Input query sequence file 
 
@@ -497,40 +505,40 @@ By Seung-Jin Sul (ssul@jcvi.org)
         memory requirement infomation. 
         
         The number of required pages ranges from 1 to 7 for most of 
-        MapReduce-MPI operations. Plus it needs to allocate small 
-        amount of extra memory space. Thus, as a starting values, you can 
-        determine the page size so that ((page size * 7) + database 
-        partition size) < (memory space available per each core). For 
-        example, if 2GB memory space is available for each core and if you 
-        decide to set the database partition size to 1GB, we can expect 
-        that the rest of 1GB RAM space is available. Thus, your 
-        possible page size settings varies between 64MB and 128MB which 
-        will expectedly consume roughly 448~896MB of memory space. 
+        MapReduce-MPI operations. Plus it needs to allocate small amount of 
+        extra memory space. Thus, as a starting values, you can determine 
+        the page size so that ((page size * 7) + database partition size) < 
+        (memory space available per each core). For example, if 2GB memory 
+        space is available for each core and if you decide to set the 
+        database partition size to 1GB, we can expect that the rest of 1GB 
+        RAM space is available. Thus, your possible page size settings 
+        varies between 64MB and 128MB which will expectedly consume roughly 
+        448~896MB of memory space. 
          
-        The database partition size should be determined based on the 
-        amount of available physical memory space. Let's say a node is 
-        consisted of 16 cores and has 32GB of combined RAM. If the size of 
-        database partition is 1GB, total 16GB of combined 32GB RAM will be 
-        consumed by the 16 cores for database loading. Too small size will 
-        also affect the performance because of frequent reloading of 
-        different databases. Too large size might cause excessive I/O due 
-        to shortage of memory space. 
+        The database partition size should be determined based on the amount 
+        of available physical memory space. Let's say a node is consisted 
+        of 16 cores and has 32GB of combined RAM. If the size of database 
+        partition is 1GB, total 16GB of combined 32GB RAM will be consumed 
+        by the 16 cores for database loading. Too small size will also 
+        affect the performance because of frequent reloading of different 
+        databases. Too large size might cause excessive I/O due to shortage 
+        of memory space. 
         
         For instance, we ran a large-scale BLAST search using ~70Gbp query 
         sequences agaist ~12Gbp subject sequences using 2,048 cores on 
         XSEDE TACC Ranger. For the initial parameter values, we used 128MB 
         page size, 1GB size of database partition, and 1Mbp block size. By 
-        running tests, we found the out-of-core operation affects 
-        the shared file system performance. After monitoring, the 
-        Ranger administrators recommended us to move all input files to the 
+        running tests, we found the out-of-core operation affects the 
+        shared file system performance. After monitoring, the Ranger 
+        administrators recommended us to move all input files to the 
         scratch disk and run mr-mpi-blast on it. However, we still saw the 
-        degradation of the performance of the file system. So we had no option 
-        but disabling the out-of-core operation which in turn made us to 
-        partition the query file into smaller size (~1Gbp) and run 
-        mr-mpi-blast repeatedly. Because the query file size is decreased 
-        by splitting, we set the block size as 500Kbp so as to prepare 
-        enoung number of work items. We introduce our experiments with 
-        large dataset in detail at "examples/refseq-all-vs-all/README". 
+        degradation of the performance of the file system. So we had no 
+        option but disabling the out-of-core operation and partition the 
+        query file into smaller size (~1Gbp), and run mr-mpi-blast 
+        iteratively. Because the query file size is decreased by splitting, 
+        we set the block size as 500Kbp so as to prepare enoung number of 
+        work items. We introduce our experiments with large dataset in 
+        detail at "examples/refseq-all-vs-all/README". 
         
         The "NUMITER" parameters to enable multiple iterations of 
         mr-mpi-blast should be considered as well for large-scale 
@@ -538,8 +546,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
         work items will be divided into "n" sub work items and mr-mpi-blast 
         will iterate over the sub sets "n" times. Increasing "n" has the 
         same effect as running mr-mpi-blast with smaller query file. The 
-        output file from each iteration can be distinguished by the iteration 
-        number in each file name. 
+        output file from each iteration can be distinguished by the 
+        iteration number in each file name. 
+        
         
 * Tutorial
 

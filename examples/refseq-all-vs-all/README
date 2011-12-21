@@ -1,4 +1,4 @@
-An example of large-scale mr-mpi-blast experiments
+An example of large-scale mr-mpi-blast experiment
 
 
 Updated: 12/20/2011
@@ -10,7 +10,7 @@ mr-mpi-blast. We will discuss input/output files, parameter settings, and other
 considerations. 
     
     
-(1) XSEDE TACC Ranger Cluster Architecture
+(1) XSEDE TACC Ranger cluster architecture
 
     The Sun Constellation Linux Cluster, named Ranger, is one of the largest 
     computational resources in the world. Ranger was made possible by a 
@@ -28,7 +28,7 @@ considerations.
     hosted on 72 disk servers.
     
 
-(2) Prepare Query Files
+(2) Prepare query file
 
     The purpose of the mr-mpi-blast experiment is to analyze the similarity 
     space by searching a set of query sequences simulated from NCBI RefSeq 
@@ -39,7 +39,7 @@ considerations.
     70Gbp). 
             
 
-(3) Prepare BLAST Databases
+(3) Prepare BLAST databases
 
     The NCBI RefSeq microbial genome sequences are formatted by using the 
     "makeblastdb" NCBI utility. Total 329,924 sequences are formatted in 
@@ -110,7 +110,7 @@ considerations.
     script are following.
     
        
-        in "examples/refseq-all-vs-all/sge_job_script.job":
+        In file, "examples/refseq-all-vs-all/sge_job_script.job":
         
             #$ -N r2048
             #$ -cwd
@@ -125,7 +125,7 @@ considerations.
 
 
 
-        in "examples/refseq-all-vs-all/ranger-for-loop-run.sh":
+        In file, "examples/refseq-all-vs-all/ranger-for-loop-run.sh":
         
             #!/bin/sh
             Directory="./"
@@ -159,7 +159,7 @@ considerations.
             done
    
     
-(5) Converting the Result File
+(5) Converting the result file
  
     After completion, each subdirectory has a set of resulting hit files in 
     binary format. Those files (~74GB in total) are collected in HD5 

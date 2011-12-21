@@ -90,9 +90,9 @@ class FastaReader(object):
             yield seq.getvalue()
         seq.close()
 
-    def seqArrays(self,chunkSize):
-        for s in self.seqChunks(chunkSize):
-            yield numpy.fromstring(s,dtype='S1')
+    #def seqArrays(self,chunkSize):
+        #for s in self.seqChunks(chunkSize):
+            #yield numpy.fromstring(s,dtype='S1')
 
     def sequence(self,format='str'):
         seq = StringIO()
@@ -100,8 +100,8 @@ class FastaReader(object):
             seq.write(line.rstrip("\n"))
         s = seq.getvalue()
         seq.close()
-        if format == 'array':
-            s = numpy.fromstring(s,dtype='S1')
+        #if format == 'array':
+            #s = numpy.fromstring(s,dtype='S1')
         return s
 
     def seqLen(self):
