@@ -18,18 +18,18 @@ By Seung-Jin Sul (ssul@jcvi.org)
       7.0.0, please download the version 7.0.0.
     - The "MapReduce-MPI" library from Sandia National Laboratories is used 
       for MapReduce framework. The library is modified to add our 
-      location-aware scheduler based on the MapReduce-MPI version 20Jun2011, 
-      which is included in the "mrmpi" subdirectory of the source package.
+      location-aware scheduler based on the MapReduce-MPI version 20Jun2011 and  
+      included in the "mrmpi" subdirectory of the mr-mpi-blast source package.
     - To build mr-mpi-blast, the Boost library and a MPI stack is needed. 
       The current version is tested with the MVAPICH MPI stack on 
-      XSEDE TACC Ranger and with a local machine with Open MPI installed. The 
+      XSEDE TACC Ranger and on a local machine with Open MPI installed. The 
       MVAPICH is the current recommended MPI stack for Ranger HPC.
     
 
 1. Set installation directory
 
     The following assumes that you specify an installation target directory 
-    using "MRMPIBLAST_PREFIX". 
+    using "MRMPIBLAST_PREFIX" environment variable. 
       
     ex) $ mkdir $HOME/mr-mpi-blast
         $ export MRMPIBLAST_PREFIX=$HOME/mr-mpi-blast
@@ -45,41 +45,37 @@ By Seung-Jin Sul (ssul@jcvi.org)
         $ cd $HOME/mr-mpi-blast-src
 
     Download and extract the latest NCBI C++ Toolkit. The "<version>" 
-    represents the latest version number.
+    represents the version number of the toolkit.
     
     $ wget ftp://ftp.ncbi.nih.gov/toolbox/ncbi_tools++/ARCHIVE/<version>/
       ncbi_cxx--<version>.tar.gz 
     $ tar zxvf ncbi_cxx--<version>.tar.gz
        
    
-3. Checkout the latest mr-mpi-blast. 
-
-    * NOTE
-      The mr-mpi-blast should be inside the NCBI C++ Toolkit source tree for 
-      build.
+3. Checkout the latest mr-mpi-blast
   
     $ cd ./ncbi_cxx--<version>/src/app 
     $ git clone git@github.com:andreyto/mr-mpi-blast 
     $ cd ../../..
    
 
-4. Edit meta-Make files  
+4. Edit meta-Make files 
    
     (1) Makefile.mrblast.app
     
         Edit "CC", "CXX", and "BOOST_HOME" in 
-        ./ncbi_cxx--<version>/src/app/mr-mpi-blast/Makefile.mrblast.app
+        "./ncbi_cxx--<version>/src/app/mr-mpi-blast/Makefile.mrblast.app".
    
     (2) Makefile.in   
     
         Add "mr-mpi-blast" at end of "SUB_PROJ" line in 
-        ./ncbi_cxx--<version>/src/app/Makefile.in
+        "./ncbi_cxx--<version>/src/app/Makefile.in".
 
    
 5. Configure and build the MapReduce-MPI library 
 
     (1) Makefile.mpicxx
-    
+        
         Edit "BOOST_HOME" in
         ./ncbi_cxx--<version>/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicc (for Open MPI)
         or
@@ -94,7 +90,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         $ cd ../../../../..
 
     * NOTE
-      For more information on buiding MapReduce-MPI library, please refer to 
+      For more information on building MapReduce-MPI library, please refer to 
       the MapReduce MPI web pages (http://www.sandia.gov/~sjplimp/mapreduce.html).
     
    
@@ -117,7 +113,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       Once all the C++ toolkit package is compiled, you can build only 
       mr-mpi-blast program in the build directory, if you want. 
     
-      $ cd .../ncbi_cxx--<version>/GCC*/build/app/mr-mpi-blast/ && make
+      ex) $ cd .../ncbi_cxx--<version>/GCC*/build/app/mr-mpi-blast/ && make
 
 
 7. Remove unnecessary files
@@ -130,7 +126,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     $ sh ./src/app/mr-mpi-blast/tools/remove_unnecessary.sh
 
 
-9. Add "$MRMPIBLAST_PREFIX/bin" in PATH 
+9. Add "$MRMPIBLAST_PREFIX/bin" in the search path 
 
     For your convenience, add "$MRMPIBLAST_PREFIX/bin" to the executable search 
     path.

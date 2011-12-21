@@ -1,5 +1,7 @@
-Util to split sequences in the input FASTA file into 'queryLen' bp length 
-sub sequences with 'overlapBP' overlapped.
+Generating simulated sequences
+
+    Splitting sequences in the inPut FASTA file into 'queryLen' bp length 
+    sub sequences with 'overlapBP' overlapped.
 
     USAGE: python splitter.py fasta_file queryLen overlapBP outfile
 

@@ -1,4 +1,4 @@
-Utils for converting the binary output files from mr-mpi-blast  
+Converting the binary output files from mr-mpi-blast  
    
 The resulting '*.bin' files can be easily converted into HD5, SQLite, or CSV 
 files using the utilities provided under 'tools/converter' directory. For 

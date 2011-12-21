@@ -1,4 +1,7 @@
-Generate an index file and a defline file from your input FASTA query sequence file
+Indexing query file
+
+    Generate an index file and a defline file from your input FASTA query
+    sequence file
 
     - Usage examples
     
