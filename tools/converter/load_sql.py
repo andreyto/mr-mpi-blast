@@ -12,9 +12,9 @@ import sys
 import os
 import struct
 import string
-from sqlite3 import *
 import optparse
 import linecache
+from sqlite3 import *
 
 if __name__ == '__main__':
    

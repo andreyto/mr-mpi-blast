@@ -47,7 +47,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         - Generate short queries by splitting each viral sequence in 1kbp 
           length with 100bp overlap. (96,752 sequences, ~97Mbp).
         - Generate an index file and a defline file from the input query file 
-          using "seqindexer.py".
+          using "seqindexer.py". The unique query ID is set with serial numbers.
         - The query file name and the index/defline file names are specified in 
           "mrblast.ini".
     

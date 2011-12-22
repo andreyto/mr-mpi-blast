@@ -189,7 +189,6 @@ if __name__ == '__main__':
             seqLen += len(line.rstrip("\n"))
             currLoc += len(line)
         numSeq += 1
-        seqUID += 1
         uid = 0
         
         if uidOption == 1:
@@ -206,6 +205,7 @@ if __name__ == '__main__':
         else:
             defline2 = defline.rstrip()        
         defFile.write(str(uid)+"\t"+defline2+"\n")
+        seqUID += 1
         
     outFile.close()
     defFile.close()

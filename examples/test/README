@@ -55,7 +55,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - Indexing the input query file, "100_simul_seqs.fa" for mr-mpi-blast run.
     - Options used for running seqindexer.py
         -u 0: use generated sequential number as unique query ID  
-        -s 0: the generated sequential number will be starting from 0
+        -s 1: the generated sequential number will be starting from 1
         -b 1: save full deflines in "100_real_seqs.fa.def"
 
 
@@ -71,7 +71,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       configuration file.
     - The name of the generated BLAST database fragment is specified in the 
       "dblist.txt" so that mr-mpi-blast read the list from the file, and the 
-      "dblist.txt" should be set in "DBLISTFILENAME" of the configuration file.
+      "dblist.txt" should be set with "DBLISTFILENAME" in the configuration file.
  
 
 4. Run mr-mpi-blast with 30 real sequences against "test.db"

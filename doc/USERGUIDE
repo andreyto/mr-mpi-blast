@@ -8,7 +8,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 * Introduction  
 
     - The mr-mpi-blast program is a parallel implementation of NCBI BLAST+ 
-      using the NCBI C++ Toolkit and MapReduce-MPI library and implements a 
+      using the NCBI C++ Toolkit and the MapReduce-MPI library and implements a 
       "matrix-split" BLAST search in which a BLAST search job is transformed 
       into searching "n" blocks of query sequences against "m" database 
       partitions. 
@@ -17,7 +17,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       in a cluster system. Each worker runs BLAST search with the assigned 
       pairs of <query block, database partition name>. Note that c << n x m. 
     - The mr-mpi-blast assumes a shared file system which means no locally 
-      attached file system is available for each node. 
+      attached file system is available for computing nodes. 
     - The master/worker scheduling option of MapReduce library is used which 
       instructs it to use the process with rank 0 as a master that distributes
       work items to the remaining ranks in a load-balanced way, such that each 
@@ -30,8 +30,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
       mr-mpi-blast run. First, the input query sequences in a FASTA file are 
       indexed so that the mr-mpi-blast loads the file as memory-mapped file and 
       logically splits it into many blocks. Second, the master prepares 
-      (n x m) work items and assigns each work item to non-busy workers. Each 
-      worker runs BLAST search with the assigned work item. The hit results 
+      (n x m) work items and then assigns each work item to non-busy workers. 
+      Each worker runs BLAST search with the assigned work item. The hit results 
       per work item is accumulated in each worker. For example, if the master 
       assigns "w" work items of the (n x m) work items to a worker, where 
       w < n x m, the worker accumulates maximum "w" sets of BLAST results. Upon 
@@ -48,12 +48,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
             -penalty -5 -reward 4 -lcase_masking -dust yes -soft_masking true 
             -export_search_strategy strategy_temp.txt -max_target_seqs 2147483647
             
-    
-    - Default parameter values
-    
-        . evalue = 10
-        . 
-        
+ 
     - Most of NCBI blastn and blastp (v.2.2.24+) options are supported except:
       
         . Input query options: -query, -query_loc
@@ -89,8 +84,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
     * NOTE
       The mr-mpi-blast program assumes user uses a HPC system which supports 
       a shared file system and there is no locally attached file system 
-      avaiable for nodes. All required input files should be accessible 
-      from all computing nodes.      
+      avaiable for computing nodes. All required input files should be 
+      accessible from all computing nodes.      
       
     - The FASTA query file and the generated index and defline files should be 
       specified using "QUERYFILENAME" and "INDEXFILENAME" in the "FILES" 
@@ -131,10 +126,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
     - Input index and defline files (.idx and .def files)
     
-      Before running mr-mpi-blast, user should generate an index file and a 
+      Before running mr-mpi-blast, user must generate an index file and a 
       defline file by using "tools/seqindexer/seqindexer.py" utility. The 
       index file stores <offset, length, query ID>. The offset is each 
-      sequence's starting byte location in the query file and the length is 
+      sequence's starting byte offset in the query file and the length is 
       base-pair length of sequnece. Both are used to logically split the 
       query file into blocks which will be distributed among workers in the 
       MapReduce framework. The "query ID" field represents universally 
@@ -163,7 +158,18 @@ By Seung-Jin Sul (ssul@jcvi.org)
             >gi|5524211|gb|AAD44166.1| cytochrome b [Elephas maximus maximus]
             
  
-      An example execution of "seqindexer.py" and the resulting index file 
+      The option descriptions of "seqindexer.py" is like the below.
+
+        -i: input query file
+        -o: output index file
+        -d: output defline file
+        -u: unique query ID option, 0=serial number, 1=GI number
+        -s: if serial number option is selected, you can optionally specify 
+            a starting number
+        -b: defline saving option, 0=part of defline, 1=full defline
+      
+      
+      Examples execution of "seqindexer.py" and the resulting index file 
       and defline file are shown below.
 
         ex) This command generates index file from input query file using 
@@ -173,13 +179,13 @@ By Seung-Jin Sul (ssul@jcvi.org)
             $ python seqindexer.py -i 30_real_seqs.fa -o 30_real_seqs.fa.idx 
               -d 30_real_seqs.fa.def -u 1 -b 0
               
-            in "30_real_seqs.fa.idx":
+            In file, "30_real_seqs.fa.idx":
                 0       1714    32140163
                 1841    1418    32140165
                 3382    2341    32140167
                 ...
             
-            in "30_real_seqs.fa.def":
+            In file, "30_real_seqs.fa.def":
                 32140163        >gi|32140163|ref|NC_004908.1|
                 32140165        >gi|32140165|ref|NC_004909.1|
                 32140167        >gi|32140167|ref|NC_004910.1|
@@ -188,48 +194,35 @@ By Seung-Jin Sul (ssul@jcvi.org)
               
         ex) This command generates index file from input query file using 
             the generated serial numbers as query ID ("-u 0"). The serial number 
-            is started from "0". The defline file stores the full deflines 
+            is started from "1". The defline file stores the full deflines 
             in the defline file ("-b 1").
         
             $ python seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx 
-              -d 100_simul_seqs.fa.def -u 0 -s 0 -b 1
+              -d 100_simul_seqs.fa.def -u 0 -s 1 -b 1
 
-            in "100_simul_seqs.fa.idx":
+            In file, "100_simul_seqs.fa.idx":
                 0       1000    1
                 1049    1000    2
                 2102    1000    3
                 ...
                 
-            in "100_simul_seqs.fa.def":
+            In file, "100_simul_seqs.fa.def":
                 1       >gi|15078713|ref|NC_003038.1|_1_0_0_1000_0_1000
                 2       >gi|15078713|ref|NC_003038.1|_2_2_900_1900_900_1900
                 3       >gi|15078713|ref|NC_003038.1|_3_2_1800_2800_1800_2800
                 ...
 
-       
-      The description of the "seqindexer.py" options:
-    
-        Options:
-            -i: input query file
-            -o: output index file
-            -d: output defline file
-            -u: unique query ID option, 0=serial number, 1=GI number
-            -s: if serial number option is selected, you can optionally specify 
-                a starting number
-            -b: defline saving option, 0=part of defline, 1=full defline
-
 
       For more information, please refer to "tools/seqindexer/README" and 
-      "tools/seqindexer/examples". The input sequence file and the 
+      "tools/seqindexer/examples/README". The input sequence file and the 
       generated index file should be described in the mr-mpi-blast 
       configuration file, "mrblast.ini". How to set those file names in the 
       configuration file will be explained in the later section.
 
 
-    - Subject database list file
+    - Subject database partition list file
 
-      This file specifies a list of subject database partition names. The 
-      database partition(s) should be generated using "formatdb" or 
+      The database partition(s) can be generated using "formatdb" or 
       "makeblastdb" utilities from NCBI BLAST. By default the utilities 
       will produce one or more database partitions of 1GB size. You can 
       specify the partition size with "-max_file_sz" parameter. Please 
@@ -245,16 +238,41 @@ By Seung-Jin Sul (ssul@jcvi.org)
         
       
       Two database partitions, "microbial_all.db.00.*" and 
-      "microbial_all.db.01" will be generated in this example. The database 
-      name, "microbial_all.db" and the partition list file name should be 
-      specified in the mr-mpi-blast configuration file, "mrblast.ini". How 
-      to set those names in the configuration file will be explained in the 
-      next section.
+      "microbial_all.db.01.*" will be generated from the above command. You 
+      can find three kinds of files are generated per each partition: index 
+      file, sequence file and header file. Those files are needed to 
+      extract sequences from the BLAST database. For protein databases 
+      these files end with the extensions ".pin", ".psq" and ".phr" 
+      respectively. For DNA databases the extensions are ".nin", ".nsq" and 
+      ".nhr" respectively. The index file contains information about the 
+      database, i.e. version number, database type, file offsets, etc. The 
+      sequence file contains residues for each of the sequences. Finally, 
+      the header file contains the header information for each of the 
+      sequences.
+      
+      Those partition file names, for example, "microbial_all.db.00" and 
+      "microbial_all.db.01", should be specified in a database partition 
+      list file as shown in the below example of "dblist.txt" file, and the 
+      the name of the file should be specified with "DBLISTFILENAME" in the 
+      mr-mpi-blast configuration file. Note that the partition file name 
+      without the ".nin, .nsq, .nhr" or ".pin, .psq, .phr" extensions.
+      should be used. 
+      
+        ex) In file, "dblist.txt":
+            microbial_all.db.00
+            microbial_all.db.01
+            
+            
+      The database name, "microbial_all.db" and the partition list file name 
+      should be specified in the mr-mpi-blast configuration file, 
+      "mrblast.ini". How to set those names in the configuration file will 
+      be explained in the next section.
         
       * NOTE
-        The mr-mpi-blast should run in the same directory of the databases or 
-        the path to the database should be specified in the "BLASTDB" path 
-        of the "[BLAST]" section in the "~/.ncbirc" file.
+        The mr-mpi-blast should run in the same directory where the database 
+        partitions exists or the path to the database should be specified 
+        in the "BLASTDB" path of the "[BLAST]" section in the "~/.ncbirc" 
+        file.
         
       * NOTE
         If you need to do BLAST search for a set of queries against two or more 
@@ -321,7 +339,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     * NOTE
       The mr-mpi-blast program assumes the cluster system supports a shared 
       file system and there is no locally attached file system avaiable for 
-      nodes. All output files will be saved in the current working 
+      computing nodes. All output files will be saved in the current working 
       directory of the shared file system.
       
     - BLAST search output files (*.bin)

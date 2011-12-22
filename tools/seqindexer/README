@@ -22,7 +22,7 @@ Indexing query file
               
               
         ex) $ python seqindexer.py -i 100_simul_seqs.fa -o 100_simul_seqs.fa.idx 
-              -d 100_simul_seqs.fa.def -u 0 -s 0 -b 1
+              -d 100_simul_seqs.fa.def -u 0 -s 1 -b 1
 
             in "100_simul_seqs.fa.idx":
                 0       1000    1

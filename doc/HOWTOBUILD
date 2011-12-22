@@ -49,6 +49,17 @@ By Seung-Jin Sul (ssul@jcvi.org)
       ncbi_cxx--<version>.tar.gz 
     $ tar zxvf ncbi_cxx--<version>.tar.gz
        
+    * Note
+      Also you can build the mr-mpi-blast with the NCBI BLAST+ source 
+      package following the same steps explained in this document. The 
+      BLAST+ can be downloaded from:
+      
+      "ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/ncbi-blast-<version>+-src.tar.gz". 
+      
+      Buiding mr-mpi-blast with BLAST+ source package is tested with BLAST+ 
+      version 2.2.24. If you have a problem with the latest version of 
+      BLAST+ please download the version 2.2.24. 
+   
    
 3. Checkout the latest mr-mpi-blast
   
@@ -57,7 +68,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     $ cd ../../..
    
 
-4. Edit meta-Make files 
+4. Edit meta-make files 
    
     (1) Makefile.mrblast.app
     

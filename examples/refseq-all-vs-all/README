@@ -44,7 +44,7 @@ considerations.
     The NCBI RefSeq microbial genome sequences are formatted by using the 
     "makeblastdb" NCBI utility. Total 329,924 sequences are formatted in 
     three 1GB database partitions. Those database partition names are listed in 
-    "dblist.txt" file for running mr-mpi-blast.
+    "dblist.txt" file for running mr-mpi-blast. 
     
     $ makeblastdb -in refseq_microbial.fasta -dbtype nucl -logfile blastdbmake.log
       
