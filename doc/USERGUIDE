@@ -62,7 +62,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
           used. For instance, the default evalue threshold is '10'. 
         
     - The mr-mpi-blast is a MPI program thus it should be run by "mpirun" or 
-      whatever equivalent like "ibrun" on XSEDE TACC Ranger cluster.
+      whatever equivalent like "ibrun" on XSEDE TACC Ranger cluster. 
       
         . An example SGE job script  
 
@@ -128,29 +128,29 @@ By Seung-Jin Sul (ssul@jcvi.org)
     
       Before running mr-mpi-blast, user must generate an index file and a 
       defline file by using "tools/seqindexer/seqindexer.py" utility. The 
-      index file stores <offset, length, query ID>. The offset is each 
-      sequence's starting byte offset in the query file and the length is 
-      base-pair length of sequnece. Both are used to logically split the 
-      query file into blocks which will be distributed among workers in the 
-      MapReduce framework. The "query ID" field represents universally 
-      unique query ID for each query. You can select a query ID option 
-      between serial number and GI number when running "seqindexer.py". The 
-      former assigns serial numbers starting from "1" as unique query ID. 
-      This option is useful when your query sequences do not have unique GI 
-      numbers or do not have the GI number field. Also you can specify any 
-      starting number using "-s" option, if you want. If your query 
-      sequences have unique GI numbers, you can use the extracted GI 
-      numbers as unique query IDs. 
+      index file stores <offset, length, query ID> in tab delimited format. 
+      The offset is each sequence's starting byte offset in the query file 
+      and the length is base-pair length of sequnece. Both are used to 
+      logically split the query file into blocks which will be distributed 
+      among workers in the MapReduce framework. The "query ID" field 
+      represents universally unique query ID for each query. You can select 
+      a query ID option between serial number and GI number when running 
+      "seqindexer.py". The former assigns serial numbers starting from "1" 
+      as unique query ID. This option is useful when your query sequences 
+      do not have unique GI numbers or do not have the GI number field. 
+      Also you can specify any starting number using "-s" option, if you 
+      want. If your query sequences have unique GI numbers, you can use the 
+      extracted GI numbers as unique query IDs. 
       
-      The defline file stores <query ID, defline> and is used to add 
-      "defline" field right next to "query ID" field in the final tabular 
-      format output. The "-b" option in "seqindexer.py" directs to save 
-      either part of or full deflines of the input sequences. The part of 
-      defline means a substring of the defline between the first character, 
-      ">" and the first blank. The full defline means the whole line of the 
-      defline starting from ">" and the new line character. See the 
-      examples below showing part and full deflines from the above sequence 
-      exameple.
+      The defline file stores <query ID, defline> in tab delimited format 
+      and is used to add "defline" field right next to "query ID" field in 
+      the final tabular format output. The "-b" option in "seqindexer.py" 
+      directs to save either part of or full deflines of the input 
+      sequences. The part of defline means a substring of the defline 
+      between the first character, ">" and the first blank. The full 
+      defline means the whole line of the defline starting from ">" and the 
+      new line character. See the examples below showing part and full 
+      deflines from the above sequence exameple.
       
         ex) Example of part of defline 
             >gi|5524211|gb|AAD44166.1|
@@ -242,9 +242,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
       can find three kinds of files are generated per each partition: index 
       file, sequence file and header file. Those files are needed to 
       extract sequences from the BLAST database. For protein databases 
-      these files end with the extensions ".pin", ".psq" and ".phr" 
+      these files end with the extensions ".pin", ".psq" and ".phr",  
       respectively. For DNA databases the extensions are ".nin", ".nsq" and 
-      ".nhr" respectively. The index file contains information about the 
+      ".nhr", respectively. The index file contains information about the 
       database, i.e. version number, database type, file offsets, etc. The 
       sequence file contains residues for each of the sequences. Finally, 
       the header file contains the header information for each of the 
@@ -361,7 +361,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
       Those binary files can be converted into CSV, Sqlite database, and HD5 
       database. To see how to convert, please refer to "Converting hit 
-      files" section. 
+      files" section.
 
     - Log files (*.log)
 
@@ -404,7 +404,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       (http://www.pytables.org/moin).
    
         ex) $ python load_csv.py -b ./hits -o hits     # generate a CSV file  
-        ex) $ python load_sql.py -b ./hits -o hits     # generates a sqlite file
+        ex) $ python load_sql.py -b ./hits -o hits     # generates a SQLite file
         ex) $ python load_hd5.py -b ./hits -o hits     # generates a hd5 file
     
     
@@ -476,13 +476,13 @@ By Seung-Jin Sul (ssul@jcvi.org)
        
         - Query block size (BLOCKSIZE)
           The block size determines the the number of work items. The total 
-          number of blocks is roughly (total base-pairs of input sequences 
-          / block size). You should set the block size so that you can have 
-          much more work items than the number of processing units for 
-          gaining maximum performance. Too small number of work items can not 
-          fully use the load-balancing feature of MapReduce. If there is 
-          large enough query file as input, 1MB of the block size is 
-          recommended. 
+          number of blocks is roughly (total number of base-pairs of input 
+          sequences / block size). You should set the block size so that 
+          you can have much more work items than the number of processing 
+          units for gaining maximum performance. Too small number of work 
+          items can not fully use the load-balancing feature of MapReduce. 
+          If there is large enough query file as input, 1MB of the block 
+          size is recommended. 
     
         - Iteration number (NUMITER)
           To process large collection of queries, the mr-mpi-blast supports 

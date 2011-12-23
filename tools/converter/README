@@ -1,23 +1,23 @@
 Converting the binary output files from mr-mpi-blast  
    
-The resulting '*.bin' files can be easily converted into HD5, SQLite, or CSV 
-files using the utilities provided under 'tools/converter' directory. For 
-example, if '*.bin' files are saved in './hits' directory, the below 
-commands collects and saves all hits from *.bin files into a output file.
+    The resulting '*.bin' files can be easily converted into HD5, SQLite, or CSV 
+    files using the utilities provided under 'tools/converter' directory. For 
+    example, if '*.bin' files are saved in './hits' directory, the below 
+    commands collects and saves all hits from *.bin files into a output file.
 
-* NOTE
-  To use HD5 database format, PyTables should be installed 
-  (http://www.pytables.org/moin/).
-   
+    * NOTE
+      To use HD5 database format, PyTables should be installed 
+      (http://www.pytables.org/moin/).
+       
 
-    ex) $ python load_sql.py -b ./hits -o hits       # generates a sqlite file
-    ex) $ python load_hd5.py -b ./hits -o hits       # generates a hd5 file
-    ex) $ python load_csv.py -b ./hits -o hits       # generate a CSV file  
-    
+        ex) $ python load_sql.py -b ./hits -o hits       # generates a sqlite file
+        ex) $ python load_hd5.py -b ./hits -o hits       # generates a hd5 file
+        ex) $ python load_csv.py -b ./hits -o hits       # generate a CSV file  
+        
 
-    If you want to add the original defline after the 'qid' field, use '-d' 
-    and '-i' options. 
-      
-    ex) $ python load_sql.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
-    ex) $ python load_csv.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
+        If you want to add the original defline after the 'qid' field, use '-d' 
+        and '-i' options. 
+          
+        ex) $ python load_sql.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
+        ex) $ python load_csv.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
  
