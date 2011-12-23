@@ -359,7 +359,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       settings, please refer to the BLAST+ user manual 
       (http://www.ncbi.nlm.nih.gov/books/NBK1763/). 
       
-      Those binary files can be converted into CSV, Sqlite database, and HD5 
+      Those binary files can be converted into CSV, SQLite database, and HD5 
       database. To see how to convert, please refer to "Converting hit 
       files" section.
 
@@ -504,9 +504,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
         3 and 1,000,000, respectively. If you have not enough work items 
         than the number of processing units you will request from a HPC 
         (Remember the total number of work items is (total base-pairs of 
-        input queries / block size * number of database partitions) and we 
-        ), you can decrease the query block size to increase the number of 
-        work items. 
+        input queries / block size * number of database partitions), you 
+        can decrease the query block size to increase the number of work 
+        items. 
         
         Finding a proper value for the page size is not trivial because it 
         is hard to predict in advance. Too small page size will make the 

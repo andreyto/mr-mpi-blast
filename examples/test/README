@@ -85,7 +85,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       BLAST.
     - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
-      Sqlite, and Hd5 database files.
+      SQLite, and Hd5 database files.
           
 
 5. Run mr-mpi-blast with 100 simulated sequences against "test.db"
@@ -100,7 +100,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       BLAST database. 
     - The evalue is set as 10.
     - The hit results will be saved in *.bin files and converted into CSV, 
-      Sqlite, and Hd5 database files.
+      SQLite, and Hd5 database files.
 
 
 6. Run mr-mpi-blast with 30 real sequences against "test.db" by multiple iterations
@@ -109,7 +109,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     - Run mr-mpi-blast with setting "NUMITER" as 2.
     - The iteration number will be added to the resulting hit file names.
-    - The hit files are converted into CSV, Sqlite, and Hd5 database files.
+    - The hit files are converted into CSV, SQLite, and Hd5 database files.
     
     
     
