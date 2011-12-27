@@ -1,7 +1,7 @@
 EXAMPLES - how to run mr-mpi-blast
 
 
-Updated: 12/20/2011
+Updated: 12/27/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -22,8 +22,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 
     - Utilities for preparing input data and converting output need Python 
-      installed. To use HD5 database format, Pytable package should be 
-      installed (http://www.pytables.org/moin/PyTablesPro)
+      installed. To use HD5 database format, PyTables package should be 
+      installed (http://www.pytables.org/moin)
 
 
 1. Indexing 30 real sequences
@@ -31,13 +31,13 @@ By Seung-Jin Sul (ssul@jcvi.org)
     Scripts: "1.indexing_30_real_seqs.sh"
 
     - This query data show the case of query sequence in which each sequence 
-      has "gi" numbers.
+      has "GI" numbers.
     - The 30 query sequences were selected arbitrarily from NCBI RefSeq viral 
       sequences and saved in "30_real_seqs.fa" file (~100Kbp).
     - Indexing the input query file, "30_real_seqs.fa" generates 
       "30_real_seqs.fa.idx" and "30_real_seqs.fa.def" files.
     - Options used for running seqindexer.py
-        -u 1: use gi in the input file as unique query ID  
+        -u 1: use GI in the input file as unique query ID  
         -b 0: save part of deflines in "30_real_seqs.fa.def"
 
 
@@ -47,9 +47,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     - This query data show the case of simulated query sequence which 
       generated from the above FASTA sequences using "splitter.py". 
-    - For this case, we can not use the "gi" numbers as query ID because 
-      those are not universally unique. Each query will be assigned a 
-      generated serial number as its unique ID.
+    - For this case, we can not use the "GI" numbers as query ID because 
+      those are not unique. Each query will be assigned a generated serial 
+      number as its unique ID.
     - Generate 100 query sequences (1000bp length) by splitting the RefSeq viral 
       sequences and saved in "100_simul_seqs.fa" file (~100Kbp). 
     - Indexing the input query file, "100_simul_seqs.fa" for mr-mpi-blast run.

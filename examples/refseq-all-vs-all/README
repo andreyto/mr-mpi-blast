@@ -1,7 +1,7 @@
 An example of large-scale mr-mpi-blast experiment
 
 
-Updated: 12/20/2011
+Updated: 12/27/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -69,7 +69,7 @@ considerations.
     definitely overloaded by the out-of-core disk operation (Actually 
     Ranger staffs monitored the system load and found the file system 
     performance was affected by the excessive disk I/O). So we decided not 
-    to allow the out-of-core and to partition the input qeury file into 
+    to allow the out-of-core and to partition the input query file into 
     smaller files to eliminate the possibility of the MapReduce page 
     overflow. To decide the size of the query file partition, we ran tests 
     with different query partition file sizes, for example, 500MB, 750MB, 
@@ -77,7 +77,7 @@ considerations.
     1.5GB query file partitions were safe for running mr-mpi-blast which 
     results in having 63 query files. Because the query file size is 
     decreased by partitioning, we set the block size as 500Kbp so as to 
-    prepare enoung number of work items.
+    prepare enough number of work items.
                 
     The other parameter settings are followed:
     

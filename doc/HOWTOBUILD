@@ -1,7 +1,7 @@
 BUILD - How to build mr-mpi-blast
 
 
-Updated: 12/20/2011
+Updated: 12/27/2011
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -56,7 +56,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
       "ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/ncbi-blast-<version>+-src.tar.gz". 
       
-      Buiding mr-mpi-blast with BLAST+ source package is tested with BLAST+ 
+      Building mr-mpi-blast with BLAST+ source package is tested with BLAST+ 
       version 2.2.24. If you have a problem with the latest version of 
       BLAST+ please download the version 2.2.24. 
    
