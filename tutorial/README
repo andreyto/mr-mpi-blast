@@ -33,7 +33,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 1. Set XSEDE TACC Ranger module list
 
-    $ bash ./ranger_setup_env.sh
+    $ source ./ranger_setup_env.sh
 
 
 2. Prepare test data and run mr-mpi-blast
@@ -71,7 +71,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
          Please set your SGE account code to $SGE_ACCOUNT 
               
        $ sh ./3.run_mr-mpi-blast.sh
-       
+        - Set BLASTDB environment variable to tell NCBI BLAST code where the databases are
         - Qsub mr-mpi-blast for BLAST search of the queries against the 
           generated BLAST database.
         - Run the mr-mpi-blast using ibrun with requesting 64 cores
