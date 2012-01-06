@@ -6,8 +6,9 @@ if [ -z "$SGE_ACCOUNT" ]; then
     exit
 fi
 
-
-cd ./blastdb &&
+export BLASTDB=$(pwd)/blastdb
+mkdir -p blastrun
+cd blastrun &&
 cp ../dblist.txt . &&
 cp ../mrblast.ini . &&
 cp ../mrblast_job.sh . &&
