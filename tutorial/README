@@ -72,6 +72,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
               
        $ sh ./3.run_mr-mpi-blast.sh
         - Set BLASTDB environment variable to tell NCBI BLAST code where the databases are
+        - Create directory "blustrun" and make it a current working directory
         - Qsub mr-mpi-blast for BLAST search of the queries against the 
           generated BLAST database.
         - Run the mr-mpi-blast using ibrun with requesting 64 cores
@@ -88,10 +89,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
    
        $ sh ./4.convert_hits.sh
         
-         - Move "./blastdb/*.bin" to "./blastdb/hits". 
-         - Convert *.bin files in "./blastdb/hits" into "./blastdb/hits.csv" 
+         - Move "./blastrun/*.bin" to "./blastrun/hits". 
+         - Convert *.bin files in "./blastrun/hits" into "./blastrun/hits.csv" 
            without the original deflines of the input queries and into
-           "./blastdb/hits_w_defline.csv" with deflines from the input queries.
+           "./blastrun/hits_w_defline.csv" with deflines from the input queries.
          
                    
                    
