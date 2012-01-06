@@ -4,7 +4,7 @@
 echo -e "\n### Convert *.bin to CSV files: ###" &&
 echo -e "    hits.csv : only qid" &&
 echo -e "    hits_w_defline .csv : qid + defline" &&
-cd ./blastdb &&
+cd ./blastrun &&
 mkdir -p hits &&
 #mv *log.txt ./logs &&
 mv *.bin ./hits &&
