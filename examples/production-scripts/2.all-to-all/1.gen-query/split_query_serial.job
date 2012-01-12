@@ -1,0 +1,17 @@
+#$ -N r1
+#$ -cwd
+#$ -o $JOB_NAME.o$JOB_ID
+#$ -j y
+#$ -A TG-DEB100001 
+#$ -q serial
+#$ -pe 16way 16
+#$ -V
+#$ -l h_rt=12:00:00
+#$ -M sulsj0270@gmail.com
+#$ -m be
+set -x
+
+
+python /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/tools/splitter/splitter.py refseq_microbial.fasta 1000 1000 500 refseq_microbial_all_3ksplit.fasta &&
+
+python /work/01471/ssul/work/distros3/ncbi_cxx/ncbi_cxx--Jun_15_2010/src/app/mr-mpi-blast/tools/seqindexer/seqindexer.py refseq_microbial_all_3ksplit.fasta refseq_microbial_all_3ksplit.fasta.idx2

@@ -43,8 +43,8 @@ considerations.
 
     The NCBI RefSeq microbial genome sequences are formatted by using the 
     "makeblastdb" NCBI utility. Total 329,924 sequences are formatted in 
-    three 1GB database partitions. Those database partition names are listed in 
-    "dblist.txt" file for running mr-mpi-blast. 
+    three 1GB database partitions. Those database partition names are 
+    listed in "dblist.txt" file for running mr-mpi-blast. 
     
     $ makeblastdb -in refseq_microbial.fasta -dbtype nucl -logfile blastdbmake.log
       
@@ -81,7 +81,7 @@ considerations.
                 
     The other parameter settings are followed:
     
-        in "examples/refseq-all-vs-all/mrblast.ini":
+        In file, "examples/refseq-all-vs-all/mrblast.ini":
     
             VERBOSITY   1
             TIMER       1
@@ -94,7 +94,7 @@ considerations.
             ISQIDGI     0       
         
     
-    The number of query block created by the block size of 500Kbp is around 
+    The number of query blocks created by the block size of 500Kbp is around 
     2,500. Thus the total number of work items is around 7,500. We 
     requested 2,048 cores from "normal" queue with 24 hours runtime. The 63 
     partitioned query files are placed in different subdirectories. The 
@@ -109,7 +109,6 @@ considerations.
     previously aborted subdirectory. The SGE job script and program looping 
     script are following.
     
-       
         In file, "examples/refseq-all-vs-all/sge_job_script.job":
         
             #$ -N r2048

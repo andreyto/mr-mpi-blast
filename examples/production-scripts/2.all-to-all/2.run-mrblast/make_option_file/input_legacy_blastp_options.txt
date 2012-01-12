@@ -1,0 +1,1 @@
+blastall -p blastp -i 1seq_prot.query -d /usr/local/projects/DB/nr/nr_current/nr.00 -e 10.0 -F T -X 15 -I F -q -3 -r 1 -v 500 -b 250 -g T -Q 1 -D 1 -a 1 -J F -K 0 -P 0 -Y 0 -T F -y 0.0 -Z 25 -n F -A 0 -w 0 -t 0 -B 0 -V F -C D -s F -M BLOSUM62 -A 40 -E 1 -f 11 -G 11 -I F -J F -m 8 -W 3 -y 7 -Y 0 -Z 25 -z 0

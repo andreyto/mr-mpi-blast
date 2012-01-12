@@ -1,0 +1,18 @@
+#$ -N m1000_2048
+#$ -cwd
+#$ -o $JOB_NAME.o$JOB_ID
+#$ -j y
+#$ -A TG-DEB100001 
+#$ -q normal 
+#$ -pe 16way 2048
+#$ -V
+#$ -l h_rt=12:00:00
+set -x
+#ibrun mpiblast -d all_dbs.fasta -i ../step3/chunks_all_fromssul-lx.query -p blastn -o mpirun_all.asn.1 -m 11
+#time ibrun -n 8 -o 0 ../MRBLAST/build/src/mrblast2 master.query nt.00 nt.00.out
+
+#mpirun -np 8 ../mrblast master.query nt.00 out.txt
+#mpirun -np 32 ../mrblast master.query alldb.out 
+
+time ibrun ../mrblast master.query $JOB_NAME-alldb.out 
+

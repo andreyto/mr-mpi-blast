@@ -1,0 +1,5 @@
+Generate an index file from your input FASTA query sequence file
+
+python ./seqindexer.py input output
+
+ex) python ./seqindexer.py ./data/10seqs.query ./data/10seqs.query.idx

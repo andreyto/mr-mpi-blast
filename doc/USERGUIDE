@@ -7,11 +7,11 @@ By Seung-Jin Sul (ssul@jcvi.org)
  
 * Introduction  
 
-    - The mr-mpi-blast program is a parallel implementation of NCBI BLAST+ 
-      using the NCBI C++ Toolkit and the MapReduce-MPI library and implements a 
-      "matrix-split" BLAST search in which a BLAST search job is transformed 
-      into searching "n" blocks of query sequences against "m" database 
-      partitions. 
+    - The mr-mpi-blast program is a parallel implementation of NCBI BLAST+
+      using the NCBI C++ Toolkit and the MapReduce-MPI library and implements
+      a "matrix-split" BLAST search in which a BLAST search job is
+      transformed into searching "n" blocks of query sequences against "m"
+      database partitions.
     - A work item becomes pairs <query block, database partition name> and the 
       (n x m) work items are distributed to "c" processing units ("workers") 
       in a cluster system. Each worker runs BLAST search with the assigned 
@@ -32,13 +32,14 @@ By Seung-Jin Sul (ssul@jcvi.org)
       indexed so that the mr-mpi-blast loads the file as memory-mapped file 
       and logically splits it into many blocks. Second, the master prepares 
       (n x m) work items and then assigns each work item to non-busy workers. 
-      Each worker runs BLAST search with the assigned work item. The hit 
-      results per work item is accumulated in each worker. For example, if 
-      the master assigns "w" work items of the (n x m) work items to a 
-      worker, where w < n x m, the worker accumulates maximum "w" sets of 
-      BLAST results. Upon completion, each worker saves the stored hits to 
-      individual binary file. Finally, all resulting binary files can be 
-      converted into CSV text file, or SQLite or HD5 database files.
+      Each worker runs BLAST search with the assigned work item. The
+      alignment hit results per work item is accumulated in each worker.
+      For example, if the master assigns "w" work items of the (n x m) work
+      items to a worker, where w < n x m, the worker accumulates maximum
+      "w" sets of BLAST results. Upon completion, each worker saves the
+      stored hits to individual binary file. Finally, all resulting binary
+      files can be converted into CSV text file, or SQLite or HD5 database
+      files.
       
     - Usage examples:
     
@@ -215,10 +216,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
                 ...
 
 
-      For more information, please refer to "tools/seqindexer/README" and 
-      "tools/seqindexer/examples/README". The input sequence file and the 
-      generated index file should be described in the mr-mpi-blast 
-      configuration file, "mrblast.ini". How to set those file names in the 
+      For more information, please refer to "tools/seqindexer/README" and
+      "tools/seqindexer/examples/README". The input sequence file and the
+      generated index file should be described in the mr-mpi-blast
+      configuration file, "mrblast.ini". How to set those file names in the
       configuration file will be explained in the later section.
 
 
@@ -428,24 +429,24 @@ By Seung-Jin Sul (ssul@jcvi.org)
     (1) Parameters related with MapReduce-MPI library
     
         - Out-of-core (OUTOFCORE) and page size (MEMSIZE)
-          If the data owned by a processor for operating MapReduce fits 
-          within one page, then no disk I/O is performed. However, if data 
-          exceeds the page size, then it is written to temporary disk files 
-          and read back in for subsequent operations and this is called 
+          If the data owned by a processor for operating MapReduce fits
+          within one page, then no disk I/O is performed. However, if data
+          exceeds the page size, then it is written to temporary disk files
+          and read back in for subsequent operations and this is called
           "out-of-core" operation.
             
-          The page size determines the size (in Mbytes) of each page of 
-          memory allocated by the MapReduce object to perform its 
-          operations. The MapReduce-MPI requires 1 to 7 pages for its 
-          run-time operation such as managing MapReduce key-value pairs or 
-          key-multivalue pairs. The smallest size allowed is 1MB. There is 
-          no upper limitation of the page size, but you should insure the 
-          total memory consumed by all pages allocated by all the MapReduce 
-          objects you create, does not exceed the physical memory available 
-          (which may be shared by several processors if running on a 
-          multi-core node). If exceeded, then many systems will allocate 
-          virtual memory, which will typically cause MR-MPI library 
-          operations to run very slowly and thrash the disk. 
+          The page size determines the size (in Mbytes) of each page of
+          memory allocated by the MapReduce object to perform its
+          operations. The MapReduce-MPI requires 1 to 7 pages for its
+          run-time operation such as managing MapReduce key-value pairs or
+          key-multivalue pairs. The smallest size allowed is 1MB. There is
+          no upper limitation of the page size, but you should insure the
+          total memory consumed by all pages allocated by all the MapReduce
+          objects you create, does not exceed the physical memory available
+          (which may be shared by several processors if running on a
+          multi-core node). If exceeded, then many systems will allocate
+          virtual memory, which will typically cause MR-MPI library
+          operations to run very slowly and thrash the disk.
           
           If you allow the out-of-core operation and set the page size 
           small, then processing a large data set will induce many reads 
@@ -500,80 +501,81 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     (3) Settings for large-scale analysis
     
-        This section is to give an idea how to run mr-mpi-blast successfully 
-        for a large-scale experiment which involves large query file and 
-        databases. The scheduler type and query block size can be set with 
-        3 and 1,000,000, respectively. If you have not enough work items 
-        than the number of processing units you will request from a HPC 
-        (Remember the total number of work items is (total base-pairs of 
-        input queries / block size * number of database partitions), you 
-        can decrease the query block size to increase the number of work 
+        This section is to give an idea how to run mr-mpi-blast successfully
+        for a large-scale experiment which involves large query file and
+        databases. The scheduler type and query block size can be set with
+        3 and 1,000,000, respectively. If you have not enough work items
+        than the number of processing units you will request from a HPC
+        (Remember the total number of work items is (total base-pairs of
+        input queries / block size * number of database partitions), you
+        can decrease the query block size to increase the number of work
         items.
 
-        Finding a proper value for the page size is not trivial because it 
-        is hard to predict in advance. Too small page size will make the 
-        out-of-core operation started. Too large page size should cause 
-        thrashing. It depends on the characteristics of the key-value pairs 
-        in the MapReduce framework, e.g. how many HSPs are found for each 
-        query sequence. The number of hits varies along with 
-        characteristics of query and database sequences. Also the Evalue 
-        and the user-defined number of hits to show dictates the size of 
-        data to store in the pages. The page size is related with the 
-        database partition size discussed later. Therefore, finding the 
-        page size should be accompanied with test runs with allowing the 
-        verbosity setting (VERBOSITY) to show the page consumption and 
-        memory requirement information. 
+        Finding a proper value for the page size is not trivial because it
+        is hard to predict in advance. Too small page size will make the
+        out-of-core operation started. Too large page size should cause
+        thrashing. It depends on the characteristics of the key-value pairs
+        in the MapReduce framework, e.g. how many HSPs are found for each
+        query sequence. The number of hits varies along with
+        characteristics of query and database sequences. Also the Evalue
+        and the user-defined number of hits to show dictates the size of
+        data to store in the pages. The page size is related with the
+        database partition size discussed later. Therefore, finding the
+        page size should be accompanied with test runs with allowing the
+        verbosity setting (VERBOSITY) to show the page consumption and
+        memory requirement information.
 
-        The number of required pages ranges from 1 to 7 for most of 
-        MapReduce-MPI operations. Plus it needs to allocate small amount of 
-        extra memory space. Thus, as a starting values, you can determine 
-        the page size so that ((page size * 7) + database partition size) < 
-        (memory space available per each core). For example, if 2GB memory 
-        space is available for each core and if you decide to set the 
-        database partition size to 1GB, we can expect that the rest of 1GB 
-        RAM space is available. Thus, your possible page size settings 
-        varies between 64MB and 128MB which will expectedly consume roughly 
-        448~896MB of memory space. 
+        The number of required pages ranges from 1 to 7 for most of
+        MapReduce-MPI operations. Plus it needs to allocate small amount of
+        extra memory space. Thus, as a starting values, you can determine
+        the page size so that ((page size * 7) + database partition size) <
+        (memory space available per each core). For example, if 2GB memory
+        space is available for each core and if you decide to set the
+        database partition size to 1GB, we can expect that the rest of 1GB
+        RAM space is available. Thus, your possible page size settings
+        varies between 64MB and 128MB which will expectedly consume roughly
+        448~896MB of memory space.
 
-        The database partition size should be determined based on the amount 
-        of available physical memory space. Let's say a node is consisted 
-        of 16 cores and has 32GB of combined RAM. If the size of database 
-        partition is 1GB, total 16GB of combined 32GB RAM will be consumed 
-        by the 16 cores for database loading. Too small size will also 
-        affect the performance because of frequent reloading of different 
-        databases. Too large size might cause excessive I/O due to shortage 
-        of memory space. 
+        The database partition size should be determined based on the amount
+        of available physical memory space. Let's say a node is consisted
+        of 16 cores and has 32GB of combined RAM. If the size of database
+        partition is 1GB, total 16GB of combined 32GB RAM will be consumed
+        by the 16 cores for database loading. Too small size will also
+        affect the performance because of frequent reloading of different
+        databases. Too large size might cause excessive I/O due to shortage
+        of memory space.
 
-        For instance, we ran a large-scale BLAST search using ~70Gbp query 
-        sequences against ~12Gbp subject sequences using 2,048 cores on 
-        XSEDE TACC Ranger. For the initial parameter values, we used 128MB 
-        page size, 1GB size of database partition, and 1Mbp block size. By 
-        running tests, we found the out-of-core operation affects the 
-        shared file system performance. After monitoring, the Ranger 
-        administrators recommended us to move all input files to the 
-        scratch disk and run mr-mpi-blast on it. However, we still saw the 
-        degradation of the performance of the file system. So we had no 
-        option but disabling the out-of-core operation and partition the 
-        query file into smaller size (~1Gbp), and run mr-mpi-blast 
-        iteratively. Because the query file size is decreased by splitting, 
-        we set the block size as 500Kbp so as to prepare enough number of 
-        work items. We introduce our experiments with large dataset in "examples/refseq-all-vs-all/README". 
+        For instance, we ran a large-scale BLAST search using ~70Gbp query
+        sequences against ~12Gbp subject sequences using 2,048 cores on
+        XSEDE TACC Ranger. For the initial parameter values, we used 128MB
+        page size, 1GB size of database partition, and 1Mbp block size. By
+        running tests, we found the out-of-core operation affects the
+        shared file system performance. After monitoring, the Ranger
+        administrators recommended us to move all input files to the
+        scratch disk and run mr-mpi-blast on it. However, we still saw the
+        degradation of the performance of the file system. So we had no
+        option but disabling the out-of-core operation and partition the
+        query file into smaller size (~1Gbp), and run mr-mpi-blast
+        iteratively. Because the query file size is decreased by splitting,
+        we set the block size as 500Kbp so as to prepare enough number of
+        work items. We introduce our experiments with large dataset in
+        "examples/refseq-all-vs-all/README".
 
-        The "NUMITER" parameters to enable multiple iterations of 
-        mr-mpi-blast should be considered as well for large-scale 
-        mr-mpi-blast runs. If you set the option as n > 1, the set of total 
-        work items will be divided into "n" sub work items and mr-mpi-blast 
-        will iterate over the sub sets "n" times. Increasing "n" has the 
-        same effect as running mr-mpi-blast with smaller query file. The 
-        output file from each iteration can be distinguished by the 
-        iteration number in each file name. 
+        The "NUMITER" parameters to enable multiple iterations of
+        mr-mpi-blast should be considered as well for large-scale
+        mr-mpi-blast runs. If you set the option as n > 1, the set of total
+        work items will be divided into "n" sub work items and mr-mpi-blast
+        will iterate over the sub sets "n" times. Increasing "n" has the
+        same effect as running mr-mpi-blast with smaller query file. The
+        output file from each iteration can be distinguished by the
+        iteration number in each file name.
 
 
 * Tutorial
 
-    We provide a tutorial for running the program on a specific MPI 
-    cluster, XSEDE TACC Ranger. Please refer to "tutorial/README" for 
-    details. It should be easy to adapt for other systems.
+    We provide a tutorial for running the program on a specific MPI cluster,
+    XSEDE TACC Ranger. Please refer to "tutorial/README" for details. It
+    should be easy to adapt for other systems.
 
 
 * References

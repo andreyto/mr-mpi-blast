@@ -14,10 +14,11 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The NCBI C++ Toolkit version 7.0.0 is tested for the current version 
       of mr-mpi-blast. If you have a problem with the toolkit version > 
       7.0.0, please download the version 7.0.0.
-    - The "MapReduce-MPI" library from Sandia National Laboratories is used 
-      for MapReduce framework. The library is modified to add our 
-      location-aware scheduler based on the MapReduce-MPI version 20Jun2011 and  
-      included in the "mrmpi" subdirectory of the mr-mpi-blast source package.
+    - The "MapReduce-MPI" library from Sandia National Laboratories is used
+      for MapReduce framework. The library is modified to add our
+      location-aware scheduler based on the MapReduce-MPI version 20Jun2011
+      and included in the "mrmpi" subdirectory of the mr-mpi-blast source
+      package.
     - To build mr-mpi-blast, the Boost library and a MPI stack is needed. 
       The current version is tested with the MVAPICH MPI stack on 
       XSEDE TACC Ranger and on a local machine with Open MPI installed. The 

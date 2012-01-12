@@ -15,8 +15,8 @@ Converting the binary output files from mr-mpi-blast
         ex) $ python load_csv.py -b ./hits -o hits       # generate a CSV file  
         
 
-        If you want to add the original defline after the 'qid' field, use '-d' 
-        and '-i' options. 
+    If you want to add the original defline after the 'qid' field, use '-d' 
+    and '-i' options. 
           
         ex) $ python load_sql.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
         ex) $ python load_csv.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def

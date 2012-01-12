@@ -1,0 +1,5 @@
+USAGE: python splitter.py fasta_file chunksize overlapBP outfile
+
+EXAMPLE:
+
+    $python splitter.py infile 1000000 100000 outfile
