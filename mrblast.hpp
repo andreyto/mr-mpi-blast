@@ -12,7 +12,7 @@
 //  Author: Seung-Jin Sul
 //         (ssul@jcvi.org)
 //
-//  Last updated: 12/19/2011
+//  Last updated: 01/25/2012
 //
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -32,6 +32,8 @@
 #define MPI_WTIME_IS_GLOBAL 1
 #endif
 
+
+    
 using namespace MAPREDUCE_NS;
 using namespace std;
 
@@ -44,23 +46,29 @@ using namespace std;
 #include <algo/blast/api/blast_nucl_options.hpp>
 #include <algo/blast/api/blast_prot_options.hpp>
 
-/// Import search strategy
-#include <objects/blast/Blast4_request.hpp>
-#include <algo/blast/api/search_strategy.hpp>
+/// For importing search strategy
+//#include <objects/blast/Blast4_request.hpp>
+//#include <algo/blast/api/search_strategy.hpp>
 
-/// Tabular
-#include <algo/blast/format/blast_format.hpp>
+/// For accessing fields in tabular output
+//#include <algo/blast/format/blast_format.hpp>
 #include <algo/blast/blastinput/blastn_args.hpp>
 #include <algo/blast/blastinput/blastp_args.hpp>
 
 /// sequence::GetTitle() for get def line
 #include <objmgr/util/sequence.hpp>
 
-/// For align info
+/// For getting align info and RecoverSearchStrategy
 #include "blast_app_util.hpp"
 
-/// For blastdbcmd
+/// For blastdbcmd, setting the dbsize
 #include <objtools/blast/seqdb_reader/seqdbexpert.hpp>
+
+/// For EScoreType
+#include <objects/seqalign/Seq_align.hpp>
+
+/// For sequence::GetLength()
+#include <objmgr/util/seq_loc_util.hpp>
 
 USING_NCBI_SCOPE;
 USING_SCOPE (blast);
@@ -117,7 +125,9 @@ int g_nDbFiles;
 string g_dbName;
 string g_dbListFileName;
 const string CONF_FILE_NAME = "mrblast.ini";
-const int MAXSTR = 80;      /// For mpi proc name and subject id string
+const int MAXPROCNAME = 80; /// For mpi proc name  
+const int MAXSUBJID = 40;   /// For subject id string
+const int MAXDBLENSTR = 40;   /// For database length string
 
 /// ----------------------------------------------------------------------------
 /// Log
@@ -180,7 +190,7 @@ mapIS_t g_mapRankProcName;           /// dict of proc name by rank
 int g_mapStyle;
 int g_MPI_worldRank;        /// MPI rank
 int g_MPI_nProcs;
-char g_MPI_procName[MAXSTR];/// MPI procname
+char g_MPI_procName[MAXPROCNAME]; /// MPI procname
 string g_outFilePrefix;     /// Prefix string for output file names
 string g_indexFileName;
 string g_queryFileName;
@@ -188,17 +198,32 @@ string g_queryFileName;
 /// For nucl or prot DB setting
 bool g_bIsProtein = false;
 
-/// The unique query id in the index file is gi or not
-bool g_bIsQidGi = false;
+/// Add classifier fields in final BLAST output
+bool g_bClassifier = false;
 
 /// Output file to store BLAST hits
 string g_hitFileName;
  
-/// To pass Blast hits following outfmt=6 format.
-/// query id, subject id, % identity, alignment length, nMismatches, gap opens,
-/// q. start, q. end, s. start, s. end, evalue, bit score
+/// To emit MapReduce KV 
+///
+/// Fields
+///    gi           : Query GI (GI of the origin sequence)
+///    sId          : Subject Seq-id
+///    identity     : BLAST percentage identity (Percentage of identical matches) (%)
+///    alignLen     : alignment length
+///    nMismatches  : number of mismatches
+///    nGaps        : total number of gaps
+///    queryStart   : Start of alignment in query
+///    queryEnd     : End of alignment in query
+///    subjectStart : Start of alignment in subject
+///    subjectEnd   : End of alignment in subject
+///    evalue       : Expect value
+///    bitScore     : Bit score
+///    identity     : Percent identity per query (if classifier option is ON)
+///    coverage     : Percent coverage per query (if classifier option is ON)
+///
 typedef struct structBlResGeneric {
-    char        subjectId[80];
+    char        subjectId[MAXSUBJID];
     double      identity;
     uint32_t    alignLen;
     uint32_t    nMismatches;
@@ -211,18 +236,49 @@ typedef struct structBlResGeneric {
     double      bitScore;
 } structBlResGeneric_t;
 
+/// +
+/// percIdentity and percCoverage
+typedef struct structBlResClassifier {
+    char        subjectId[MAXSUBJID];
+    double      identity;
+    uint32_t    alignLen;
+    uint32_t    nMismatches;
+    uint32_t    nGaps;
+    uint32_t    qStart;
+    uint32_t    qEnd;
+    uint32_t    sStart;
+    uint32_t    sEnd;
+    double      eValue;
+    double      bitScore;
+    double      percIdent;
+    double      percCover; 
+} structBlResClassifier_t;
+
 /// To sort Blast hits by evalue & bitscore
 typedef struct structEvalue {
     structBlResGeneric_t *pRec;
-    char                  subjectId[80];
     double                eValue;
-    float                 bitScore;
+    double                bitScore;
+    double                identity;
 } structEValue_t;
 
+/// +
+/// percIdentity and percCoverage
+typedef struct structEvalueClassifier {
+    structBlResClassifier_t *pRec;
+    double                   eValue;
+    double                   bitScore;
+    double                   identity;
+} structEValueClassifier_t;
+
 /// For saving hits in bin format
+/// query id, subject id, % identity, alignment length, nMismatches, gap opens,
+/// q. start, q. end, s. start, s. end, evalue, bit score
+/// +
+/// percIdentity and percCoverage
 typedef struct structBlResToSaveHits {
     uint64_t    queryId;
-    char        subjectId[80];
+    char        subjectId[MAXSUBJID];
     double      identity;
     uint32_t    alignLen;
     uint32_t    nMismatches;
@@ -235,6 +291,25 @@ typedef struct structBlResToSaveHits {
     double      bitScore;
 } structBlResToSaveHits_t;
 
+/// +
+/// percIdentity and percCoverage
+typedef struct structBlResToSaveHitsClassifier {
+    uint64_t    queryId;
+    char        subjectId[MAXSUBJID];
+    double      identity;
+    uint32_t    alignLen;
+    uint32_t    nMismatches;
+    uint32_t    nGaps;
+    uint32_t    qStart;
+    uint32_t    qEnd;
+    uint32_t    sStart;
+    uint32_t    sEnd;
+    double      eValue;
+    double      bitScore;
+    double      percIdent;
+    double      percCover;
+} structBlResToSaveHitsClassifier_t;
+
 /// For multiple iterations
 int g_nIter = 1;   
 int g_currIter = 0;
@@ -242,12 +317,18 @@ uint32_t nSubWorkItemSets = 0;
 uint32_t nWorkItemsPerIter = 0;
 uint32_t nRemains = 0;
 
-/// prototypes
-void mrmpi_blast(); 
-void mr_map_run_blast(int itask, KeyValue *kv, void *ptr);
-inline void mpi_collect_node_name(int rank, int nProcs, MPI_Comm mpiComm);
-inline void mr_reduce_sort_and_save_generic(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
-inline bool compare_evalue_generic(structEValue_t e1, structEValue_t e2);
+/// For sorting hits by qid
+uint32_t *g_vecNumHitsPerQid;
+uint32_t *g_vecNumHitsPerQid2;
 
+/// prototypes
+void mr_mpi_blast(); 
+void mr_map_run_blast(int itask, KeyValue *kv, void *ptr);
+inline void mr_reduce_sort_and_save_generic(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
+inline void mr_reduce_sort_and_save_classifier(char *key, int keybytes, char *multivalue, int nvalues, int *valuebytes, KeyValue *kv, void *ptr);
+inline int  mr_myhash(char* key, int len);
+inline void mpi_collect_node_name(int rank, int nProcs, MPI_Comm mpiComm);
+inline bool compare_evalue_generic(structEValue_t e1, structEValue_t e2);
+inline bool compare_evalue_classifier(structEValueClassifier_t e1, structEValueClassifier_t e2);
 
 #endif

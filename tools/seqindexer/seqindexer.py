@@ -130,7 +130,7 @@ seqUID = 0
 
 if __name__ == '__main__':
      
-    usage = "python seqindexer.py -i inFile -o outIndexFile -d outDeflineFile -u uidopt -s startNum -b full_or_part_defline"
+    usage = "python seqindexer.py -i inFile -o outIndexFile -d outDeflineFile -s startNum -b full_or_part_defline"
     parser = optparse.OptionParser(usage=usage)
     parser.add_option("-i", "--input", dest="infilename", 
                   action="store", type="string", help="input fasta file", default=False)
@@ -138,10 +138,8 @@ if __name__ == '__main__':
                   action="store", type="string", help="output index file")
     parser.add_option("-d", "--deflinefilename", dest="deflinefilename",  
                   action="store", type="string", help="defline file name")                  
-    parser.add_option("-u", "--uidopt", dest="uidopt",  
-                  action="store", type="int", help="uid choice: 0=serial number, 1=gi")
     parser.add_option("-s", "--startno", dest="startno", 
-                action="store", type="int", help="uid start number when -u 0")    
+                action="store", type="int", help="uid start number", default=1)    
     parser.add_option("-b", "--deflineopt", dest="deflineopt",  
                   action="store", type="int", help="defline saving option: 0=part, 1=full")
     (options, args) = parser.parse_args()
@@ -155,15 +153,9 @@ if __name__ == '__main__':
         outFileName = options.outfilename
     else:
         parser.error("Please set the output index file name.")
-        
-    if options.uidopt is not None:
-        uidOption = options.uidopt        
-        if uidOption == 0:
-            if options.startno != 0:          
-                seqUID = options.startno
-            print "    Serial number starting from ", options.startno, "is used for unique query ID."
-        else:
-            print "    GI number is used for unique query ID."
+ 
+    if options.startno is not None:
+        seqUID = options.startno
 
     if options.deflinefilename and options.deflineopt is not None:
         defFileName = options.deflinefilename
@@ -189,20 +181,13 @@ if __name__ == '__main__':
             seqLen += len(line.rstrip("\n"))
             currLoc += len(line)
         numSeq += 1
-        uid = 0
-        
-        if uidOption == 1:
-            assert defline.rstrip().split("|")[0].find('gi') != -1
-            defline.rstrip().split("|")[0]
-            uid = defline.rstrip().split("|")[1]
-        else:
-            uid = seqUID
+        uid = seqUID
         outFile.write(str(loc)+"\t"+str(seqLen)+"\t"+str(uid)+"\n")
         deflines = ''
         
-        if deflineOption == 0:
+        if deflineOption == 0:  ## save only part of defline
             defline2 = defline.rstrip().split(" ")[0]
-        else:
+        else:                   ## save whole defline
             defline2 = defline.rstrip()        
         defFile.write(str(uid)+"\t"+defline2+"\n")
         seqUID += 1

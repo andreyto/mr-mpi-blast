@@ -60,7 +60,7 @@ if __name__ == '__main__':
     ###
     ##typedef struct structBlResToSaveHits {
         ##uint64_t    queryId;
-        ##char        subjectId[80];
+        ##char        subjectId[40];
         ##double      identity;
         ##uint32_t    alignLen;
         ##uint32_t    nMismatches;
@@ -95,8 +95,8 @@ if __name__ == '__main__':
         curs.execute('''CREATE TABLE IF NOT EXISTS hits
         ( 
             qId         BIGINT,      
-            qIdDef      VARCHAR(80), 
-            sId         VARCHAR(80), 
+            qIdDef      VARCHAR(40), 
+            sId         VARCHAR(40), 
             dIdent      DOUBLE,      
             alignLen    INT,         
             nMismatches INT,         
@@ -113,7 +113,7 @@ if __name__ == '__main__':
         curs.execute('''CREATE TABLE IF NOT EXISTS hits
             ( 
                 qId         BIGINT,      
-                sId         VARCHAR(80), 
+                sId         VARCHAR(40), 
                 dIdent      DOUBLE,      
                 alignLen    INT,         
                 nMismatches INT,         
@@ -131,7 +131,7 @@ if __name__ == '__main__':
     ### Read bin files and append to tables
     ###
     totalHits = 0
-    structSize = struct.calcsize('L80sdIIIIIIIdd')
+    structSize = struct.calcsize('L40sdIIIIIIIdd')
     for i in range(numHitFiles):
         subFileName = os.path.join(subDir,vecHitFileName[i])
         hitFile = open(subFileName, "rb")
@@ -139,7 +139,7 @@ if __name__ == '__main__':
         numHits = 0
         while True:
             try:
-                s = struct.unpack('L80sdIIIIIIIdd', recordData)
+                s = struct.unpack('L40sdIIIIIIIdd', recordData)
                 totalHits += 1
                 numHits += 1
                 cmd = "insert into hits values (" \

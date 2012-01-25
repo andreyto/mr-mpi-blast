@@ -7,6 +7,7 @@ if [ -z "$SGE_ACCOUNT" ]; then
 fi
 
 export BLASTDB=$(pwd)/blastdb
+ 
 mkdir -p blastrun
 cd blastrun &&
 cp ../dblist.txt . &&

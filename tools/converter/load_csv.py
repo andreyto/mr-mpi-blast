@@ -17,16 +17,18 @@ import optparse
 
 if __name__ == '__main__':
 
-    usage = "python load_csv.py -b binDir -o outCsvFile -d deflineOpt -i inDefFile"
+    usage = "python load_csv.py -b binDir -o outCsvFile -d deflineOpt -i inDefFile -c true/false"
     parser = optparse.OptionParser(usage=usage)
     parser.add_option("-b", "--bin-dir", dest="directory", 
                   action="store", type="string", help="path to *.bin files")
     parser.add_option("-o", "--output", dest="outfilename",  
                   action="store", type="string", help="output CSV file")
-    parser.add_option("-d", "--with-defline", dest="deflineOpt",  default=0,
+    parser.add_option("-d", "--with-defline", dest="deflineOpt", default=0,
                   action="store", type="int", help="1: add original defline after qid; 0, if not")                  
     parser.add_option("-i", "--in", dest="inDefFile",  
                   action="store", type="string", help="input def file")
+    parser.add_option("-c", "--classifier", dest="classifier", 
+                  action="store", type="int", help="classifier option ON")
     (options, args) = parser.parse_args()
     
     if options.directory and options.outfilename:
@@ -41,6 +43,12 @@ if __name__ == '__main__':
         inDefFile = options.inDefFile
     elif options.deflineOpt and not options.inDefFile:
         parser.error("Please set the input defline file")
+
+    bClassi = 0
+    if options.classifier is not None:
+        bClassi = options.classifier
+    else:
+        parser.error("Please set -c")
         
     ###
     ### If deflineOpt is set, construct a dict for <qid, lineNo> for retirieving
@@ -59,7 +67,7 @@ if __name__ == '__main__':
     ###
     ##typedef struct structBlResToSaveHits {
         ##uint64_t    queryId;
-        ##char        subjectId[80];
+        ##char        subjectId[40];
         ##double      identity;
         ##uint32_t    alignLen;
         ##uint32_t    nMismatches;
@@ -85,48 +93,90 @@ if __name__ == '__main__':
     for f in os.listdir(subDir):
         if f.find(".bin") > -1: 
             vecHitFileName.append(f)
+    vecHitFileName.sort()
     numHitFiles = len(vecHitFileName)
     
     ###
     ### Read bin files and append to tables
     ###
-    totalHits = 0
-    structSize = struct.calcsize('L80sdIIIIIIIdd')
-    for i in range(numHitFiles):
-        subFileName = os.path.join(subDir,vecHitFileName[i])
-        hitFile = open(subFileName, "rb")
-        recordData = hitFile.read(structSize)
-        numHits = 0
-        while True:
-            try:
-                s = struct.unpack('L80sdIIIIIIIdd', recordData)
-                totalHits += 1
-                numHits += 1
-                csvString = str(s[0]) + ","
-                
-                ### Add the orig defline from .def file after the 'qid' field
-                if bDefline:
-                    csvString += linecache.getline(inDefFile, qidDict[int(s[0])]).split()[1][1:] + ","                     
-                csvString += filter(lambda x: x in string.printable, str(s[1])) + "," \
-                    + str(s[2]) + "," \
-                    + str(s[3]) + "," \
-                    + str(s[4]) + "," \
-                    + str(s[5]) + "," \
-                    + str(s[6]) + "," \
-                    + str(s[7]) + "," \
-                    + str(s[8]) + "," \
-                    + str(s[9]) + "," \
-                    + str(s[10]) + "," \
-                    + str(s[11]).strip() + "\n"
-                csvFile.write(csvString)
-                recordData = hitFile.read(structSize)
-            except struct.error:
-                break
-            except:
-                print "Unexpected error:", sys.exc_info()[0]
-                raise
-        hitFile.close()
-        print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
+    if bClassi:
+        totalHits = 0
+        structSize = struct.calcsize('L40sdIIIIIIIdddd')
+        for i in range(numHitFiles):
+            subFileName = os.path.join(subDir,vecHitFileName[i])
+            hitFile = open(subFileName, "rb")
+            recordData = hitFile.read(structSize)
+            numHits = 0
+            while True:
+                try:
+                    s = struct.unpack('L40sdIIIIIIIdddd', recordData)
+                    totalHits += 1
+                    numHits += 1
+                    csvString = str(s[0]) + ","
+                    
+                    ### Add the orig defline from .def file after the 'qid' field
+                    if bDefline:
+                        csvString += linecache.getline(inDefFile, qidDict[int(s[0])]).split()[1][1:] + ","                     
+                    csvString += filter(lambda x: x in string.printable, str(s[1])) + "," \
+                        + str(s[2]) + "," \
+                        + str(s[3]) + "," \
+                        + str(s[4]) + "," \
+                        + str(s[5]) + "," \
+                        + str(s[6]) + "," \
+                        + str(s[7]) + "," \
+                        + str(s[8]) + "," \
+                        + str(s[9]) + "," \
+                        + str(s[10]) + "," \
+                        + str(s[11]) + "," \
+                        + str(s[12]) + "," \
+                        + str(s[13]).strip() + "\n"
+                    csvFile.write(csvString)
+                    recordData = hitFile.read(structSize)
+                except struct.error:
+                    break
+                except:
+                    print "Unexpected error:", sys.exc_info()[0]
+                    raise
+            hitFile.close()
+            print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
+    else:
+        totalHits = 0
+        structSize = struct.calcsize('L40sdIIIIIIIdd')
+        for i in range(numHitFiles):
+            subFileName = os.path.join(subDir,vecHitFileName[i])
+            hitFile = open(subFileName, "rb")
+            recordData = hitFile.read(structSize)
+            numHits = 0
+            while True:
+                try:
+                    s = struct.unpack('L40sdIIIIIIIdd', recordData)
+                    totalHits += 1
+                    numHits += 1
+                    csvString = str(s[0]) + ","
+                    
+                    ### Add the orig defline from .def file after the 'qid' field
+                    if bDefline:
+                        csvString += linecache.getline(inDefFile, qidDict[int(s[0])]).split()[1][1:] + ","                     
+                    csvString += filter(lambda x: x in string.printable, str(s[1])) + "," \
+                        + str(s[2]) + "," \
+                        + str(s[3]) + "," \
+                        + str(s[4]) + "," \
+                        + str(s[5]) + "," \
+                        + str(s[6]) + "," \
+                        + str(s[7]) + "," \
+                        + str(s[8]) + "," \
+                        + str(s[9]) + "," \
+                        + str(s[10]) + "," \
+                        + str(s[11]).strip() + "\n"
+                    csvFile.write(csvString)
+                    recordData = hitFile.read(structSize)
+                except struct.error:
+                    break
+                except:
+                    print "Unexpected error:", sys.exc_info()[0]
+                    raise
+            hitFile.close()
+            print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
     print "Total number of hits = ",totalHits
     csvFile.close() 
      

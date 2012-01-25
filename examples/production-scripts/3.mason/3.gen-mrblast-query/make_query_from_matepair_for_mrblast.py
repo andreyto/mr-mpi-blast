@@ -32,9 +32,7 @@ if __name__ == '__main__':
             if numReads % 1000 == 0:
                 print numReads
             s = line.split()
-            #print "nunber of tokens = ",len(s)
-            #for i in s:
-                #print i
+                
             #>test_illu.fasta.000000098/0
             #contig=seq2
             #haplotype=0

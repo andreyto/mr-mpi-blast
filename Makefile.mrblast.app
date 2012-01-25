@@ -1,9 +1,9 @@
 ################################################################################
-# $Id: Makefile.mrblast.app 146491 2008-11-26 13:57:23Z camacho $
+# $Id: Makefile.mrblast.app 2012-01-18 ssul $
 ################################################################################
 
 APP = mrblast
-SRC = mrblast blast_app_util
+SRC = mrblast
 
 ## -------------------------------------------------------------------
 ## To build mr-mpi-blast, a MPI stack should be installed, for instance, Open

@@ -1,7 +1,7 @@
 Tutorial - How to run mr-mpi-blast on XSEDE TACC Ranger
 
 
-Updated: 12/27/2011
+Updated: 01/19/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -27,7 +27,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
       
     - Utilities for preparing data and converting output need Python installed. 
-      To use HD5 database format as output format, PyTables package should be 
+      To use HDF5 database format as output format, PyTables package should be 
       installed (http://www.pytables.org/moin).
       
 
@@ -71,7 +71,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
          Please set your SGE account code to $SGE_ACCOUNT 
               
        $ sh ./3.run_mr-mpi-blast.sh
-        - Set BLASTDB environment variable to tell NCBI BLAST code where the databases are
+       
+        - Set BLASTDB environment variable to tell NCBI BLAST code where the
+          databases are
         - Create directory "blustrun" and make it a current working directory
         - Qsub mr-mpi-blast for BLAST search of the queries against the 
           generated BLAST database.

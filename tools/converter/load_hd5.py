@@ -36,7 +36,7 @@ if __name__ == '__main__':
     ###
     ##typedef struct structBlResToSaveHits {
         ##uint64_t    queryId;
-        ##char        subjectId[80];
+        ##char        subjectId[40];
         ##double      identity;
         ##uint32_t    alignLen;
         ##uint32_t    nMismatches;
@@ -51,7 +51,7 @@ if __name__ == '__main__':
 
     class BlHits(t.IsDescription):
         qId         = t.UInt64Col()     # L
-        sId         = t.StringCol(80)   # 80s 
+        sId         = t.StringCol(40)   # 40s 
         dIdent      = t.FloatCol()      # d: double
         alignLen    = t.UInt32Col()     # I
         nMismatches = t.UInt32Col()     # I
@@ -93,7 +93,7 @@ if __name__ == '__main__':
     ### Read bin files and append to tables
     ###
     totalHits = 0
-    structSize = struct.calcsize('L80sdIIIIIIIdd')
+    structSize = struct.calcsize('L40sdIIIIIIIdd')
     for i in range(numHitFiles):
         subFileName = os.path.join(subDir,vecHitFileName[i])
         hitFile = open(subFileName, "rb")
@@ -101,7 +101,7 @@ if __name__ == '__main__':
         numHits = 0
         while True:
             try:
-                s = struct.unpack('L80sdIIIIIIIdd', recordData)
+                s = struct.unpack('L40sdIIIIIIIdd', recordData)
                 totalHits += 1
                 numHits += 1                   
                 BlHits['qId']         = s[0]

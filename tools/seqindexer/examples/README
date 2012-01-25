@@ -1,10 +1,22 @@
 Example of generating index and defline files from example sequence files. 
 
-    Run "test.sh"
-
-        - python ../seqindexer.py -i test.query -o ./generated/test.query.idx -d ./generated/test.query.def -u 0 -s 1 -b 1 &&
-        - python ../seqindexer.py -i 100.query -o ./generated/100.query.idx -d ./generated/100.query.def -u 0 -s 1 -b 1 &&
-        - python ../seqindexer.py -i 10seqs.query -o ./generated/10seqs.query.idx -d ./generated/10seqs.query.def -u 1 -b 1 
-
     Using test.query, 100.query, and 10seqs.query, index and defline files 
     will be created under "generated" directory.
+    
+    Run "test.sh"
+
+    - Generate index and defline files with qid starting from default value "1"
+      and save the full defline
+
+        $ python ../seqindexer.py -i test.query -o ./generated/test.query.idx -d ./generated/test.query.def -b 1 
+
+    - Generate index and defline files with qid starting from "1" and save the
+      whole defline
+      
+        $ python ../seqindexer.py -i 100.query -o ./generated/100.query.whole.idx -d ./generated/100.query.whole.def -s 1 -b 1 
+
+    - Generate index and defline files with qid starting from "100" and save the
+      part of defline (from the begining of defline to the first blank)
+      
+        $ python ../seqindexer.py -i 100.query -o ./generated/100.query.part.idx -d ./generated/100.query.part.def -s 100 -b 0 
+ 

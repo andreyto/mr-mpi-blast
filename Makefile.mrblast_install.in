@@ -1,3 +1,13 @@
+################################################################################
+# $Id: Makefile.mrblast.app 2012-01-18 ssul $
+################################################################################
+#
+# This meta makefile is to install directories/files to $(prefix)
+#
+# The below should be added in Makefile.in
+#   USR_PROJ = mrblast_install
+#   EXTRA_CONFIGURABLES = Makefile.mrblast_install
+#
 prefix = @prefix@
 examplesdir = $(prefix)/examples
 tutorialdir = $(prefix)/tutorial
