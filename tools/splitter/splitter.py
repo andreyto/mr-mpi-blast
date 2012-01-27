@@ -130,6 +130,7 @@ if __name__ == '__main__':
         print "       - overlapBP: length (bp) of overlap\n"
         print "       - outfile: output file\n"
         sys.exit(0)
+        
     seqFileName = sys.argv[1]      ## SEQ FILE NAME
     queryLen = int(sys.argv[2])    ## CHUNK SIZE
     overlapBP = int(sys.argv[3])   ## OVERLAP SIZE in BP
@@ -178,7 +179,8 @@ if __name__ == '__main__':
             else:
                 print "What?", seqLen, start, end, cur_record.id
                 sys.exit(0)
-            start = end - overlapBP ################ CAUSTION!
+            start = end - overlapBP
+            
     outFile.close()
     seqFile.close()
     print "Total number of input sequences = ", sid

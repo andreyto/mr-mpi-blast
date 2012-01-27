@@ -2,8 +2,9 @@ Examples of converter utilities
 
 Run "test.sh"
 
-    It will read all binary hit files generated from a mr-mpi-blast run and 
-    convert the binary files into CSV, SQLite database, and HD5 database files 
-    and save the files at "./converted" directory.
+    It will read all binary hit files (./hits/*.bin) generated from a
+    mr-mpi-blast run and convert the binary files into CSV, SQLite
+    database, and HD5 database files and save the files at "./converted"
+    directory.
     
 

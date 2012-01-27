@@ -1,13 +1,13 @@
 User Guide for mr-mpi-blast 
 
 
-Updated: 01/19/2012
+Updated: 01/27/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
  
 * Introduction  
 
-    - The mr-mpi-blast program is a parallel implementation of NCBI BLAST+
+    - The mr-mpi-blast program is a parallel implementation of the NCBI BLAST+
       using the NCBI C++ Toolkit and the MapReduce-MPI library and implements
       a "matrix-split" BLAST search in which a BLAST search job is
       transformed into searching "n" blocks of query sequences against "m"
@@ -27,8 +27,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       master tries best to distribute the work items to those ranks that have
       already processed the same database partitions. 
     - The mr-mpi-blast consists of three steps. The first and last steps are 
-      offline works and the second step is done during the actual 
-      mr-mpi-blast run. First, the input query sequences in a FASTA file are 
+      offline works. First, the input query sequences in a FASTA file are 
       indexed so that the mr-mpi-blast loads the file as memory-mapped file 
       and logically splits it into many blocks. Second, the master prepares 
       (n x m) work items and then assigns each work item to non-busy workers. 
@@ -215,7 +214,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
       For more information, please refer to "tools/seqindexer/README" and
       "tools/seqindexer/examples/README". The input sequence file and the
-      generated index file should be described in the mr-mpi-blast
+      generated index file should be specified in the mr-mpi-blast
       configuration file, "mrblast.ini". How to set those file names in the
       configuration file will be explained in the later section.
 
@@ -237,8 +236,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
         ex) makeblastdb -in microbial_all.fa -out microbial_all.db -dbtype nucl 
         
       
-      Two database partitions, "microbial_all.db.00.*" and 
-      "microbial_all.db.01.*" will be generated from the above command. You 
+      The above command generates two database partitions, "microbial_all.db.00.*"
+      and "microbial_all.db.01.*" will be generated from the above command. You 
       can find three kinds of files are generated per each partition: index 
       file, sequence file and header file. Those files are needed to 
       extract sequences from the BLAST database. For protein databases 
@@ -252,34 +251,24 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
       Those partition file names, for example, "microbial_all.db.00" and 
       "microbial_all.db.01", should be specified in a database partition 
-      list file as shown in the below example of "dblist.txt" file, and the 
-      the name of the file should be specified with "DBLISTFILENAME" in the 
-      mr-mpi-blast configuration file. Note that the partition file name 
+      list file, for example, "dblist.txt" file, and the name of the file
+      should be specified with "DBLISTFILENAME" in the mr-mpi-blast
+      configuration file, "mrblast.ini". Note that the partition file name
       without the ".nin, .nsq, .nhr" or ".pin, .psq, .phr" extensions
-      should be used. 
+      should be used.
       
         ex) In file, "dblist.txt":
             microbial_all.db.00
             microbial_all.db.01
             
-            
-      The database name, "microbial_all.db" and the partition list file name 
-      should be specified in the mr-mpi-blast configuration file, 
-      "mrblast.ini". How to set those names in the configuration file will 
-      be explained in the next section.
         
       * NOTE
-        There are three possible ways to set the database path: (1) Run the
+        There are three ways to set the database path: (1) Run the
         program in the same directory where the database partitions exists,
         (2) Set BLASTDB environment variable to tell NCBI BLAST code where the
         databases are, or (3) Set the path to the database in the "BLASTDB"
         path of the "[BLAST]" section in the "~/.ncbirc" file.
         
-      * NOTE
-        If you need to do BLAST search for a set of queries against two or more 
-        different databases, for example, nr and nt, you should execute 
-        separate mr-mpi-blast runs for each database.
-            
       
     - Configuration file: mrblast.ini
 
@@ -290,14 +279,20 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
       . Section [MR-MPI]: settings for MapReduce-MPI library operation
 
-        VERBOSITY   Show log from the MapReduce-MPI library; 1=summary log, 
-                    2=histogrammed log, 0, if not
-        TIMER       1=turn on saving timing information in log files,
+        VERBOSITY
+                    Enable/disable logging; 1=summary log, 2=histogrammed log,
                     0, if not
-        MEMSIZE     Page size in Mbytes (default=64MB, smallest=1MB); 
-        OUTOFCORE   -1=no out of core operation, 0=allow out-of-core, 
+        TIMER
+                    Enable/disable timing log; 1=turn on saving timing
+                    information in log files, 0, if not
+        MEMSIZE
+                    Page size in Mbytes (default=64MB, smallest=1MB); 
+        OUTOFCORE
+                    Enable/disable the out-of-core operation;
+                    -1=no out of core operation, 0=allow out-of-core, 
                     1=out-of-core even with 1-page
-        MAPSTYLE    Set scheduling option; 2=MapReduce-MPI native client/server 
+        MAPSTYLE
+                    Set scheduling option; 2=MapReduce-MPI native client/server 
                     scheduler, 3=mr-mpi-blast custom location-aware scheduler
                     (scheduler modes 0 and 1 are not supported in mr-mpi-blast)
         
@@ -312,19 +307,33 @@ By Seung-Jin Sul (ssul@jcvi.org)
         
       . Section [BLAST]: BLAST related settings
       
-        BLOCKSIZE   Set block size in base-pair to split input query 
+        BLOCKSIZE
+                    Set block size in base-pair to split input query 
                     file; The number of blocks is roughly (total base-pairs 
                     of input sequences / block size)
-        NUMITER     Number of iterations; If you set this as n > 1, the set 
-                    of total work items will be divided into "n" sub work 
+        NUMITER
+                    Set the number of iterations; If you set this as n > 1,
+                    the set of total work items will be divided into "n" sub work 
                     items and mr-mpi-blast will iterate over the sub sets 
                     "n" times. The output file from each iteration can be 
                     distinguished by the iteration number in each file name.
-        ISPROTEIN   Set BLAST mode; 1=blastp for protein search, 
+        ISPROTEIN
+                    Set BLAST mode; 1=blastp for protein search, 
                     0=blastn for nucleotide search
-        ISQIDGI     Set unique query ID options used for indexing; 
+        ISQIDGI
+                    Set unique query ID options used for indexing; 
                     1=GI number, 0=serial number
+        ISCLASSIFIER
+                    Enable to compute the percentage identity and percentage
+                    coverage for each query and add those values in the BLAST
+                    hit. The values are computed by the following equations:
+                    Enable to compute the percentage identity and percentage
+                    coverage for each query and add those values in the BLAST
+                    hit. The values are computed by the following equations:
 
+                    - Percentage identity = identity count/query length * 100
+                    - Percentage coverage = (qend-qstart)/query length * 100
+                    
 
      . Section [FILES] : in/out file settings
 
@@ -394,6 +403,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
         - subjectEnd: End of alignment in subject
         - evalue: expect value
         - bitScore: bit score
+        - percIdent: percentage identity per query if classifier output option is enabled
+        - percCover: percentage coverage per query if classifier output option is enabled
     
     
     For example, if "*.bin" files are saved in "./hits" directory, the below 
@@ -416,7 +427,14 @@ By Seung-Jin Sul (ssul@jcvi.org)
         ex) $ python load_sql.py -b ./hits -o hits_w_defline -d 1 -i 30_real_seq.fa.def
     
     * NOTE
-      Adding defline field is only supported by "load_csv.py" and "load_sql.py".
+      For multiple iterations, the converting tools do not support the "-d"
+      and "-i" options which is for adding the original defline for each query
+      ID from "*.def" file.
+
+    * NOTE
+      The converting tools supporting classifier operation are provided in a
+      separate directory: tools/converter/classifier. You can find the examples
+      in examples/test/classifier-test.
       
 
 * Technical Considerations

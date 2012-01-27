@@ -195,7 +195,7 @@ int CMrMpiBlastApplication::Run(void)
     g_vecNumHitsPerQid  = new uint32_t[g_nQueries];
     g_vecNumHitsPerQid2 = new uint32_t[g_nQueries];
     for (size_t i=0; i<g_nQueries; i++) {
-        g_vecNumHitsPerQid[i] = 0;
+        g_vecNumHitsPerQid[i]  = 0;
         g_vecNumHitsPerQid2[i] = 0;
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -212,6 +212,11 @@ int CMrMpiBlastApplication::Run(void)
     g_vecQueryIndex.clear();
     g_vecBlockBeginLoc.clear();
     g_vecWorkItem.clear();
+
+    delete [] g_vecNumHitsPerQid;
+    g_vecNumHitsPerQid = NULL;        
+    delete [] g_vecNumHitsPerQid2;        
+    g_vecNumHitsPerQid2 = NULL;
     
     if (!g_searchDatabase.IsNull()) 
         g_searchDatabase.Release();
@@ -347,6 +352,7 @@ int main(int argc, char** argv)
         char dbLen[MAXDBLENSTR];
         strcpy(dbLen, strDbLen.c_str());
         dbLen[strDbLen.length()+1] = '\0';
+        
         /// Just send dbLen as MPI_CHAR instead MPI_INT_SOMETHING
         MPI_Bcast((char*)dbLen, strDbLen.length()+1, MPI_CHAR, 0, MPI_COMM_WORLD);
 
@@ -465,7 +471,8 @@ void mr_mpi_blast()
                 pMr->map(nRemains, &mr_map_run_blast, NULL);
             else 
                 pMr->map(nWorkItemsPerIter, &mr_map_run_blast, NULL);
-        else    pMr->map(g_nWorkItems, &mr_map_run_blast, NULL);
+        else
+            pMr->map(g_nWorkItems, &mr_map_run_blast, NULL);
         ////////////////////////////////////////////////////////////////////////
 
         g_vecDbFile.clear();
@@ -504,8 +511,8 @@ void mr_mpi_blast()
                 nPartHits = 0;
             }            
         }
-        delete [] g_vecNumHitsPerQid2;        
-        g_vecNumHitsPerQid2 = NULL;
+        //delete [] g_vecNumHitsPerQid2;        
+        //g_vecNumHitsPerQid2 = NULL;
 
         double collateTime;
         if (g_bLogEnabled) {
@@ -532,8 +539,8 @@ void mr_mpi_blast()
 
         /// Clear
         ///
-        delete [] g_vecNumHitsPerQid;
-        g_vecNumHitsPerQid = NULL;        
+        //delete [] g_vecNumHitsPerQid;
+        //g_vecNumHitsPerQid = NULL;        
 
         if (g_bLogEnabled) {
             LOG << g_logMsg << "collate() ends: " << MPI_Wtime() - collateTime 
@@ -957,8 +964,8 @@ void mr_map_run_blast(int itask,
                         ///    subjectEnd   : End of alignment in subject
                         ///    evalue       : Expect value
                         ///    bitScore     : Bit score
-                        ///    identity     : Percent identity per query (if classifier option is ON)
-                        ///    coverage     : Percent coverage per query (if classifier option is ON)
+                        ///    identity     : Percentage identity for query (identity count/query length * 100, computed if classifier option is enabled)
+                        ///    coverage     : Percentage coverage for subject ((qend-qstart)/query length * 100, computed if classifier option is enabled)
                         ///
                         if (g_bClassifier) {
                             const CSeq_id& query_id = s.GetSeq_id(QUERY);
@@ -1019,7 +1026,9 @@ void mr_map_run_blast(int itask,
                         }
 
                         ///
-                        ///
+                        /// Increase hit count for each query ID
+                        /// The g_vecNumHitsPerQid will be used to make a custom
+                        /// hash func for aggregate() in MapReduce 
                         ///
                         g_vecNumHitsPerQid[qIdForPrint]++;
                     }  
@@ -1080,8 +1089,8 @@ inline void mr_reduce_sort_and_save_generic(char *key,
     for (size_t n = 0; n < nvalues; ++n) {
         structBlResGeneric_t* res = (structBlResGeneric_t*)multivalue;
         structEValue_t strctEvalue;
-        strctEvalue.pRec = res;
-        strctEvalue.eValue = res->eValue;
+        strctEvalue.pRec     = res;
+        strctEvalue.eValue   = res->eValue;
         strctEvalue.bitScore = res->bitScore;
         strctEvalue.identity = res->identity;
         vecHit.push_back(strctEvalue);
@@ -1160,8 +1169,8 @@ inline void mr_reduce_sort_and_save_classifier(char *key,
     for (size_t n = 0; n < nvalues; ++n) {
         structBlResClassifier_t* res = (structBlResClassifier_t*)multivalue;
         structEValueClassifier_t strctEvalue;
-        strctEvalue.pRec = res;
-        strctEvalue.eValue = res->eValue;
+        strctEvalue.pRec     = res;
+        strctEvalue.eValue   = res->eValue;
         strctEvalue.bitScore = res->bitScore;
         strctEvalue.identity = res->identity;
         vecHit.push_back(strctEvalue);
@@ -1189,8 +1198,8 @@ inline void mr_reduce_sort_and_save_classifier(char *key,
         hit.sEnd        = res->sEnd;
         hit.eValue      = res->eValue;
         hit.bitScore    = res->bitScore;
-        hit.percIdent    = res->percIdent;
-        hit.percCover    = res->percCover;
+        hit.percIdent   = res->percIdent;
+        hit.percCover   = res->percCover;
         outputBinFile.write((char*)&hit, sizeof(hit));
         
         /// DEBUG
@@ -1231,6 +1240,7 @@ inline bool compare_evalue_generic(structEValue_t e1,
     ///     3. Total Score: By the sum of scores from all HSPs from the same database sequence
     ///     4. Query Coverage: By the percent of length coverge for the query
     ///     5. Max Identity: By the maximal percent ID of the HSPs
+    /// Here sort by 1, 2, and 5 only
     ///
     return (e1.eValue != e2.eValue) ? (e1.eValue < e2.eValue) : ((e1.bitScore != e2.bitScore) ? (e1.bitScore > e2.bitScore) : (e1.identity > e2.identity));
 }
@@ -1251,6 +1261,7 @@ inline bool compare_evalue_classifier(structEValueClassifier_t e1,
     ///     3. Total Score: By the sum of scores from all HSPs from the same database sequence
     ///     4. Query Coverage: By the percent of length coverge for the query
     ///     5. Max Identity: By the maximal percent ID of the HSPs
+    /// Here sort by 1, 2, and 5 only
     ///
     return (e1.eValue != e2.eValue) ? (e1.eValue < e2.eValue) : ((e1.bitScore != e2.bitScore) ? (e1.bitScore > e2.bitScore) : (e1.identity > e2.identity));
 }

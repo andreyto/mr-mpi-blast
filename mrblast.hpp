@@ -219,8 +219,9 @@ string g_hitFileName;
 ///    subjectEnd   : End of alignment in subject
 ///    evalue       : Expect value
 ///    bitScore     : Bit score
-///    identity     : Percent identity per query (if classifier option is ON)
-///    coverage     : Percent coverage per query (if classifier option is ON)
+///
+///    identity     : Percentage identity for query (identity count/query length * 100, computed if classifier option is enabled)
+///    coverage     : Percentage coverage for subject ((qend-qstart)/query length * 100, computed if classifier option is enabled)
 ///
 typedef struct structBlResGeneric {
     char        subjectId[MAXSUBJID];
@@ -295,7 +296,7 @@ typedef struct structBlResToSaveHits {
 /// percIdentity and percCoverage
 typedef struct structBlResToSaveHitsClassifier {
     uint64_t    queryId;
-    char        subjectId[MAXSUBJID];
+    char        subjectId[MAXSUBJID]; /// for the orig. defline of query
     double      identity;
     uint32_t    alignLen;
     uint32_t    nMismatches;

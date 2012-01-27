@@ -185,9 +185,9 @@ if __name__ == '__main__':
         outFile.write(str(loc)+"\t"+str(seqLen)+"\t"+str(uid)+"\n")
         deflines = ''
         
-        if deflineOption == 0:  ## save only part of defline
+        if deflineOption == 0:  ## save part of defline before the first blank
             defline2 = defline.rstrip().split(" ")[0]
-        else:                   ## save whole defline
+        else:                   ## save full defline
             defline2 = defline.rstrip()        
         defFile.write(str(uid)+"\t"+defline2+"\n")
         seqUID += 1

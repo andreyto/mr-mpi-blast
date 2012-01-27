@@ -13,7 +13,6 @@ import os
 import struct
 import string
 import optparse
-import linecache
 from sqlite3 import *
 
 if __name__ == '__main__':
@@ -24,10 +23,10 @@ if __name__ == '__main__':
                   action="store", type="string", help="path to *.bin files")
     parser.add_option("-o", "--output", dest="outSqlFileName",  
                   action="store", type="string", help="output sqlite database file")
-    parser.add_option("-d", "--with-defline", dest="deflineOpt",  default=0,
-                  action="store", type="int", help="1: add original defline after qid, 0, if not")                  
     parser.add_option("-i", "--in", dest="inDefFile",  
                   action="store", type="string", help="input def file")
+    parser.add_option("-d", "--with-defline", dest="deflineOpt",  default=0,
+                  action="store", type="int", help="1: add original defline after qid, 0, if not")                  
     (options, args) = parser.parse_args()
     
     if options.directory and options.outSqlFileName:
@@ -42,22 +41,10 @@ if __name__ == '__main__':
         inDefFile = options.inDefFile
     elif options.deflineOpt and not options.inDefFile:
         parser.error("Please set the input defline file")
-
-    ###
-    ### If deflineOpt is set, construct a dict for <qid, lineNo> for retirieving
-    ### defline when making final tabular output format.
-    ###
-    qidDict = {}
-    lineNum = 1    
-    if bDefline:
-        with open(inDefFile) as infile:
-            for line in infile:
-                qidDict[int(line.split()[0])] = lineNum
-                lineNum += 1
-                        
-    ###
-    ### Define a user record to characterize some kind of particles
-    ###
+        
+    ##
+    ## Define a user record to characterize some kind of particles
+    ##
     ##typedef struct structBlResToSaveHits {
         ##uint64_t    queryId;
         ##char        subjectId[40];
@@ -75,61 +62,64 @@ if __name__ == '__main__':
     
     print "Output Sqlite database file: ", outSqlFileName+".sqlite"
          
-    ###
-    ### load hit file names from hitfilelist
-    ###
+    ##
+    ## load hit file names from hitfilelist
+    ##
     vecHitFileName = []
     subDir = topDir  
     for f in os.listdir(subDir):
         if f.find(".bin") > -1: 
             vecHitFileName.append(f)
+    vecHitFileName.sort()
     numHitFiles = len(vecHitFileName)
-    
+
+    ##
     ## Create database and table
+    ##
+    ##  qId         Unique query id (serial numner)
+    ##  qIdDef      Each query's original defline from *.def file; set if bDefline = 1
+    ##  sId         Subject id (either GI or part of defline)
+    ##  dIdent      Percentage identity
+    ##  alignLen    Alignment length
+    ##  nMismatches Number of mismatches
+    ##  nGaps       Number of gaps
+    ##  qStart      Start of alignment in query
+    ##  qEnd        End of alignment in query
+    ##  sStart      Start of alignment in subject
+    ##  sEnd        End of alignment in query
+    ##  eValue      Evalue
+    ##  bitScore    Bit score
+    ##
     dbName = outSqlFileName + ".sqlite"
     conn = connect(dbName)
     curs = conn.cursor()
     curs.execute('''DROP TABLE if exists hits''')
     conn.commit()
+    curs.execute('''CREATE TABLE IF NOT EXISTS hits
+                ( 
+                    qId         BIGINT,      
+                    qIdDef      VARCHAR(40), 
+                    sId         VARCHAR(40), 
+                    dIdent      DOUBLE,      
+                    alignLen    INT,         
+                    nMismatches INT,         
+                    nGaps       INT,         
+                    qStart      INT,         
+                    qEnd        INT,         
+                    sStart      INT,         
+                    sEnd        INT,         
+                    eValue      DOUBLE,      
+                    bitScore    DOUBLE  
+                )
+                ''')
+    
+    ##    
+    ## Read bin files and append to tables
+    ##
     if bDefline:
-        curs.execute('''CREATE TABLE IF NOT EXISTS hits
-        ( 
-            qId         BIGINT,      
-            qIdDef      VARCHAR(40), 
-            sId         VARCHAR(40), 
-            dIdent      DOUBLE,      
-            alignLen    INT,         
-            nMismatches INT,         
-            nGaps       INT,         
-            qStart      INT,         
-            qEnd        INT,         
-            sStart      INT,         
-            sEnd        INT,         
-            eValue      DOUBLE,      
-            bitScore    DOUBLE       
-        )
-        ''')
-    else:
-        curs.execute('''CREATE TABLE IF NOT EXISTS hits
-            ( 
-                qId         BIGINT,      
-                sId         VARCHAR(40), 
-                dIdent      DOUBLE,      
-                alignLen    INT,         
-                nMismatches INT,         
-                nGaps       INT,         
-                qStart      INT,         
-                qEnd        INT,         
-                sStart      INT,         
-                sEnd        INT,         
-                eValue      DOUBLE,      
-                bitScore    DOUBLE       
-            )
-        ''')
-       
-    ###    
-    ### Read bin files and append to tables
-    ###
+        defFile = open(inDefFile, 'r')
+        line = defFile.readline()
+        
     totalHits = 0
     structSize = struct.calcsize('L40sdIIIIIIIdd')
     for i in range(numHitFiles):
@@ -139,15 +129,22 @@ if __name__ == '__main__':
         numHits = 0
         while True:
             try:
+                ## Load data from bin file
                 s = struct.unpack('L40sdIIIIIIIdd', recordData)
                 totalHits += 1
                 numHits += 1
                 cmd = "insert into hits values (" \
                     + str(s[0]) + ",\"" \
-                    
-                ### Add the orig defline from .def file after the 'qid' field
+
+                ##
+                ## Add the orig defline from .def file after the 'qid' field
+                ##
                 if bDefline:
-                    cmd += linecache.getline(inDefFile, qidDict[int(s[0])]).split()[1][1:] + "\",\""                         
+                    while int(line.split()[0]) != int(s[0]):
+                        line = defFile.readline()
+                    cmd += line.split()[1][1:] + "\",\""
+                else:
+                    cmd += "\",\""
                     
                 cmd += filter(lambda x: x in string.printable, str(s[1])) + "\"," \
                     + str(s[2]) + "," \
@@ -159,7 +156,8 @@ if __name__ == '__main__':
                     + str(s[8]) + "," \
                     + str(s[9]) + "," \
                     + str(s[10]) + "," \
-                    + str(s[11]).strip() + ")" 
+                    + str(s[11]).strip() +  ")" 
+
                 curs.execute(cmd)                
                 recordData = hitFile.read(structSize)
             except struct.error:
@@ -170,13 +168,15 @@ if __name__ == '__main__':
         conn.commit()  
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
+            
     print "Total number of hits = ",totalHits
- 
     curs.close()  
     conn.close()
+    if bDefline:
+        defFile.close()
     
 """        
-    ### test
+    ## test
     curs.execute("select count(*) from hits")
     print "num records = ", curs.fetchone()[0]
     curs.close()   
@@ -184,4 +184,4 @@ if __name__ == '__main__':
 
 
     
-### EOF
+## EOF
