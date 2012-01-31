@@ -8,8 +8,8 @@ cd ./blastrun &&
 mkdir -p hits &&
 #mv *log.txt ./logs &&
 mv *.bin ./hits &&
-load_csv.py -b ./hits/ -o hits &&
-load_csv.py -b ./hits/ -o hits_w_defline -d 1 -i ../query/viral_all_query.fa.def  &&
+load_csv_classifier.py -b ./hits/ -o hits &&
+load_csv_classifier.py -b ./hits/ -o hits_w_defline -d 1 -i ../query/viral_all_query.fa.def  &&
 
 echo -e "\nDone!"
 

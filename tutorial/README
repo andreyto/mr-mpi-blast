@@ -68,17 +68,23 @@ By Seung-Jin Sul (ssul@jcvi.org)
     (3) Run mr-mpi-blast
        
        * NOTE
-         Please set your SGE account code to $SGE_ACCOUNT 
+         Please set your SGE account code to $SGE_ACCOUNT
+
+         ex) $ export SGE_ACCOUNT=TG-DEB123456
+
+
+        * NOTE
+          The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "1".
               
        $ sh ./3.run_mr-mpi-blast.sh
        
         - Set BLASTDB environment variable to tell NCBI BLAST code where the
           databases are
-        - Create directory "blustrun" and make it a current working directory
+        - Create directory "blastrun" and make it a current working directory
         - Qsub mr-mpi-blast for BLAST search of the queries against the 
           generated BLAST database.
-        - Run the mr-mpi-blast using ibrun with requesting 64 cores
-          on the "development" queue. 
+        - Run the mr-mpi-blast using ibrun by requesting 64 cores
+          from the "development" queue. 
         - The query block size option, "BLOCKSIZE" in the "mrblast.ini" is set 
           as 1Mbp resulting in 96 query blocks and total 192 (96 query blocks x 
           2 database files) work items.

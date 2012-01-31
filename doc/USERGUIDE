@@ -1,7 +1,7 @@
 User Guide for mr-mpi-blast 
 
 
-Updated: 01/27/2012
+Updated: 01/30/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
  
@@ -37,8 +37,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
       items to a worker, where w < n x m, the worker accumulates maximum
       "w" sets of BLAST results. Upon completion, each worker saves the
       stored hits to individual binary file. Finally, all resulting binary
-      files can be converted into CSV text file, or SQLite or HD5 database
-      files.
+      files can be converted into CSV (Comma-Separated Values) text file,
+      or SQLite or HDF (Hierarchical Data Format, HDF5) database files.
       
     - Usage examples:
     
@@ -98,7 +98,6 @@ By Seung-Jin Sul (ssul@jcvi.org)
       specified as "DBLISTFILENAME" in the mr-mpi-blast configuration file, 
       "mrblast.ini".
 
-    
     - Input query sequence file 
 
       This is a multi FASTA file. The FASTA formatted sequence consists of a 
@@ -368,7 +367,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       details on the related parameter settings, please refer to the BLAST+ 
       user manual (http://www.ncbi.nlm.nih.gov/books/NBK1763/). 
       
-      Those binary files can be converted into CSV, SQLite database, and HD5 
+      Those binary files can be converted into CSV, SQLite database, and HDF5 
       database. To see how to convert, please refer to "Converting hit 
       files" section.
 
@@ -387,7 +386,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     Upon completion of mr-mpi-blast run, each rank saves hits in each 
     individual binary file. Those files can be converted into CSV, SQLite 
-    database, and HD5 database using the utilities provided under 
+    database, and HDF5 database using the utilities provided under 
     "tools/converter" directory. The mr-mpi-blast supports a tabular output 
     format with the following fields:
     
@@ -411,12 +410,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
     commands collect and save all hits from *.bin files into an output file.
 
     * NOTE
-      To use HD5 database format, PyTables package should be installed 
+      To use HDF5 database format, PyTables package should be installed 
       (http://www.pytables.org/moin).
    
         ex) $ python load_csv.py -b ./hits -o hits     # generate a CSV file  
         ex) $ python load_sql.py -b ./hits -o hits     # generates a SQLite file
-        ex) $ python load_hd5.py -b ./hits -o hits     # generates a hd5 file
+        ex) $ python load_hd5.py -b ./hits -o hits     # generates a hdf5 file
     
     
     If you want to show both "query ID" and the corresponding defline which 
@@ -461,7 +460,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
           objects you create, does not exceed the physical memory available
           (which may be shared by several processors if running on a
           multi-core node). If exceeded, then many systems will allocate
-          virtual memory, which will typically cause MR-MPI library
+          virtual memory, which will typically cause MapReduce-MPI library
           operations to run very slowly and thrash the disk.
           
           If you allow the out-of-core operation and set the page size 

@@ -29,7 +29,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 
     - Utilities for preparing input data and converting output need Python 
-      installed. To use HD5 database format, PyTables package should be 
+      installed. To use HDF5 database format, PyTables package should be 
       installed (http://www.pytables.org/moin)
 
 
@@ -96,7 +96,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       BLAST.
     - The evalue is set as 10.
     - The hit results (./30-real-hits) will be saved in *.bin files and
-      converted into CSV, SQLite, and Hd5 database files (./30-real-hits-output).
+      converted into CSV, SQLite, and HDF5 database files (./30-real-hits-output).
           
 
 5. Run mr-mpi-blast with 100 simulated sequences against "test.db"
@@ -116,7 +116,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       BLAST database. 
     - The evalue is set as 10.
     - The hit results (./100-simul-hits) will be saved in *.bin files and
-      converted into CSV, SQLite, and Hd5 database files (./100-simul-hits-output).
+      converted into CSV, SQLite, and HDF5 database files (./100-simul-hits-output).
 
 
 6. Run mr-mpi-blast with 30 real sequences against "test.db" by multiple iterations
@@ -136,7 +136,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - Run mr-mpi-blast with setting "NUMITER" as 2.
     - The iteration number will be added to the resulting hit file names.
     - The hit files (./30-real-hits-numiter) are converted into CSV, SQLite,
-      and Hd5 database files (./30-real-hits-numiter-output).
+      and HDF5 database files (./30-real-hits-numiter-output).
     
     
     

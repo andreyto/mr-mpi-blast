@@ -35,8 +35,7 @@ considerations.
     microbial genome sequences against NCBI RefSeq microbial database 
     itself. For constructing queries, all NCBI RefSeq microbial sequences 
     are downloaded in a FASTA file and the sequences are splitted by 1kbp 
-    length with 500bp overlap. We prepare total 245,00,447 queries (~ 
-    70Gbp). 
+    length with 500bp overlap. We prepare total 245,00,447 queries (~ 70Gbp). 
             
 
 (3) Prepare BLAST databases
@@ -92,7 +91,10 @@ considerations.
             NUMITER     1
             ISPROTEIN   0
             ISQIDGI     0       
-        
+
+    * NOTE
+      The "ISQIDGI" parameter is now obsolete. The current version uses generated
+      serial number as unique query ID. 
     
     The number of query blocks created by the block size of 500Kbp is around 
     2,500. Thus the total number of work items is around 7,500. We 
@@ -161,7 +163,7 @@ considerations.
 (5) Converting the result file
  
     After completion, each subdirectory has a set of resulting hit files in 
-    binary format. Those files (~74GB in total) are collected in HD5 
+    binary format. Those files (~74GB in total) are collected in HDF5 
     database (~67GB).
     
     

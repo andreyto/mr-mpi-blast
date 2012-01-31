@@ -1,7 +1,7 @@
 BUILD - How to build mr-mpi-blast
 
 
-Updated: 12/27/2011
+Updated: 1/30/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -19,10 +19,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
       location-aware scheduler based on the MapReduce-MPI version 20Jun2011
       and included in the "mrmpi" subdirectory of the mr-mpi-blast source
       package.
-    - To build mr-mpi-blast, the Boost library and a MPI stack is needed. 
-      The current version is tested with the MVAPICH MPI stack on 
-      XSEDE TACC Ranger and on a local machine with Open MPI installed. The 
-      MVAPICH is the current recommended MPI stack for Ranger HPC.
+    - To build mr-mpi-blast, the Boost library and a MPI stack is needed.
+      The current version is tested on the XSEDE TACC Ranger with the MVAPICH
+      MPI stack (1.0.1) and on a local machine with Open MPI (1.4.2) installed.
+      The MVAPICH is the current recommended MPI stack for Ranger HPC. And the
+      versions 1.45.0 and 1.46.1 of the Boost libraries are tested.
+    - The GCC version 4.4.5 and 4.1.2 are currently tested for building.
     
 
 1. Set installation directory
@@ -82,7 +84,12 @@ By Seung-Jin Sul (ssul@jcvi.org)
         "./ncbi_cxx--<version>/src/app/Makefile.in".
 
    
-5. Configure and build the MapReduce-MPI library 
+5. Configure and build the MapReduce-MPI library
+
+    * NOTE  
+      Before building, please make sure you have a MPI stack and the Boost
+      library installed. If you're using TACC Ranger, please refer to
+      "tutorial/ranger_setup_env.sh".
 
     (1) Makefile.mpicxx
         
@@ -91,7 +98,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         or
         ./ncbi_cxx--<version>/src/app/mr-mpi-blast/mrmpi/MAKE/Makefile.mpicxx (for MVAPICH)
    
-    (2) Build MR-MPI library
+    (2) Build MapReduce-MPI library
       
         $ cd ./ncbi_cxx--<version>/src/app/mr-mpi-blast/mrmpi 
         $ make mpicc (for Open MPI)
@@ -102,10 +109,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
     * NOTE
       For more information on building MapReduce-MPI library, please refer to 
       the MapReduce MPI web pages (http://www.sandia.gov/~sjplimp/mapreduce.html).
-    
+
    
-6. Configure, build, and install NCBI C++ toolkit with mr-mpi-blast
-   
+6. Configure, build, and install the NCBI C++ toolkit with mr-mpi-blast
+
     $ cd ./ncbi_cxx--<version> 
     $ ./configure --prefix=$MRMPIBLAST_PREFIX 
     $ make && make install
