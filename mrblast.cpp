@@ -311,6 +311,7 @@ int main(int argc, char** argv)
             g_blockSize      = boost::lexical_cast<uint32_t>(parameters["BLOCKSIZE"]);
             g_nIter          = boost::lexical_cast<int>(parameters["NUMITER"]);
             g_bClassifier    = boost::lexical_cast<bool>(parameters["ISCLASSIFIER"]);
+            g_numHitCutOff   = boost::lexical_cast<int>(parameters["NUMHITCUTOFF"]);
                         
             g_queryFileName  = parameters["QUERYFILENAME"];
             g_indexFileName  = parameters["INDEXFILENAME"];
@@ -933,8 +934,6 @@ void mr_map_run_blast(int itask,
                 if ((*results)[i].HasAlignments()) {
                     CConstRef<CSeq_align_set> aln_set = (*results)[i].GetSeqAlign();
                     assert(!aln_set->IsEmpty());
-
-                    //cout << MSerial_Xml << *aln_set << endl;
                     
                     ITERATE(CSeq_align_set::Tdata, itr_res, aln_set->Get()) {
                         const CSeq_align& anAlign = **itr_res;     
@@ -1209,15 +1208,19 @@ inline void mr_reduce_sort_and_save_generic(char *key,
         multivalue += sizeof(structBlResGeneric_t);
     }
     
-    ////////////////////////////////////////////////////////////////////////
+    /** sort multi-values */
     sort(vecHit.begin(), vecHit.end(), compare_evalue_generic);
-    ////////////////////////////////////////////////////////////////////////
     
     /** 
      * Write hit struct to file in binary format
      */
     ofstream outputBinFile((g_hitFileName+".bin").c_str(), ios::binary | ios::app);
-    for (size_t n = 0; n < (unsigned)nvalues; ++n) {
+
+    /** if cutoff (NUMHITCUTTOFF in mrblast.ini) is set >0, use the cutoff for
+     * determining the number of hits to save.
+     */
+    int cutoff = (g_numHitCutOff > 0) ? g_numHitCutOff : nvalues;
+    for (size_t n = 0; n < (unsigned)cutoff; ++n) {
         structBlResGeneric_t* res = (structBlResGeneric_t*)(vecHit[n].pRec);
         structBlResToSaveHits_t hit;
         hit.queryId     = *(uint64_t*)key;
@@ -1271,14 +1274,20 @@ inline void mr_reduce_sort_and_save_classifier(char *key,
         vecHit.push_back(strctEvalue);
         multivalue += sizeof(structBlResClassifier_t);
     }
-    
+
+    /** sort multi-values */
     sort(vecHit.begin(), vecHit.end(), compare_evalue_classifier);
     
     /**
      * Write to file in binary format
      */
     ofstream outputBinFile((g_hitFileName+".bin").c_str(), ios::binary | ios::app);
-    for (size_t n = 0; n < (unsigned)nvalues; ++n) {
+
+    /** if cutoff (NUMHITCUTTOFF in mrblast.ini) is set >0, use the cutoff for
+     * determining the number of hits to save.
+     */
+    int cutoff = (g_numHitCutOff > 0) ? g_numHitCutOff : nvalues;
+    for (size_t n = 0; n < (unsigned)cutoff; ++n) {
         structBlResClassifier_t* res = (structBlResClassifier_t*)(vecHit[n].pRec);
         structBlResToSaveHitsClassifier_t hit;
         hit.queryId     = *(uint64_t*)key;

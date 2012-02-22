@@ -322,6 +322,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
         ISQIDGI
                     Set unique query ID options used for indexing; 
                     1=GI number, 0=serial number
+        NUMHITCUTOFF
+                    Set the number of hits to save per query; If you set this
+                    as 0, all hits will be saved. 
         ISCLASSIFIER
                     Enable to compute the percentage identity and percentage
                     coverage for each query and add those values in the BLAST

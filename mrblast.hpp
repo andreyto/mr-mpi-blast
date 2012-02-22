@@ -37,8 +37,6 @@
 #ifndef MPI_WTIME_IS_GLOBAL
 #define MPI_WTIME_IS_GLOBAL 1
 #endif
-
-
     
 using namespace MAPREDUCE_NS;
 using namespace std;
@@ -141,6 +139,7 @@ const string CONF_FILE_NAME = "mrblast.ini"; /**< configuration file name */
 const int MAXPROCNAME = 80;             /**< For mpi proc name */
 const int MAXSUBJID = 40;               /**< For subject id string */
 const int MAXDBLENSTR = 40;             /**< For database length string */
+int g_numHitCutOff = 0;
 
 /// ----------------------------------------------------------------------------
 /// Log

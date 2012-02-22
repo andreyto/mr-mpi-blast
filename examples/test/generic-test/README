@@ -89,6 +89,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - Do BLAST search using "30_real_seqs.fa" against "test.db" 
       BLAST.
     - The evalue is set as 10.
+    - NUMHITCUTOFF is set as 0 to direct to save all hits per query
     - The hit results (./30-real-hits) will be saved in *.bin files and
       converted into CSV, SQLite, and HDF5 database files (./30-real-hits-output).
           
@@ -109,6 +110,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - Do BLAST search using "100_simul_seqs.fa" against "test.db" 
       BLAST database. 
     - The evalue is set as 10.
+    - NUMHITCUTOFF is set as 0 to direct to save all hits per query
     - The hit results (./100-simul-hits) will be saved in *.bin files and
       converted into CSV, SQLite, and HDF5 database files (./100-simul-hits-output).
 
@@ -127,6 +129,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
     - Set BLASTDB environment variable to tell NCBI BLAST code where the
       databases are.
+    - The evalue is set as 10.
+    - NUMHITCUTOFF is set as 0 to direct to save all hits per query
     - Run mr-mpi-blast with setting "NUMITER" as 2.
     - The iteration number will be added to the resulting hit file names.
     - The hit files (./30-real-hits-numiter) are converted into CSV, SQLite,
@@ -149,6 +153,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - Do BLAST search using "prot_seqs.fa" against "test_prot.db" 
       BLAST database. 
     - The evalue is set as 10.
+    - NUMHITCUTOFF is set as 0 to direct to save all hits per query
     - The hit results (./prot-hits) will be saved in *.bin files and
       converted into CSV, SQLite, and HDF5 database files (./prot-hits-output).
     

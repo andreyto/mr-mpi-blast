@@ -92,6 +92,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
         - The "dblist.txt" has the name of formatted database, "microbial_all.db.00" 
           and "microbial_all.db.01".
         - The evalue is set as 1e-4.
+        - NUMHITCUTOFF is set as 0 to direct to save all hits per query
 
         
     (4) Convert output hit files from mr-mpi-blast
