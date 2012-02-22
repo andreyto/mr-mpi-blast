@@ -99,11 +99,14 @@ typedef pair<string, vector<int> > pairSVI_t;
 typedef multimap<int, int> multimapII_t;
 typedef map<int, string> mapIS_t;
 
+/**
+ * Struct for work item
+ */
 typedef struct structWorkItem {
-    int      dbNo;                  /// db id
-    uint64_t blockBegin;            /// query start loc of a work item block
-    uint64_t blockEnd;              /// query end loc of a work item block
-    uint64_t qIdStart;              /// starting query id
+    int      dbNo;                      /**< db ID */
+    uint64_t blockBegin;                /**< query start offset of a work item block */
+    uint64_t blockEnd;                  /**< query end offset of a work item block */
+    uint64_t qIdStart;                  /**< starting query ID */
 } structWorkItem_t;
 
 extern vector<structWorkItem_t> g_vecWorkItem;

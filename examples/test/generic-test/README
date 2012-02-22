@@ -1,7 +1,7 @@
 EXAMPLES - how to run mr-mpi-blast
 
 
-Updated: 01/19/2012
+Updated: 02/22/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -71,6 +71,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The name of the generated BLAST database fragment is specified in the 
       "dblist.txt" so that mr-mpi-blast read the list from the file, and the 
       "dblist.txt" should be set with "DBLISTFILENAME" in the configuration file.
+    - Make NCBI protein database using "./blastdb/test_prot.fa".
  
 
 4. Run mr-mpi-blast with 30 real sequences against "test.db"
@@ -78,7 +79,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     Script: "4.run_mrblast_30_real.sh"
 
     * NOTE
-      The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "0".
+      The "ISCLASSIFIER" field in the "mrblast.ini" is set as "0".
       
     - Set BLASTDB environment variable to tell NCBI BLAST code where the
       databases are.
@@ -97,7 +98,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     Script: "5.run_mrblast_100_simul.sh"
 
     * NOTE
-      The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "0".
+      The "ISCLASSIFIER" field in the "mrblast.ini" is set as "0".
       
     - Set BLASTDB environment variable to tell NCBI BLAST code where the
       databases are.
@@ -120,7 +121,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
       ID from "*.def" file.
 
     * NOTE
-      The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "0".
+      The "ISCLASSIFIER" field in the "mrblast.ini" is set as "0".
       
     Script: "6.run_mrblast_30_real_w_numiter.sh"
 
@@ -131,7 +132,24 @@ By Seung-Jin Sul (ssul@jcvi.org)
     - The hit files (./30-real-hits-numiter) are converted into CSV, SQLite,
       and HDF5 database files (./30-real-hits-numiter-output).
     
-    
-    
+
+7. Run mr-mpi-blast with 15 protein sequences against "test_prot.db"
+
+    Script: "7.run_mrblast_prot.sh"
+
+    * NOTE
+      The "-task" option of BLAST should be set as "blastp".
+      
+    - Set BLASTDB environment variable to tell NCBI BLAST code where the
+      databases are.
+    - Run mr-mpi-blast using mpirun on four processing units. The Block size 
+      option, "BLOCKSIZE" in the "mrblast.ini" is set as 500bp resulting in 
+      8 query blocks and total 8 (8 query blocks x 1 database file) work 
+      items.
+    - Do BLAST search using "prot_seqs.fa" against "test_prot.db" 
+      BLAST database. 
+    - The evalue is set as 10.
+    - The hit results (./prot-hits) will be saved in *.bin files and
+      converted into CSV, SQLite, and HDF5 database files (./prot-hits-output).
     
     

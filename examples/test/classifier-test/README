@@ -1,7 +1,7 @@
 EXAMPLES - how to run mr-mpi-blast
 
 
-Updated: 01/27/2012
+Updated: 02/22/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -85,7 +85,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     Script: "4.run_mrblast_30_real.sh"
 
     * NOTE
-      The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "1".
+      The "ISCLASSIFIER" field in the "mrblast.ini" is set as "1".
       
     - Set BLASTDB environment variable to tell NCBI BLAST code where the
       databases are.
@@ -104,7 +104,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
     Script: "5.run_mrblast_100_simul.sh"
 
     * NOTE
-      The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "1".
+      The "ISCLASSIFIER" field in the "mrblast.ini" is set as "1".
       
     - Set BLASTDB environment variable to tell NCBI BLAST code where the
       databases are.
@@ -122,12 +122,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
 6. Run mr-mpi-blast with 30 real sequences against "test.db" by multiple iterations
 
     * NOTE
-      For multiple iterations, the converting tools do not support the "-d"
-      and "-i" options which is for adding the original defline for each query
-      ID from "*.def" file.
-
-    * NOTE
-      The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "1".
+      . For multiple iterations, the converting tools do not support the "-d"
+        and "-i" options which is for adding the original defline for each query
+        ID from "*.def" file.
+      . The "ISCLASSIFIER" field in the "mrblast.ini" is set as "1".
       
     Script: "6.run_mrblast_30_real_w_numiter.sh"
 

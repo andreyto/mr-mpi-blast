@@ -11,5 +11,5 @@
 ##$ -M # Use email notification address
 ##$ -m be # Email at Begin and End of job
 
-#ibrun mrblast -evalue 1e-4 -dbsize 8538182741
-ibrun mrblast -evalue 1e-4
+#ibrun mrblast -task blastn -evalue 1e-4 -dbsize 8538182741
+ibrun mrblast -task blastn -evalue 1e-4

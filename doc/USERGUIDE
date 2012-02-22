@@ -1,7 +1,7 @@
 User Guide for mr-mpi-blast 
 
 
-Updated: 01/30/2012
+Updated: 02/22/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
  
@@ -42,9 +42,9 @@ By Seung-Jin Sul (ssul@jcvi.org)
       
     - Usage examples:
     
-        ex) mpirun mrblast
-        ex) mpirun mrblast -evalue 1e-4          
-        ex) mpirun mrblast -evalue 1e-4 -num_threads 1 -window_size 0 
+        ex) mpirun mrblast -task megablast
+        ex) mpirun mrblast -task megablast -evalue 1e-4          
+        ex) mpirun mrblast -task megablast -evalue 1e-4 -num_threads 1 -window_size 0 
             -word_size 11 -searchsp 0 -num_descriptions 500 -num_alignments 10000 
             -penalty -5 -reward 4 -lcase_masking -dust yes -soft_masking true 
             -export_search_strategy strategy_temp.txt -max_target_seqs 2147483647
@@ -60,7 +60,10 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
         * NOTE
           If not specified, the default values of the blastn and blastp are 
-          used. For instance, the default Evalue threshold is '10'. 
+          used. For instance, the default Evalue threshold is '10'.
+
+        * NOTE
+          Currently, blastn, megablast, and blastp are supported by "-task" option.
         
     - The mr-mpi-blast is a MPI program thus it should be run by "mpirun" or 
       whatever equivalent like "ibrun" on XSEDE TACC Ranger cluster. 
@@ -77,7 +80,7 @@ By Seung-Jin Sul (ssul@jcvi.org)
             #$ -pe 16way 64  # Requests 16 tasks/node, 64 cores total 
             #$ -q development # Queue name 
             #$ -l h_rt=00:30:00 # Run time (hh:mm:ss)
-            mpirun mrblast -evalue 1e-4 
+            mpirun mrblast -task megablast -evalue 1e-4 
       
 
 * Input Files
@@ -174,11 +177,11 @@ By Seung-Jin Sul (ssul@jcvi.org)
             $ python ../seqindexer.py -i 100.query -o ./generated/100.query.full.idx -d ./generated/100.query.full.def -s 1 -b 1
 
             In "100.query.full.idx":
-                0	    400	    1
-                468	    400	    2
-                938	    400	    3
-                1408	400	    4
-                1878	400	    5
+                0       400     1
+                468     400     2
+                938     400     3
+                1408    400     4
+                1878    400     5
                 ...
 
             In "100.query.full.def":
@@ -195,19 +198,19 @@ By Seung-Jin Sul (ssul@jcvi.org)
             $ python ../seqindexer.py -i 100.query -o ./generated/100.query.part.idx -d ./generated/100.query.part.def -s 100 -b 0 
      
              In "100.query.part.idx":
-                0	    400	    100
-                468	    400	    101
-                938	    400	    102
-                1408	400	    103
-                1878	400	    104
+                0       400     100
+                468     400     101
+                938     400     102
+                1408    400     103
+                1878    400     104
                 ...
 
             In "100.query.part.def":
-                100	    >gi|222299657|1|3605|0|400 
-                101	    >gi|222299657|2|3605|200|600  
-                102	    >gi|222299657|3|3605|400|800 
-                103	    >gi|222299657|4|3605|600|1000 
-                104 	>gi|222299657|5|3605|800|1200  
+                100     >gi|222299657|1|3605|0|400 
+                101     >gi|222299657|2|3605|200|600  
+                102     >gi|222299657|3|3605|400|800 
+                103     >gi|222299657|4|3605|600|1000 
+                104     >gi|222299657|5|3605|800|1200  
                 ...
 
 
@@ -316,9 +319,6 @@ By Seung-Jin Sul (ssul@jcvi.org)
                     items and mr-mpi-blast will iterate over the sub sets 
                     "n" times. The output file from each iteration can be 
                     distinguished by the iteration number in each file name.
-        ISPROTEIN
-                    Set BLAST mode; 1=blastp for protein search, 
-                    0=blastn for nucleotide search
         ISQIDGI
                     Set unique query ID options used for indexing; 
                     1=GI number, 0=serial number

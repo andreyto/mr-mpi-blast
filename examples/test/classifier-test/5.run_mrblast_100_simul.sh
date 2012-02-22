@@ -6,7 +6,7 @@ export BLASTDB=$(pwd)/blastdb
 cp ./mrblast_100_simul.ini mrblast.ini &&
 
 echo -e "\n### Run mr-mpi-blast with 100 simulated queries ###" &&
-mpirun -np 4 mrblast -evalue 10 &&
+mpirun -np 4 mrblast -evalue 10 -task megablast  &&
 mkdir -p ./100-simul-hits &&
 mv *.bin ./100-simul-hits &&
 mkdir -p ./100-simul-hits-output &&

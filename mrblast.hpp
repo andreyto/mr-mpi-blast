@@ -7,11 +7,11 @@
 
 /**    
     @file   mrblast.hpp
-    @date   1/30/2012
+    @date   02/22/2012
     @author Seung-Jin Sul (ssul@jcvi.org)
     @brief  MR-MPI-BLAST: Parallelizing BLAST using MapReduce-MPI header file
       
-            Version: 12.0.0
+            Version: 13.0.0
             This version of mr-mpi-blast supports both generic and classifier\n
             run modes. In the classifier run mode (ISCLASSIFIER=1 in
             "mrblast.ini"), two additional fields are added for classifier:
@@ -76,13 +76,18 @@ using namespace std;
 /// For sequence::GetLength()
 #include <objmgr/util/seq_loc_util.hpp>
 
+/// Tabular
+#include <algo/blast/format/blast_format.hpp>
+#include <algo/blast/blastinput/blastn_args.hpp>
+#include <algo/blast/blastinput/blastp_args.hpp>
+
 USING_NCBI_SCOPE;
 USING_SCOPE (blast);
 USING_SCOPE (align_format);
 
 const int QUERY = 0;        /**< To retireve query info from CSeq_align */
 const int SUBJECT = 1;      /**< To retireve suject info from CSeq_align */
-
+ 
 /// For NcbiApp
 CRef<CBlastOptionsHandle> g_optsHndl;
 CRef<CBlastAppArgs> g_cmdLineArgs;
@@ -131,6 +136,7 @@ int g_outOfCore;
 int g_nDbFiles;                         /**< total number of db partitions */
 string g_dbName;
 string g_dbListFileName;                /**< db partition list file name */ 
+string g_programName;
 const string CONF_FILE_NAME = "mrblast.ini"; /**< configuration file name */
 const int MAXPROCNAME = 80;             /**< For mpi proc name */
 const int MAXSUBJID = 40;               /**< For subject id string */
@@ -210,7 +216,8 @@ char g_MPI_procName[MAXPROCNAME];       /**< MPI procname */
 string g_outFilePrefix;                 /**< Prefix string for output file names */
 string g_indexFileName;                 /**< index file name */
 string g_queryFileName;                 /**< query file name */
-bool g_bIsProtein = false;              /**< For nucl or prot DB setting */
+bool g_bIsQueryProtein = false;         
+bool g_bIsDbProtein = false;
 bool g_bClassifier = false;             /**< Add classifier fields in final BLAST output */
 string g_hitFileName;                   /**< Output file to store BLAST hits */
  
@@ -318,7 +325,7 @@ uint32_t nRemains = 0;
  * summing up, and broadcasting summed up array to all ranks.
  */
 uint32_t *g_vecNumHitsPerQid;           /**< arrary for hit count per query */
-uint32_t *g_vecNumHitsPerQid2;
+uint32_t *g_vecNumHitsPerQid2;          /**< arrary for hit count per query */
 
 /// prototypes
 void mr_mpi_blast(); 

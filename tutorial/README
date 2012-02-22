@@ -1,7 +1,7 @@
 Tutorial - How to run mr-mpi-blast on XSEDE TACC Ranger
 
 
-Updated: 01/19/2012
+Updated: 02/22/2012
 By Seung-Jin Sul (ssul@jcvi.org)
 
 
@@ -74,7 +74,8 @@ By Seung-Jin Sul (ssul@jcvi.org)
 
 
         * NOTE
-          The "ISCLASSIFIER" field in the "mrblast.ini" is not set as "1".
+          . The "ISCLASSIFIER" field in the "mrblast.ini" is set as "1".
+          . "-task blastn" is set. 
               
        $ sh ./3.run_mr-mpi-blast.sh
        

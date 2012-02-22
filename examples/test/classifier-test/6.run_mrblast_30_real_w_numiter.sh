@@ -6,7 +6,7 @@ export BLASTDB=$(pwd)/blastdb
 cp ./mrblast_30_real_w_numiter.ini mrblast.ini &&
 
 echo -e "\n### Run mr-mpi-blast ###" &&
-mpirun -np 4 mrblast -evalue 10 &&
+mpirun -np 4 mrblast -evalue 10 -task megablast &&
  
 mkdir -p ./30-real-hits-numiter &&
 mv *.bin ./30-real-hits-numiter &&
