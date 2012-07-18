@@ -12,10 +12,11 @@ import os
 import struct
 import string
 import optparse
+import pdb
 
-if __name__ == '__main__':
+def main():
 
-    usage = "python load_csv.py -b binDir -o outCsvFile -d deflineOpt -i inDefFile -c 1/0"
+    usage = "Run 'python load_csv.py --help' for options."
     parser = optparse.OptionParser(usage=usage)
     parser.add_option("-b", "--bin-dir", dest="directory", 
                   action="store", type="string", help="set path to *.bin files")
@@ -25,6 +26,8 @@ if __name__ == '__main__':
                   action="store", type="string", help="input *.def file name")
     parser.add_option("-d", "--with-defline", dest="deflineOpt", default=0,
                   action="store", type="int", help="1: add original defline after qid; 0, if not")                                    
+    parser.add_option("-c", "--classifier-mode", dest="classifierMode", default=0,
+            action="store", type="int", help="1: process output from BLAST tool executed in classifier mode; 0: otherwise")                                    
     (options, args) = parser.parse_args()
     
     if options.directory and options.outfilename:
@@ -41,8 +44,7 @@ if __name__ == '__main__':
         parser.error("Please set the input defline file.")
   
     ##
-    ## Define a user record to characterize some kind of particles
-    ##
+    ## Expected record format
     ##
     ## Unique query id (serial numner)
     ## Each query's original defline from *.def file; set if bDefline = 1
@@ -57,6 +59,9 @@ if __name__ == '__main__':
     ## End of alignment in query
     ## Evalue
     ## Bit score
+    ## --- In classifier mode, these fields are also added: ---
+    ## Percent identity over entire query 
+    ## Percent coverage over entire query
     
     ##typedef struct structBlResToSaveHits {
         ##uint64_t    queryId;
@@ -71,6 +76,9 @@ if __name__ == '__main__':
         ##uint32_t    sEnd;
         ##double      eValue;
         ##double      bitScore;
+        ## --- In classifier mode, these fields are also added: ---
+        ##double      percIdent;
+        ##double      percCover;
     ##} structBlResToSaveHits_t;
  
     csvFileName = outCsvFileName + ".csv"
@@ -83,7 +91,7 @@ if __name__ == '__main__':
     vecHitFileName = []
     subDir = topDir  
     for f in os.listdir(subDir):
-        if f.find(".bin") > -1: 
+        if f.endswith(".bin"): 
             vecHitFileName.append(f)
     vecHitFileName.sort()
     numHitFiles = len(vecHitFileName)
@@ -94,48 +102,41 @@ if __name__ == '__main__':
     if bDefline:
         defFile = open(inDefFile, 'r')
         line = defFile.readline()
-
+    structDef = 'L40sdIIIIIIIdd'
+    if options.classifierMode:
+        structDef += 'dd'
     totalHits = 0
-    structSize = struct.calcsize('L40sdIIIIIIIdd')
+    structSize = struct.calcsize(structDef)
     for i in range(numHitFiles):
         subFileName = os.path.join(subDir,vecHitFileName[i])
         hitFile = open(subFileName, "rb")
-        recordData = hitFile.read(structSize)
         numHits = 0
         while True:
-            try:
-                ## Load data from bin file
-                s = struct.unpack('L40sdIIIIIIIdd', recordData)
-                totalHits += 1
-                numHits += 1
-                csvString = str(s[0]) + ","
-
-                ##
-                ## Add the orig defline from .def file after the 'qid' field
-                ##
-                if bDefline:
-                    while int(line.split()[0]) != int(s[0]):
-                        line = defFile.readline()
-                    csvString += line.split()[1][1:] + ","
-                    
-                csvString += filter(lambda x: x in string.printable, str(s[1])) + "," \
-                    + str(s[2]) + "," \
-                    + str(s[3]) + "," \
-                    + str(s[4]) + "," \
-                    + str(s[5]) + "," \
-                    + str(s[6]) + "," \
-                    + str(s[7]) + "," \
-                    + str(s[8]) + "," \
-                    + str(s[9]) + "," \
-                    + str(s[10]) + "," \
-                    + str(s[11]).strip() + "\n"
-                csvFile.write(csvString)
-                recordData = hitFile.read(structSize)
-            except struct.error:
+            recordData = hitFile.read(structSize)
+            lenRead = len(recordData)
+            if lenRead == 0:
                 break
-            except:
-                print "Unexpected error:", sys.exc_info()[0]
-                raise
+            elif lenRead != structSize:
+                raise ValueError("Partial record read from "+\
+                    "binary output file which must be corrupt.")
+            ## Load data from bin file
+            s = struct.unpack(structDef, recordData)
+            totalHits += 1
+            numHits += 1
+            qIid = int(s[0])
+            csvString = str(qIid) + ","
+
+            ##
+            ## Add the orig defline from .def file after the 'qid' field
+            ##
+            if bDefline:
+                while int(line.split()[0]) != qIid:
+                    line = defFile.readline()
+                csvString += line.split()[1][1:] + ","
+                
+            csvString += s[1].partition(b'\0')[0] + "," \
+                    + ','.join((("%s" % (x,)) for x in s[2:])) + "\n"
+            csvFile.write(csvString)
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
             
@@ -143,5 +144,7 @@ if __name__ == '__main__':
     csvFile.close() 
     if bDefline:
         defFile.close()
-    
+
+main()
+
 ## EOF
