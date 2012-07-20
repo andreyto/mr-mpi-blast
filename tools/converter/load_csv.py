@@ -101,7 +101,7 @@ def main():
     ##
     if bDefline:
         defFile = open(inDefFile, 'r')
-        line = defFile.readline()
+        defWords = defFile.readline().split(None,1)
     structDef = 'L40sdIIIIIIIdd'
     if options.classifierMode:
         structDef += 'dd'
@@ -124,18 +124,26 @@ def main():
             totalHits += 1
             numHits += 1
             qIid = int(s[0])
-            csvString = str(qIid) + ","
 
             ##
-            ## Add the orig defline from .def file after the 'qid' field
+            ## Add the orig defline from .def or the 'qIid' field
             ##
             if bDefline:
-                while int(line.split()[0]) != qIid:
-                    line = defFile.readline()
-                csvString += line.split()[1][1:] + ","
+                while int(defWords[0]) != qIid:
+                    defWords = defFile.readline().split(None,1)
+                    if not defWords:
+                        raise ValueError("Query IID %s not found in defline file" % (qIid,))
+                csvString = defWords[1][1:].strip() + ","
+            else:
+                csvString = str(qIid) + ","
                 
+            def format_x(x): 
+                if isinstance(x,float): 
+                    return "%.3g" % (x,)
+                return "%s" % (x,)
+                    
             csvString += s[1].partition(b'\0')[0] + "," \
-                    + ','.join((("%s" % (x,)) for x in s[2:])) + "\n"
+                    + ','.join((format_x(x) for x in s[2:])) + "\n"
             csvFile.write(csvString)
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
