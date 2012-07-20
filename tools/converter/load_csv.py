@@ -27,7 +27,11 @@ def main():
     parser.add_option("-d", "--with-defline", dest="deflineOpt", default=0,
                   action="store", type="int", help="1: add original defline after qid; 0, if not")                                    
     parser.add_option("-c", "--classifier-mode", dest="classifierMode", default=0,
-            action="store", type="int", help="1: process output from BLAST tool executed in classifier mode; 0: otherwise")                                    
+            action="store", type="int", 
+            help="1: process output from BLAST tool executed in classifier mode; 0: otherwise")
+    parser.add_option("-l", "--delimeter", dest="delim", default='\t',
+            action="store", type="string", 
+            help="output delimiter [tab]") 
     (options, args) = parser.parse_args()
     
     if options.directory and options.outfilename:
@@ -105,6 +109,7 @@ def main():
     structDef = 'L40sdIIIIIIIdd'
     if options.classifierMode:
         structDef += 'dd'
+    delim = options.delim
     totalHits = 0
     structSize = struct.calcsize(structDef)
     for i in range(numHitFiles):
@@ -133,17 +138,17 @@ def main():
                     defWords = defFile.readline().split(None,1)
                     if not defWords:
                         raise ValueError("Query IID %s not found in defline file" % (qIid,))
-                csvString = defWords[1][1:].strip() + ","
+                csvString = defWords[1][1:].strip() + delim
             else:
-                csvString = str(qIid) + ","
+                csvString = str(qIid) + delim
                 
             def format_x(x): 
                 if isinstance(x,float): 
                     return "%.3g" % (x,)
                 return "%s" % (x,)
                     
-            csvString += s[1].partition(b'\0')[0] + "," \
-                    + ','.join((format_x(x) for x in s[2:])) + "\n"
+            csvString += s[1].partition(b'\0')[0] + delim \
+                    + delim.join((format_x(x) for x in s[2:])) + "\n"
             csvFile.write(csvString)
         hitFile.close()
         print "Number of hits = %d in %s" % (numHits, vecHitFileName[i])
