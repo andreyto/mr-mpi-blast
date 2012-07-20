@@ -996,9 +996,11 @@ void mr_map_run_blast(int itask,
                          * qstart, qend, sstart, send, strand
                          */
 
-                        /** This loc values start from 0~
-                         *  NOTE: to make printed hit results those should be 
-                         * started from 1~
+                        /** The start,end values are [n,m] which are translated
+                         *  to [n+1,m+1] for output, e.g. see
+                         *  the NCBI C++ Toolkit code for
+                         *  src/algo/blast/format/blastxml_format.cpp
+                         *  and look for GetSeqStart
                          */
                         uint32_t qStart = anAlign.GetSeqStart(QUERY);
                         uint32_t qEnd   = anAlign.GetSeqStop(QUERY);
@@ -1066,21 +1068,21 @@ void mr_map_run_blast(int itask,
                             double percCover = (double)(qEnd-qStart)/qLength * 100;
 
                             structBlResClassifier_t res;
-                            strncpy(res.subjectId, subjIdForPrint.c_str(), MAXSUBJID-1);
-                            res.subjectId[MAXSUBJID] = '\0';
+                            //in the res, subject ID might not be null-terminated
+                            strncpy(res.subjectId, subjIdForPrint.c_str(), MAXSUBJID);
                             res.identity    = origPercIdent;
                             res.alignLen    = alignLenGap;
                             res.nMismatches = nMismatches;
                             res.nGaps       = nGaps;
-                            res.qStart      = qStart;
-                            res.qEnd        = qEnd;                                  
+                            res.qStart      = qStart+1;
+                            //Odd, yes. See src/algo/blast/format/blastxml_format.cpp
+                            res.qEnd        = qEnd+1;                             
+                            res.sStart      = sStart+1;
+                            res.sEnd        = sEnd+1;
                             if (qStrand != sStrand) {
-                                res.sStart  = sEnd+1; 
-                                res.sEnd    = sStart+1;   
-                            }
-                            else {
-                                res.sStart  = sStart+1; 
-                                res.sEnd    = sEnd+1;   
+                                uint32_t tmp_sStart = res.sStart
+                                res.sStart  = res.sEnd; 
+                                res.sEnd    = tmp_sStart;   
                             }
                             res.eValue      = evalue;
                             res.bitScore    = bitScore;
@@ -1112,21 +1114,21 @@ void mr_map_run_blast(int itask,
                          */
                         else {
                             structBlResGeneric_t res;
-                            strncpy(res.subjectId, subjIdForPrint.c_str(), MAXSUBJID-1);
-                            res.subjectId[MAXSUBJID] = '\0';
+                            //in the res, subject ID might not be null-terminated
+                            strncpy(res.subjectId, subjIdForPrint.c_str(), MAXSUBJID);
                             res.identity    = origPercIdent;
                             res.alignLen    = alignLenGap;
                             res.nMismatches = nMismatches;
                             res.nGaps       = nGaps;
-                            res.qStart      = qStart;
-                            res.qEnd        = qEnd;                                  
+                            res.qStart      = qStart+1;
+                            //Odd, yes. See src/algo/blast/format/blastxml_format.cpp
+                            res.qEnd        = qEnd+1;                             
+                            res.sStart      = sStart+1;
+                            res.sEnd        = sEnd+1;
                             if (qStrand != sStrand) {
-                                res.sStart  = sEnd+1; 
-                                res.sEnd    = sStart+1;   
-                            }
-                            else {
-                                res.sStart  = sStart+1; 
-                                res.sEnd    = sEnd+1;   
+                                uint32_t tmp_sStart = res.sStart
+                                res.sStart  = res.sEnd; 
+                                res.sEnd    = tmp_sStart;   
                             }
                             res.eValue      = evalue;
                             res.bitScore    = bitScore;
