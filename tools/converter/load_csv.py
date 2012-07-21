@@ -24,8 +24,10 @@ def main():
                   action="store", type="string", help="set output CSV file name")
     parser.add_option("-i", "--in", dest="inDefFile",  
                   action="store", type="string", help="input *.def file name")
-    parser.add_option("-d", "--with-defline", dest="deflineOpt", default=0,
-                  action="store", type="int", help="1: add original defline after qid; 0, if not")                                    
+    parser.add_option("-d", "--keep-qiid", dest="keepQIid", 
+                  default=0,
+                  action="store", type="int", 
+                  help="1: If merging with defline, still output query IID; 0: otherwise")
     parser.add_option("-c", "--classifier-mode", dest="classifierMode", default=0,
             action="store", type="int", 
             help="1: process output from BLAST tool executed in classifier mode; 0: otherwise")
@@ -40,12 +42,8 @@ def main():
     else:
         parser.error("Please set the path to *.bin files and output file name.")
     
-    bDefline = 0
-    if options.deflineOpt and options.inDefFile:
-        bDefline = options.deflineOpt 
-        inDefFile = options.inDefFile
-    elif options.deflineOpt and not options.inDefFile:
-        parser.error("Please set the input defline file.")
+    if not options.inDefFile:
+        options.keepQIid = 1
   
     ##
     ## Expected record format
@@ -103,8 +101,8 @@ def main():
     ##
     ## Read bin files and append to tables
     ##
-    if bDefline:
-        defFile = open(inDefFile, 'r')
+    if options.inDefFile:
+        defFile = open(options.inDefFile, 'r')
         defWords = defFile.readline().split(None,1)
     structDef = 'L40sdIIIIIIIdd'
     if options.classifierMode:
@@ -133,14 +131,15 @@ def main():
             ##
             ## Add the orig defline from .def or the 'qIid' field
             ##
-            if bDefline:
+            csvString = ""
+            if options.keepQIid:
+                csvString += str(qIid) + delim
+            if options.inDefFile:
                 while int(defWords[0]) != qIid:
                     defWords = defFile.readline().split(None,1)
                     if not defWords:
                         raise ValueError("Query IID %s not found in defline file" % (qIid,))
-                csvString = defWords[1][1:].strip() + delim
-            else:
-                csvString = str(qIid) + delim
+                csvString += defWords[1][1:].strip() + delim
                 
             def format_x(x): 
                 if isinstance(x,float): 
@@ -155,7 +154,7 @@ def main():
             
     print "Total number of hits = ",totalHits
     csvFile.close() 
-    if bDefline:
+    if options.inDefFile:
         defFile.close()
 
 main()
