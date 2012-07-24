@@ -1080,7 +1080,7 @@ void mr_map_run_blast(int itask,
                             res.sStart      = sStart+1;
                             res.sEnd        = sEnd+1;
                             if (qStrand != sStrand) {
-                                uint32_t tmp_sStart = res.sStart
+                                uint32_t tmp_sStart = res.sStart;
                                 res.sStart  = res.sEnd; 
                                 res.sEnd    = tmp_sStart;   
                             }
@@ -1126,7 +1126,7 @@ void mr_map_run_blast(int itask,
                             res.sStart      = sStart+1;
                             res.sEnd        = sEnd+1;
                             if (qStrand != sStrand) {
-                                uint32_t tmp_sStart = res.sStart
+                                uint32_t tmp_sStart = res.sStart;
                                 res.sStart  = res.sEnd; 
                                 res.sEnd    = tmp_sStart;   
                             }
